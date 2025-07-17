@@ -6,7 +6,11 @@ You got it! Here is the complete Project Brief we've generated for the CWE ChatB
 
 ## Executive Summary
 
-The **CWE ChatBot** project aims to revolutionize interaction with the Common Weakness Enumeration (CWE) corpus. Our primary goal is to shift from a static search and browse experience to a dynamic, interactive conversational interface. This project targets diverse users including PSIRT members, developers, academic vulnerability researchers, bug bounty hunters, and product managers, enabling them to efficiently understand, remediate, report, and prevent software weaknesses. By providing immediate, contextual, and role-specific insights into CWEs, the ChatBot will significantly enhance the speed, accuracy, and overall effectiveness of vulnerability management and prevention across various cybersecurity disciplines.
+The **CWE ChatBot** project aims to revolutionize interaction with the [MITRE Common Weakness Enumeration (CWE)](https://cwe.mitre.org/) corpus. 
+
+Our primary goal is to shift from a static search and browse experience to a dynamic, interactive conversational interface. 
+
+This project targets diverse users including PSIRT members, developers, academic vulnerability researchers, bug bounty hunters, and product managers, enabling them to efficiently understand, remediate, report, and prevent software weaknesses. By providing immediate, contextual, and role-specific insights into CWEs, the ChatBot will significantly enhance the speed, accuracy, and overall effectiveness of vulnerability management and prevention across various cybersecurity disciplines.
 
 ## Problem Statement
 
@@ -39,6 +43,7 @@ Unlike current static search and browse tools that require users to manually fil
 * **Interactive Contextualization:** It actively engages in a dialogue, understanding the nuances of the user's role and specific needs (e.g., a developer needing code examples vs. a PSIRT member needing advisory language).
 * **Intelligent Query Resolution:** Moves beyond simple search to semantically interpret complex questions and provide direct answers or guided pathways to information, saving significant time and reducing cognitive load.
 * **Tailored Information Delivery:** Delivers information in a format and level of detail appropriate for the user's immediate task (e.g., quick facts for a bug bounty hunter vs. detailed remediation for a developer).
+* **Tight Feedback Loop:** The maintainers for the CWE corpus can see how users are using it via the queries to the ChatBot, and the user feedback on the ChatBot responses 
 
 **Why This Solution Will Succeed Where Others Haven't:**
 This solution directly addresses the core pain point of inefficiency and lack of actionable context in existing CWE interaction methods. Its success will stem from:
@@ -89,14 +94,12 @@ To ensure the CWE ChatBot delivers tangible value and addresses the identified p
 ### Business Objectives
 
 * **Reduce time spent on vulnerability advisory creation by PSIRT members by 30% within 12 months of launch.** This directly targets the high-time pressure experienced by PSIRT and aims for measurable efficiency gains.
-* **Decrease the average Mean Time To Remediate (MTTR) for vulnerabilities linked to CWEs by 20% for developers within 18 months of launch.** This targets the developers' need for faster and more effective fixes.
-* **Increase the proactive identification of common CWE patterns across product lines by Product Managers by 50% over 24 months, leading to actionable prevention strategies.** This focuses on the strategic value of the chatbot for large-scale weakness prevention.
 * **Achieve a 90% user satisfaction rate (CSAT) with the clarity and actionability of chatbot responses within 6 months of launch.** This measures the core value proposition of transforming passive interaction into effective engagement.
 
 ### User Success Metrics
 
 * **Average time to find specific, actionable CWE information for a given query:** Aim to reduce this by at least 50% compared to current manual methods.
-* **User perceived relevance and clarity of chatbot responses:** Measured through in-app surveys and qualitative feedback.
+* **User perceived relevance and clarity of chatbot responses:** Measured through in-app surveys and qualitative and quantitative feedback.
 * **Accuracy of CWE ID assignment in PSIRT advisories:** Track and aim for a sustained increase, minimizing misclassifications.
 * **Engagement metrics:** Such as average session duration for active problem-solving interactions, number of follow-up questions per initial query, and feature adoption rates.
 * **Self-service rate for CWE-related queries:** Aim to reduce reliance on human experts for routine information retrieval.
@@ -105,8 +108,6 @@ To ensure the CWE ChatBot delivers tangible value and addresses the identified p
 
 * **Average Query Resolution Time (AQRT):** Time from initial user query to a satisfactory answer or actionable insight.
 * **Chatbot CSAT/NPS Score:** Regular surveys to gauge user satisfaction and likelihood to recommend.
-* **CWE Remediation Cycle Time (CRCT):** For developers, the time taken from receiving a CWE-linked bug report to deploying a fix.
-* **Proactive Pattern Identification Rate (PPIR):** Number of identified and actioned CWE trends/patterns by Product Managers per quarter.
 * **First-Contact Resolution Rate (FCRR):** Percentage of user queries fully resolved by the chatbot without requiring human intervention or external research.
 
 ## MVP Scope
@@ -131,10 +132,8 @@ The Minimum Viable Product (MVP) for the CWE ChatBot will focus on delivering th
 ### Out of Scope for MVP
 
 * **Direct Code Analysis & Automated Remediation Suggestions:** The MVP will not scan user-provided code or generate complete, deployable fixes. It will provide general remediation guidance.
-* **Integration with External Ticketing/Reporting Systems:** No direct API integrations with bug trackers (Jira, GitHub Issues) or vulnerability management platforms.
 * **Complex Multi-Turn Problem Solving:** While basic follow-up questions are in scope, the MVP will not support highly intricate, multi-layered problem-solving dialogues that require deep, iterative reasoning over extended periods.
-* **Advanced Trend Analysis & Reporting Dashboards:** Detailed visualizations of CWE patterns across large datasets (e.g., for Product Managers) will be deferred. The MVP will enable conversational discovery of patterns but not automated reporting.
-* **Proactive Alerts or Real-time Monitoring:** The ChatBot will be reactive to user queries, not actively monitoring systems or pushing notifications.
+
 
 ### MVP Success Criteria
 
@@ -172,10 +171,9 @@ Our long-term vision is for the CWE ChatBot to evolve into an indispensable, int
 
 Beyond core feature development, we foresee several opportunities to expand the ChatBot's reach and impact:
 
-* **Specialized Domain Modules:** Develop modules tailored for specific industry regulations (e.g., HIPAA, PCI-DSS compliance), niche technologies, or advanced security disciplines (e.g., secure IoT development, automotive cybersecurity).
 * **Automated Workflow Integration:** Seamless integration into automated security testing, code review, and incident response workflows, potentially becoming an autonomous agent within a DevSecOps pipeline.
-* **Educational and Training Platform:** Develop interactive learning paths and scenarios within the ChatBot to educate new developers and security analysts on common weaknesses and secure coding practices.
-* **Enhanced Data Visualization and Trend Reporting:** Offer more sophisticated analytical capabilities, allowing Product Managers and security leaders to identify overarching weakness trends, measure remediation effectiveness, and forecast future risks.
+* **Educational and Training Platform:** Develop interactive learning paths and scenarios within the ChatBot to educate new developers and security analysts on common weaknesses and secure coding practices. Educational material in the RCMWG meetings is an example candidate.
+
 
 ## Technical Considerations
 
@@ -189,8 +187,8 @@ This section outlines initial technical requirements, preferences, and architect
 
 ### Technology Preferences
 
-* **Frontend:** A modern JavaScript framework such as **React (with Next.js)**. Next.js offers strong capabilities for building performant, responsive web applications, including server-side rendering (SSR) or static site generation (SSG) for fast initial loads and API routes for backend-for-frontend (BFF) patterns.
-* **Backend:** Given the heavy Natural Language Processing (NLP) and AI component, **Python (with Flask or FastAPI)** is a strong candidate due to its rich ecosystem of AI/ML libraries (e.g., spaCy, Hugging Face Transformers, TensorFlow/PyTorch). Alternatively, **Node.js (with NestJS)** could serve as a robust, scalable backend for the API layer and orchestration, especially if maintaining a unified JavaScript stack is preferred.
+* **Frontend:** **Chainlit**: Purpose‑built for LLM chat apps, offers chat UI, streaming, user feedback, built-in auth hooks, and observability. Highly flexible for integrating retrieval workflows and multiple LLM backends. Responsive on web/mobile and easily themed.
+* **Backend:** Given the heavy Natural Language Processing (NLP) and AI component, **Python (with Flask or FastAPI)** is a strong candidate due to its rich ecosystem of AI/ML libraries (e.g., spaCy, Hugging Face Transformers, TensorFlow/PyTorch).
 * **Database:** A combination approach may be optimal:
     * **Vector Database (e.g., Pinecone, Weaviate):** Crucial for efficient semantic search and retrieval from the CWE corpus, enabling context-aware responses.
     * **Traditional Database (e.g., PostgreSQL, MongoDB):** For managing user accounts (if applicable), conversational history, and any other structured application data.
@@ -210,13 +208,17 @@ This section outlines initial technical requirements, preferences, and architect
     * Potential integration with third-party AI APIs (e.g., for advanced language models, if not self-hosted).
 * **Security/Compliance:** Initial thoughts include robust API security (authentication, authorization, rate limiting), input sanitization to prevent injection attacks, and careful consideration of data privacy for user queries and conversational history. Compliance with relevant data protection regulations (e.g., GDPR, CCPA) should be a foundational concern.
 
+* **Bring your own Key** A user will need to be able to specify their own LLM and API key for use with the ChatBot.
+
+* **Bring your own Model** A user will need to be able to specify their own self-hosted LLM model for use with the ChatBot.
+
 ## Constraints & Assumptions
 
 Understanding the boundaries and underlying beliefs for the CWE ChatBot project is crucial for effective planning and risk management. These are current, initial thoughts and will be refined as the project progresses.
 
 ### Constraints
 
-* **Budget:** We operate under a limited initial budget, aiming for cost-effective solutions wherever possible, particularly leveraging open-source or managed cloud services to minimize infrastructure spend for the MVP. (Typical MVP chatbot development ranges from $10,000 to $100,000+, we'll aim for efficiency within that lower-to-mid range.)
+* **Budget:** We operate under a limited initial budget, aiming for cost-effective solutions wherever possible, particularly leveraging open-source or managed cloud services to minimize infrastructure spend for the MVP. 
 * **Timeline:** The MVP is targeted for an aggressive launch timeline, aiming to deliver core value within **6 months** from the start of active development. This necessitates a focused scope and efficient execution.
 * **Team Resources:** The initial development team will be small, requiring efficient tooling, clear documentation, and a high degree of automation (e.g., through AI agents) to maximize productivity.
 * **Data Access:** Our access to the full, updated CWE corpus is limited to publicly available data. Any proprietary or internal vulnerability data for specific organizational use cases is out of scope for initial data ingestion.
@@ -280,11 +282,3 @@ This section outlines potential challenges and areas requiring further investiga
 
 ### C. References
 *(This section is currently empty. Please provide any relevant links to external documents or resources that informed this Project Brief.)*
-
-## Next Steps
-
-### Immediate Actions
-
-1.  **Save this document:** Please save this comprehensive Project Brief as `docs/project-brief.md` in your project's `docs/` folder. This will serve as a foundational reference throughout the project lifecycle.
-
-
