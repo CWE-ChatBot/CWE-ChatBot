@@ -36,6 +36,86 @@ The CWE ChatBot will be architected as a **Python-based conversational AI applic
   * **Package Organization:** The primary Chainlit application will reside in `apps/chatbot`. Shared code (e.g., Python packages for common utilities, data models, API interfaces) will be organized in `packages/shared` or similar directories, facilitating code reuse across services (if further microservices are introduced).
   * **Rationale:** A monorepo centralizes code management, simplifies dependency synchronization, and fosters code reuse between different logical components (backend services, data ingestion pipelines). This aligns with NFR5 (Codebase Adherence) and NFR49 (Contract-Centric Documentation).
 
+
+### C4 Architecture Diagrams
+
+
+> [!TIP]
+> The C4 Model is a lightweight software architecture description method. It consists of a set of 4 diagrams that describe the static structure of a software system. https://crashedmind.github.io/PlantUMLHitchhikersGuide/C4/c4.html
+>
+> C4 is supported natively in Github via Mermaid https://mermaid.js.org/syntax/c4.html
+
+
+#### C0: System Context Diagram for CWE Chatbot
+
+C0: Context: A high-level diagram that sets the scene; including key system dependencies and people (actors/roles/personas/etc).
+
+```mermaid
+    C4Context
+      title C0: System Context diagram for CWE Chatbot
+
+        Enterprise_Boundary(b0, "System") {
+            Person_Ext(userA, "CWE ChatBot User", "A user of the CWE Chatbot")
+
+            System(cwe_chatbot, "CWE Chatbot", "Allows users to understand CWEs and map CWEs to vulnerability info.")
+
+            System_Ext(cwe_corpus, "CWE List and Guidance", "The CWE List and associated guidance")
+        }
+        BiRel(userA, cwe_chatbot, "Uses")
+        BiRel(cwe_corpus, cwe_chatbot, "Gets knowledge from")
+```
+
+#### C1: CWE Chatbot Container Diagram
+
+C1: Container: A container diagram shows the high-level technology choices, how responsibilities are distributed across them and how the containers communicate.
+- not to be confused with "containers" ala Docker
+
+```mermaid
+    
+    C4Container
+
+    title C1: Container diagram for CWE Chatbot
+
+    Enterprise_Boundary(system, "CWE Chatbot System") {
+        Person(userA, "CWE ChatBot User", "A user of the CWE Chatbot")
+
+
+
+        Boundary(chatbot, "CWE Chatbot") {
+            Container(web_app, "Frontend", "ChainLit")
+            Container(api, "Backend", "LangChain")
+            ContainerDb(db, "Persistent Storage", "LangChain")
+            Container(log, "Logging", "ChainLit")
+            Container(guardrails, "Guardrails", "LlamaFirewall")
+            Container(auth, "Authentication", "ChainLit Authentication")
+            Container(session_mgmt, "Session Management", "ChainLit Session Management")
+            Container(cwe_corpus, "CWE Corpus", "Hybrid RAG")
+        }
+
+        Boundary(external, "CWE List and Guidance") {
+            Container_Ext(cwe_list, "CWE List", "Definitions")
+            Container_Ext(cwe_rcm, "CWE RCM Guidance", "Remediation tips")
+        }
+    }
+
+    Rel(userA, web_app, "Uses")
+    
+    UpdateLayoutConfig(2,2)
+    
+    Rel(web_app, api, "Sends requests to")
+    Rel(web_app, api, "Sends requests to")    
+    Rel(api, db, "Reads from and writes to")
+    Rel(api, log, "Logs events to")
+    Rel(api, guardrails, "Validates responses with")
+    Rel(api, auth, "Verifies user identity via")
+    Rel(api, session_mgmt, "Manages sessions via")
+    Rel(cwe_corpus, cwe_list, "Fetches CWE definitions from")
+    Rel(cwe_corpus, cwe_rcm, "Fetches guidance from")
+
+```
+
+
+
 ### High Level Architecture Diagram
 
 ```mermaid

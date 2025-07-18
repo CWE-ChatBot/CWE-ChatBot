@@ -14,10 +14,18 @@ The following documents were created in order during the project planning phase:
 | 4 | [docs/architecture.md](docs/architecture.md) | [docs/architecture_review.md](docs/architecture_review.md) | Complete technical architecture and system design |
 | 5 | [docs/product_owner_review.md](docs/product_owner_review.md) | - | Final product owner review and approval |
 
+## Additional Documentation
+
+| Category | Document | Description |
+|----------|----------|-------------|
+| Cost Analysis | [docs/costs.md](docs/costs.md) | Project cost breakdown and analysis |
+| Architecture Decision Records | [docs/ADR/](docs/ADR/) | Technical decisions and rationale |
+| Research Documents | [docs/research/](docs/research/) | Security research and guardrails analysis |
 
 ## Project Status
 
 **Phase**: Planning and Documentation Complete
 - ✅ All planning documents created and reviewed by CM. 
 - 🔄 Review by the MITRE CWE team.
+- 🔄 Update docs based on Guardrails and Logging ADRs/research
 - 🔄 implementation phase

@@ -162,6 +162,194 @@ graph TD
   * The quality of the "clarification/guidance response" is paramount for user satisfaction and successful query resolution.
   * This flow works in conjunction with the hallucination mitigation (NFR6) by preventing the chatbot from confidently answering when it shouldn't.
 
+### Detailed Interaction Model (Conceptual)
+
+  * **User Goal:** To illustrate the high-level phases of user interaction, from initial information submission to receiving a final CWE mapping recommendation, including the iterative Q\&A and refinement loops.
+  * **Entry Points:** User submits initial available vulnerability information to the Chatbot.
+  * **Success Criteria:** User achieves a satisfactory CWE mapping recommendation with supporting rationale and resources.
+
+#### Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant T as CWE Support Tool
+    participant K as Knowledge Base
+    
+    Note over U,T: Initial Input Phase
+    U->>+T: Submits Available Information
+    Note right of U:  - Vulnerability Description<br/> - Bug reports<br/>- Source code<br/>- Issue summaries<br/>- Patch information<br/>- Test results<br/>- PoC exploits
+    
+    T->>K: Query CWE Database
+    K-->>T: Retrieve Relevant CWEs
+    
+    Note over T: Analysis Phase
+    T->>T: Process Information
+    
+    T-->>U: Initial Assessment
+    Note left of T: - Potential CWE mappings<br/>- Confidence levels<br/>- Related weaknesses
+    
+    Note over U,T: Interactive Q&A Phase
+    rect rgb(290, 290, 290)
+        U->>T: Clarifying Question
+        T->>K: Reference Knowledge
+        K-->>T: Retrieved Context
+        T-->>U: Targeted Response
+        Note right of T: - Explanation of choice<br/>- Comparative analysis<br/>- Code examples
+    end
+    
+    Note over U,T: Refinement Loop
+    loop Until Satisfactory Mapping
+        U->>T: Additional Context
+        T->>T: Refine Analysis
+        T-->>U: Updated Mapping
+    end
+    
+    Note over U,T: Final Output
+    T-->>-U: Final Recommendation
+    Note right of T: - Confirmed CWE mapping<br/>- Detailed rationale<br/>- Related resources<br/>- Mitigation suggestions <br/>-  reference links to cwe.mitre.org site
+```
+
+#### Edge Cases & Error Handling:
+
+  * **Insufficient Initial Information:** The tool should initiate the Interactive Q\&A Phase immediately if the initial input is too sparse to provide a confident assessment.
+  * **Irresolvable Ambiguity:** If, after multiple refinement loops, a satisfactory mapping cannot be achieved due to inherent ambiguity or lack of information, the tool should state this clearly and gracefully (FR17).
+  * **Loop Exhaustion:** A mechanism (e.g., a "Give Up" button or automatic exit after N rounds) should be in place to prevent endless refinement loops.
+
+#### Notes:
+
+  * This flow provides a comprehensive conceptual model for the user's journey, encompassing the iterative nature of intelligence-gathering and mapping.
+  * It highlights the integration points where the user provides new input and the system refines its understanding.
+  * It acts as a higher-level abstraction for the specific query handling flows.
+
+### Interaction Flow with Security Guardrails and Logging
+
+  * **User Goal:** To demonstrate how security, privacy, and logging mechanisms are integrated at every stage of user interaction with the chatbot, ensuring all inputs are validated, outputs are checked, and interactions are auditable.
+  * **Entry Points:** User submits any information to the Chatbot.
+  * **Success Criteria:** All interactions adhere to defined security policies; inputs are sanitized, outputs are validated against data leakage and hallucination, and a comprehensive audit trail is maintained for every step.
+
+#### Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant G as Input Guardrails
+    participant T as CWE Support Tool
+    participant K as Knowledge Base
+    participant L as Logging System
+    participant O as Output Validator
+    
+    Note over U,O: Secure Input Phase
+    U->>+G: Submit Information
+    Note right of U: Raw Input:<br/>- Vulnerability Description<br/>- Bug reports<br/>- Source code
+    
+    G->>L: Log input attempt
+    G->>G: Validate & Sanitize Input
+    Note right of G: - Check for malicious content<br/>- Remove sensitive data<br/>- Verify input format
+    
+    G->>T: Sanitized Input
+    T->>L: Log validated input
+    
+    T->>K: Query CWE Database
+    K-->>T: Retrieve Relevant CWEs
+    T->>L: Log CWE query results
+    
+    Note over T: Analysis Phase
+    T->>T: Process Information
+    T->>L: Log analysis steps
+    
+    T->>O: Proposed Response
+    O->>O: Validate Output
+    Note right of O: - Verify CWE accuracy<br/>- Check for data leaks<br/>- Ensure response quality
+    
+    O-->>U: Safe Initial Assessment
+    O->>L: Log output delivery
+    
+    Note over U,O: Secure Q&A Phase
+    rect rgb(240, 240, 240)
+        U->>G: Ask Question
+        G->>G: Validate Question
+        G->>T: Safe Question
+        T->>K: Reference Knowledge
+        K-->>T: Retrieved Context
+        T->>O: Proposed Answer
+        O->>O: Validate Answer
+        O-->>U: Safe Response
+        Note right of O: Each Q&A interaction logged
+    end
+    
+    Note over U,O: Refinement with Logging
+    loop Until Satisfactory Mapping
+        U->>G: Additional Context
+        G->>L: Log refinement attempt
+        G->>T: Validated Context
+        T->>T: Refine Analysis
+        T->>O: Updated Mapping
+        O->>L: Log refinement result
+        O-->>U: Validated Update
+    end
+    
+    Note over U,O: Secure Final Output
+    T->>O: Final Recommendation
+    O->>O: Final Validation
+    Note right of O: - Verify final CWE accuracy<br/>- Check completeness<br/>- Validate links & resources
+    O-->>U: Secure Final Output
+    O->>L: Log session completion
+    
+    Note over L: Continuous Logging
+    Note right of L: Log entries include:<br/>- Timestamp<br/>- User ID (anonymized)<br/>- Action type<br/>- Input/Output summary<br/>- Validation results<br/>- Error states
+```
+
+#### Edge Cases & Error Handling:
+
+  * **Validation Failure (Input/Output):** If input validation (`G`) fails, the request should be rejected or sanitized, and logged (NFR8, NFR11). If output validation (`O`) detects issues (e.g., hallucination, sensitive data leak), the response should be blocked or re-generated, and the event logged (NFR6, NFR7).
+  * **Abuse Attempts:** Malicious inputs (e.g., prompt injection) should be detected and blocked by guardrails, triggering alerts and detailed logging (NFR8, NFR10, NFR40).
+  * **System Errors:** Any internal system errors (`T`, `K`) are logged, but raw technical details are prevented from reaching the user by the Output Validator (`O`) (Error Handling Strategy).
+
+#### Notes:
+
+  * This flow visually represents the security principles outlined in the PRD's Security section (NFR7-NFR11, NFR33, NFR34, NFR39, NFR40, NFR47).
+  * It explicitly highlights the roles of `Input Guardrails` and `Output Validator` as critical security controls.
+  * The pervasive `Logging System` demonstrates adherence to audit and monitoring requirements.
+
+### Handling Ambiguous/Insufficient Input
+
+  * **User Goal:** Understand why their query might be unclear or incomplete, and be guided on how to provide better information to get an accurate response from the ChatBot, thereby avoiding misleading or unhelpful outputs.
+  * **Entry Points:** User enters a query into the Main Chat Interface.
+  * **Success Criteria:** The user receives clear, actionable feedback on the ambiguity or insufficiency of their input, along with specific suggestions for rephrasing or providing additional context, enabling them to refine their query effectively.
+
+#### Flow Diagram
+
+```mermaid
+graph TD
+    A[User] --> B(Access Main Chat Interface);
+    B --> C{Enter Ambiguous/Insufficient Query};
+    C --> D[ChatBot Backend Processes Query];
+    D --> E{Query Ambiguous/Insufficient?};
+    E -- Yes --> F[Determine Ambiguity Type / Missing Info];
+    F --> G[Generate Clarification/Guidance Response FR17, FR26];
+    G --> H[Display Clarification in Chat UI];
+    H --> I[User Reads Clarification];
+    I --> J{User Provides More Info?};
+    J -- Yes --> C;
+    J -- No --> K[End Session / Continue General Chat];
+    E -- No --> L[Continue to Normal Query Processing];
+    L --> M[Generate Response];
+    M --> H;
+```
+
+#### Edge Cases & Error Handling:
+
+  * **Repeated Ambiguity:** If the user repeatedly provides ambiguous input even after clarification attempts, the chatbot should gracefully disengage or suggest contacting human support if available.
+  * **No Further Information Possible:** If the chatbot determines that it genuinely lacks the information to answer a query (e.g., due to corpus limitations, NFR19), it should state this clearly (FR17) and avoid making assumptions.
+  * **Misinterpreted Clarification:** If the user's attempt to clarify is also misunderstood, the system should re-evaluate the query from scratch or offer a broader set of suggestions.
+
+#### Notes:
+
+  * This flow directly addresses **FR17 (Insufficient Info Handling)**, **FR26 (Ambiguous Information Handling)**, and **NFR26 (Input Refinement Guidance)**.
+  * The quality of the "clarification/guidance response" is paramount for user satisfaction and successful query resolution.
+  * This flow works in conjunction with the hallucination mitigation (NFR6) by preventing the chatbot from confidently answering when it shouldn't.
+
 ## Wireframes & Mockups
 
 This section clarifies how detailed visual designs will be managed for the CWE ChatBot. While Chainlit provides a robust, out-of-the-box conversational UI, specific mockups or wireframes may still be necessary for custom components or advanced theming.
