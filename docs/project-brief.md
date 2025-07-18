@@ -33,20 +33,36 @@ The **CWE ChatBot** proposes a novel, conversational AI interface designed to tr
 **Core Concept and Approach:**
 The ChatBot will act as an intelligent assistant, capable of engaging users in a dialogue to help them navigate the complexities of software weaknesses. Users will pose questions in plain language, receive concise answers, and be able to ask follow-up questions to drill down into specific details or explore related CWEs. The system will prioritize clarity and actionability, adapting its responses based on the identified user role and the context of their query, as identified in our user scenarios.
 
+To illustrate the core interaction, consider the following high-level flow:
+
+```mermaid
+graph TD
+    A[User] --> B{Ask Query about CWE};
+    B --> C[ChatBot Interface];
+    C --> D[ChatBot Backend Chainlit];
+    D --> E[NLPAI Service];
+    E --> F[Vector Database CWE Corpus];
+    F --> E;
+    E --> D;
+    D --> G[Generate Response];
+    G --> C;
+    C --> H[User Receives Answer];
+```
+
 **Key Differentiators from Existing Solutions:**
 Unlike current static search and browse tools that require users to manually filter and interpret vast amounts of information, the CWE ChatBot offers:
 
-* **Interactive Contextualization:** It actively engages in a dialogue, understanding the nuances of the user's role and specific needs (e.g., a developer needing code examples vs. a PSIRT member needing advisory language).
-* **Intelligent Query Resolution:** Moves beyond simple search to semantically interpret complex questions and provide direct answers or guided pathways to information, saving significant time and reducing cognitive load.
-* **Tailored Information Delivery:** Delivers information in a format and level of detail appropriate for the user's immediate task (e.g., quick facts for a bug bounty hunter vs. detailed remediation for a developer).
-* **Tight Feedback Loop:** The maintainers for the CWE corpus can see how users are using it via the queries to the ChatBot, and the user feedback on the ChatBot responses 
+  * **Interactive Contextualization:** It actively engages in a dialogue, understanding the nuances of the user's role and specific needs (e.g., a developer needing code examples vs. a PSIRT member needing advisory language).
+  * **Intelligent Query Resolution:** Moves beyond simple search to semantically interpret complex questions and provide direct answers or guided pathways to information, saving significant time and reducing cognitive load.
+  * **Tailored Information Delivery:** Delivers information in a format and level of detail appropriate for the user's immediate task (e.g., quick facts for a bug bounty hunter vs. detailed remediation for a developer).
+  * **Tight Feedback Loop:** The maintainers for the CWE corpus can see how users are using it via the queries to the ChatBot, and the user feedback on the ChatBot responses.
 
 **Why This Solution Will Succeed Where Others Haven't:**
 This solution directly addresses the core pain point of inefficiency and lack of actionable context in existing CWE interaction methods. Its success will stem from:
 
-* **Direct Problem-Solving Utility:** It enables users to resolve specific vulnerability-related questions quickly, integrating into their high-pressure workflows (e.g., PSIRT, developers).
-* **Adaptive Intelligence:** The conversational interface reduces the barrier to entry for complex information, making the CWE corpus more accessible and useful to a broader audience without requiring deep prior knowledge of its structure.
-* **Scalability of Insight:** For roles like Product Managers, the ability to converse with the corpus can reveal trends and patterns that are currently obscured by passive Browse, enabling proactive weakness prevention at scale.
+  * **Direct Problem-Solving Utility:** It enables users to resolve specific vulnerability-related questions quickly, integrating into their high-pressure workflows (e.g., PSIRT, developers).
+  * **Adaptive Intelligence:** The conversational interface reduces the barrier to entry for complex information, making the CWE corpus more accessible and useful to a broader audience without requiring deep prior knowledge of its structure.
+  * **Scalability of Insight:** For roles like Product Managers, the ability to converse with the corpus can reveal trends and patterns that are currently obscured by passive Browse, enabling proactive weakness prevention at scale.
 
 **High-Level Vision for the Product:**
 The CWE ChatBot aims to become the indispensable interactive knowledge base for cybersecurity professionals, fundamentally transforming how software weaknesses are understood, addressed, and ultimately prevented, making robust security practices more efficient and intuitive for everyone.

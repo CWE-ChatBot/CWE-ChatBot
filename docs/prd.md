@@ -8,7 +8,7 @@
   * Enable PSIRT members to efficiently create vulnerability advisories.
   * Contribute to a 20% decrease in the average Mean Time To Remediate (MTTR) for vulnerabilities linked to CWEs for developers by providing faster and more effective access to remediation information within 18 months of launch.
   * Support a 50% increase in the proactive identification of common CWE patterns across product lines by Product Managers through enhanced interactive analysis capabilities within 24 months, leading to actionable prevention strategies.
-  * Achieve high user satisfaction with the ChatBot's clarity and actionability.
+  * Achieve high user satisfaction rate (CSAT) with the clarity and actionability of chatbot responses within 6 months of launch.
 
 ### Background Context
 
@@ -16,12 +16,16 @@ The current methods for engaging with the extensive Common Weakness Enumeration 
 
 ### Change Log
 
-| Date         | Version | Description                 | Author      |
-| :----------- | :------ | :-------------------------- | :---------- |
-| July 18, 2025 | 1.0     | Initial PRD draft based on Project Brief | John (PM)   |
-| July 18, 2025 | 1.1     | Incorporated detailed User Stories and Non-User Requirements with linkable IDs; Revised Business Objectives for clearer accountability; Clarified NFR grouping. | John (PM)   |
-| July 18, 2025 | 1.2     | Clarified FR19, NFR33, NFR34, NFR41 for dual-hosting model; Added FR28, FR29 for BYO LLM/Key. | John (PM) |
-| July 18, 2025 | 1.3     | Ensured all NFRs consistently use the "NFRx: Category - Subcategory (Optional) - Description" format. | John (PM) |
+| Date | Version | Description | Author |
+|---|---|---|---|
+| July 18, 2025 | 1.0 | Initial PRD draft based on Project Brief | John (PM) |
+| July 18, 2025 | 1.1 | Incorporated detailed User Stories and Non-User Requirements with linkable IDs; Revised Business Objectives for clearer accountability; Clarified NFR grouping. | John (PM) |
+| July 18, 2025 | 1.2 | Clarified FR19, NFR33, NFR34, NFR41 for dual-hosting model; Added FR28, FR29 for BYO LLM/Key. | John (PM) |
+| July 18, 2025 | 1.3 | Ensured all NFRs consistently use the "NFRx: Category - Subcategory (Optional) - Description" format; Added clarifications for RAG in Epic List. | John (PM) |
+| July 18, 2025 | 1.4 | Updated ACs in stories for local testability; Refined NFR33 for GDPR compliance; Added NFR47 for comprehensive security testing (SAST, DAST, LLM review, Pentest). | John (PM) |
+| July 18, 2025 | 1.5 | Added NFR48 for Technical Debt Management (continuous tools, epic reviews); Added NFR49 for Contract-Centric Documentation ("live with code"). | John (PM) |
+| July 18, 2025 | 1.6 | Added NFR50 for Stakeholder Communication Plan and NFR51 for Decision Approval Process. | John (PM) |
+| July 18, 2025 | 1.7 | Added Mermaid diagram to Proposed Solution; Updated Business Objectives as per latest feedback. | John (PM) |
 
 ## Requirements
 
@@ -68,7 +72,7 @@ The current methods for engaging with the extensive Common Weakness Enumeration 
 7.  \<a id="NFR\_SECURITY\_DATA\_LEAK"\>\</a\>**NFR7: Security & Privacy - Data Leakage Prevention** The chatbot shall not leak private user data or vulnerability details provided in-session.
 8.  \<a id="NFR\_SECURITY\_RESTRICTIONS"\>\</a\>**NFR8: Security & Privacy - Function Restrictions & Abuse Prevention** It shall be restricted to CWE mapping functions and prevent abuse (e.g., code/prompt injection, SSRF).
 9.  \<a id="NFR\_SECURITY\_CONFIDENTIALITY"\>\</a\>**NFR9: Security & Privacy - System Confidentiality** The system prompt and long-term memory must remain confidential; user context should be session-scoped.
-10. \<a id="NFR\_SECURITY\_QUOTAS"\>\</a\>**NFR10: Security & Privacy - Quotas & Rate Limits** Implement quotas and rate limits to prevent resource exhaustion and billing abuse.
+10. \<a id="NFR\_SECURITY\_QUOTAS\_PER\_USER\_DOS"\>\</a\>**NFR10: Security & Privacy - Quotas & Rate Limits** The system shall implement **per-user quotas and overall rate limits** to prevent resource exhaustion, billing abuse, and mitigate potential **Denial of Service (DoS) attempts** or other forms of abuse.
 11. \<a id="NFR\_SECURITY\_LOGGING"\>\</a\>**NFR11: Security & Privacy - Logging, Auditing & Reporting** Provide logging, auditing, and abuse reporting mechanisms.
 12. \<a id="NFR\_EASE\_INSTALL"\>\</a\>**NFR12: Ease of Access & Openness - Installation & Access** The solution should be easy to install and access (minimal setup for users).
 13. \<a id="NFR\_EASE\_REGISTRATION"\>\</a\>**NFR13: Ease of Access & Openness - Registration Models** Registration can be required; support open or invite-only access models.
@@ -91,8 +95,8 @@ The current methods for engaging with the extensive Common Weakness Enumeration 
 30. \<a id="NFR\_AIML\_MODEL\_SELECTION"\>\</a\>**NFR30: AI/ML Engine - Model Selection & Documentation** The foundational AI model(s) used shall be selected and documented (e.g., open-source vs. commercial).
 31. \<a id="NFR\_AIML\_SAFETY"\>\</a\>**NFR31: AI/ML Engine - Prompt & Safety Mechanisms** Prompt templates and safety mechanisms shall guard against misuse.
 32. \<a id="NFR\_DATA\_HANDLING\_SIZE\_LIMITS"\>\</a\>**NFR32: Data Handling - Input Size Limits** The system shall define and enforce size limits on submitted code or documentation.
-33. \<a id="NFR\_SECURITY\_SENSITIVE\_CODE\_HANDLING"\>\</a\>**NFR33: Security & Privacy - Sensitive Information Handling** The system shall ensure secure handling and isolation of proprietary or sensitive code submissions.
-34. \<a id="NFR\_SECURITY\_AUTHN\_AUTHZ"\>\</a\>**NFR34: Security & Privacy - Authentication & Authorization** The system shall implement authentication and authorization mechanisms for user access control.
+33. \<a id="NFR\_SECURITY\_SENSITIVE\_DATA\_HANDLING\_GDPR"\>\</a\>**NFR33: Security & Privacy - Sensitive Data Handling & GDPR Compliance** The system shall ensure secure handling and isolation of all sensitive data, including **user login ID, email, and credentials (PII)**, as well as proprietary or sensitive code submissions. For **self-hosted deployments**, this includes data residency within the user's infrastructure. For **centrally-hosted deployments**, this includes strong encryption at rest and in transit, strict access policies, and **full compliance with GDPR requirements** for data processing, storage, and user rights.
+34. \<a id="NFR\_SECURITY\_AUTHN\_AUTHZ"\>\</a\>**NFR34: Security & Privacy - Authentication & Authorization** The system shall implement authentication and authorization mechanisms for user access control, supporting both centralized user management (for centrally-hosted) and configurable integration with enterprise identity providers (for self-hosted).
 35. \<a id="NFR\_USER\_EXPERIENCE\_CONTEXT\_PRESERVATION"\>\</a\>**NFR35: User Guidance & Interaction - Session Context Preservation** The system shall preserve a user's conversational context across sessions.
 36. \<a id="NFR\_MAINTAINABILITY\_FEEDBACK\_LOOP"\>\</a\>**NFR36: Maintainability & Code Quality - Continuous Improvement Feedback Loop** The system shall have a defined process for incorporating user feedback into continuous system improvement.
 37. \<a id="NFR\_INTEGRATION\_API\_ACCESS"\>\</a\>**NFR37: Architecture & Integration - API Accessibility** The ChatBot shall be accessible via a web browser and consider an API for programmatic access in post-MVP phases.
@@ -105,6 +109,25 @@ The current methods for engaging with the extensive Common Weakness Enumeration 
 44. \<a id="NFR\_INTEGRATION\_VCS"\>\</a\>**NFR44: Architecture & Integration - Version Control System Integration** The system shall define a strategy for potential future integration with version control systems.
 45. \<a id="NFR\_DATA\_HANDLING\_EXPORT\_FORMATS"\>\</a\>**NFR45: Data Handling - Export Formats** The system SHOULD support various export formats for mapped CWEs and user history.
 46. \<a id="NFR\_ACCURACY\_CONFLICT\_RESOLUTION"\>\</a\>**NFR46: Accuracy & Correctness - Conflict Resolution Guidance** The ChatBot shall provide mechanisms or guidance for resolving conflicts between multiple possible CWE mappings.
+47. \<a id="NFR\_SECURITY\_APP\_TESTING"\>\</a\>**NFR47: Security & Privacy - Application Security Testing** The system shall undergo regular and comprehensive security testing including:
+      * **Static Application Security Testing (SAST):** Automated code analysis shall be performed in the CI/CD pipeline for every pull request or significant commit.
+      * **Dynamic Application Security Testing (DAST):** Automated vulnerability scanning shall be performed on deployed environments (e.g., staging, pre-production) at least weekly.
+      * **LLM-based Security Reviews:** Automated or semi-automated security code reviews leveraging LLM capabilities for identifying potential weaknesses and anti-patterns shall be integrated into the development workflow.
+      * **Manual Penetration Testing:** External penetration tests shall be conducted annually, and additionally on major feature releases or significant architectural changes.
+48. \<a id="NFR\_MAINTAINABILITY\_TECH\_DEBT"\>\</a\>**NFR48: Maintainability & Code Quality - Technical Debt Management** The project shall manage technical debt through a multi-pronged approach:
+      * **Continuous Automated Checks:** Traditional Python static analysis tools (e.g., linters, code duplication detectors, complexity analyzers) shall be run continuously in the development workflow to provide immediate feedback on code quality and identify minor technical debt as it arises.
+      * **Epic-Level Technical Debt Review:** A dedicated technical debt review shall be conducted after the delivery of each epic, and before commencing the next epic. This review will involve a combination of:
+          * Automated analysis using **traditional Python static analysis tools**.
+          * **LLM-based code reviews** for identifying complex patterns, potential refactoring opportunities, and architectural adherence.
+          * **Manual peer review** by senior developers or architects.
+      * Identified technical debt will be logged, prioritized, and addressed as part of the regular development backlog or dedicated refactoring sprints.
+49. \<a id="NFR\_MAINTAINABILITY\_CONTRACT\_DOCS"\>\</a\>**NFR49: Maintainability & Code Quality - Contract-Centric Documentation** The project shall adopt a **contract-centric software engineering approach**, where **documentation artifacts are treated as living contracts** for system behavior, interfaces, and architecture. Documentation (including API specifications, architectural decisions, module READMEs, and key design patterns) shall **"live with the code"**. This means:
+      * It will **inform the code** by serving as a primary source of truth for implementation.
+      * It will **be informed by the code** through automated generation or validation where feasible.
+      * It will be **kept in sync with the code** through dedicated processes (e.g., CI/CD checks, regular review cycles) to ensure accuracy and prevent drift.
+      * This approach is critical for enhancing both human and AI agent productivity and understanding of the codebase.
+50. \<a id="NFR\_CLARITY\_COMMUNICATION\_PLAN"\>\</a\>**NFR50: Clarity & Communication - Stakeholder Communication Plan** The project shall maintain a clear communication strategy to keep stakeholders informed about key updates, progress, and significant changes. This includes regular status reports, release announcements, and dedicated forums for feedback.
+51. \<a id="NFR\_CLARITY\_APPROVAL\_PROCESS"\>\</a\>**NFR51: Clarity & Communication - Decision Approval Process** A defined approval process shall be followed for all major project decisions and significant changes to core documentation artifacts (e.g., PRD, Architecture Document). Key approvals will typically require explicit sign-off from the Product Owner and relevant technical leads or architects.
 
 ## User Interface Design Goals
 
@@ -129,6 +152,7 @@ From a product perspective, the most critical screens/views for delivering the C
   * **Settings/Profile Page:** For managing user preferences, perhaps authentication details, and potentially viewing chat history.
   * **Feedback/Report Issue Module:** A discreet mechanism within the chat interface for users to report inaccuracies or provide suggestions.
   * **Onboarding/Introduction Screen:** A brief, guided tour for new users to understand the ChatBot's capabilities and best practices for interaction.
+  * **Detailed User Flow Documentation:** For each critical user journey spanning these core screens, detailed user flow diagrams (e.g., using Mermaid) explicitly mapping steps, decision points, and error handling will be created and maintained as a mandatory output in the **UI/UX Specification (`front-end-spec.md`) by the UX Expert**.
 
 ### Accessibility: WCAG AA
 
@@ -197,16 +221,11 @@ This section documents the initial technical decisions and assumptions that will
 This section outlines the high-level epics that represent significant, deployable increments of functionality for the CWE ChatBot. Each epic is designed to build upon the previous one, delivering tangible value as the project progresses.
 
   * **Epic 1: Foundation & Core Chatbot Infrastructure**
-      * **Goal:** Establish the foundational project setup (monorepo structure), deploy the basic Chainlit application on GCP Cloud Run, and implement the initial pipeline for ingesting and preparing the CWE corpus data for conversational interaction. This epic aims to deliver a "hello world" chatbot that can respond with simple, static CWE information, validating the core technical stack.
+      * **Goal:** Establish the foundational project setup (monorepo structure), deploy the basic Chainlit application on GCP Cloud Run, and implement the initial pipeline for ingesting and preparing the CWE corpus data **for effective Retrieval Augmented Generation (RAG)**. This epic aims to deliver a "hello world" chatbot that can respond with simple, static CWE information, validating the core technical stack.
   * **Epic 2: Core Conversational & Contextual Intelligence**
-      * **Goal:** Implement robust NLU, advanced information retrieval/synthesis, and initial role-based context awareness to provide accurate and tailored CWE responses. This epic focuses on building the core AI intelligence, allowing the chatbot to provide accurate and relevant CWE responses and basic follow-up capabilities (FR1-FR6, FR12-FR17).
+      * **Goal:** Implement robust NLU and the **core Retrieval Augmented Generation (RAG) process**, including advanced information retrieval/synthesis and initial role-based context awareness, to provide accurate and tailored CWE responses. This epic focuses on building the core AI intelligence and minimizing hallucination (FR1-FR6, FR12-FR17).
   * **Epic 3: Enhanced User Interaction & Feedback Loop**
       * **Goal:** Develop features for summarizing/detailing CWEs, suggesting related content, and enabling user feedback, improving the overall interactive experience and chatbot learning.
-
-
-
-
-
 
 ## Epic 1: Foundation & Core Chatbot Infrastructure
 
@@ -234,7 +253,7 @@ This section outlines the high-level epics that represent significant, deployabl
 
 #### Acceptance Criteria
 
-1.  **AC1:** A minimal Chainlit application is created within the `apps/chatbot` directory, configured to respond with a simple greeting (e.g., "Hello, welcome to CWE ChatBot!").
+1.  **AC1:** A minimal Chainlit application is created within the `apps/chatbot` directory, configured to respond with a simple greeting (e.g., "Hello, welcome to CWE ChatBot\!").
 2.  **AC2:** The Chainlit application can be successfully containerized using a `Dockerfile` and built into a Docker image.
 3.  **AC3:** A CI/CD pipeline (e.g., GitHub Actions, Google Cloud Build) is configured to automatically build the Docker image and deploy it to GCP Cloud Run upon changes to the `apps/chatbot` directory.
 4.  **AC4:** The deployed Chainlit application is accessible via a public URL, and its basic functionality can be **verified via a simple HTTP request or browser interaction from a local machine**.
@@ -253,8 +272,6 @@ This section outlines the high-level epics that represent significant, deployabl
 3.  **AC3:** Embeddings are generated for this subset of CWEs using a selected embedding model (e.g., a local sentence transformer or an external API).
 4.  **AC4:** The generated embeddings and corresponding CWE metadata (ID, Name) are successfully stored in the chosen vector database (e.g., Pinecone, Weaviate, or a simple in-memory vector store for MVP validation).
 5.  **AC5:** The ingestion process is repeatable and can be manually triggered via a command-line interface or simple function call, **and produces a verifiable local output (e.g., confirmation log, sample data file, or queryable local vector store).**
-
----
 
 ## Epic 2: Core Conversational & Contextual Intelligence
 
@@ -302,8 +319,6 @@ This section outlines the high-level epics that represent significant, deployabl
 4.  **AC4:** The system displays a confidence score or a prioritization order alongside its CWE suggestions or answers (FR15).
 5.  **AC5:** When the system's confidence in a mapping or a response is low or information is insufficient, it clearly states this limitation and suggests ways the user can refine their query to get a better result (FR17, NFR26), **verifiable through local tests using ambiguous inputs.**
 
----
-
 ## Epic 3: Enhanced User Interaction & Feedback Loop
 
 **Epic Goal:** Develop features for summarizing/detailing CWEs, suggesting related content, and enabling user feedback, improving the overall interactive experience and chatbot learning.
@@ -349,9 +364,6 @@ This section outlines the high-level epics that represent significant, deployabl
 3.  **AC3:** A defined, automated, or semi-automated process exists for reviewing collected user feedback and systematically incorporating it into the chatbot's knowledge base, response logic, or underlying AI model for continuous improvement (FR18, NFR36).
 4.  **AC4:** The system adheres to predefined data retention policies for all collected user data, feedback, and conversational history, ensuring compliance and privacy (NFR39).
 5.  **AC5:** The ChatBot supports the export of mapped CWEs and user's conversational history in various common formats (e.g., Markdown, JSON) for external use or record-keeping (NFR45), **verifiable by locally triggering export functionality and confirming file format.**
-
-
-
 
 ## Appendices
 
