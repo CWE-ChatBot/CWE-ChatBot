@@ -1,4 +1,4 @@
-# CWE ChatBot - BMad Project
+# CWE ChatBot
 
 A conversational AI application for interacting with the MITRE Common Weakness Enumeration (CWE) corpus, designed to revolutionize cybersecurity vulnerability analysis and advisory creation.
 
