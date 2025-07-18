@@ -203,9 +203,14 @@ This section outlines the high-level epics that represent significant, deployabl
   * **Epic 3: Enhanced User Interaction & Feedback Loop**
       * **Goal:** Develop features for summarizing/detailing CWEs, suggesting related content, and enabling user feedback, improving the overall interactive experience and chatbot learning.
 
+
+
+
+
+
 ## Epic 1: Foundation & Core Chatbot Infrastructure
 
-**Epic Goal:** Establish the foundational project setup (monorepo structure), deploy the basic Chainlit application on GCP Cloud Run, and implement the initial pipeline for ingesting and preparing the CWE corpus data for conversational interaction. This epic aims to deliver a "hello world" chatbot that can respond with simple, static CWE information, validating the core technical stack.
+**Epic Goal:** Establish the foundational project setup (monorepo structure), deploy the basic Chainlit application on GCP Cloud Run, and implement the initial pipeline for ingesting and preparing the CWE corpus data **for effective Retrieval Augmented Generation (RAG)**. This epic aims to deliver a "hello world" chatbot that can respond with simple, static CWE information, validating the core technical stack.
 
 ### Story 1.1: Project Repository Setup & Initial Commit
 
@@ -229,11 +234,11 @@ This section outlines the high-level epics that represent significant, deployabl
 
 #### Acceptance Criteria
 
-1.  **AC1:** A minimal Chainlit application is created within the `apps/chatbot` directory, configured to respond with a simple greeting (e.g., "Hello, welcome to CWE ChatBot\!").
+1.  **AC1:** A minimal Chainlit application is created within the `apps/chatbot` directory, configured to respond with a simple greeting (e.g., "Hello, welcome to CWE ChatBot!").
 2.  **AC2:** The Chainlit application can be successfully containerized using a `Dockerfile` and built into a Docker image.
 3.  **AC3:** A CI/CD pipeline (e.g., GitHub Actions, Google Cloud Build) is configured to automatically build the Docker image and deploy it to GCP Cloud Run upon changes to the `apps/chatbot` directory.
-4.  **AC4:** The deployed Chainlit application is accessible via a public URL.
-5.  **AC5:** Basic application logs from the Chainlit app (e.g., startup messages) are visible and accessible in Google Cloud Logging.
+4.  **AC4:** The deployed Chainlit application is accessible via a public URL, and its basic functionality can be **verified via a simple HTTP request or browser interaction from a local machine**.
+5.  **AC5:** Basic application logs from the Chainlit app (e.g., startup messages) are visible and accessible in Google Cloud Logging, **and can also be accessed locally during development.**
 
 ### Story 1.3: Initial CWE Data Ingestion Pipeline
 
@@ -247,11 +252,13 @@ This section outlines the high-level epics that represent significant, deployabl
 2.  **AC2:** The script can parse and extract relevant information (ID, Name, Description, Relationships) for a small, pre-defined subset of CWEs (e.g., CWE-79, CWE-89, CWE-123).
 3.  **AC3:** Embeddings are generated for this subset of CWEs using a selected embedding model (e.g., a local sentence transformer or an external API).
 4.  **AC4:** The generated embeddings and corresponding CWE metadata (ID, Name) are successfully stored in the chosen vector database (e.g., Pinecone, Weaviate, or a simple in-memory vector store for MVP validation).
-5.  **AC5:** The ingestion process is repeatable and can be manually triggered via a command-line interface or simple function call.
+5.  **AC5:** The ingestion process is repeatable and can be manually triggered via a command-line interface or simple function call, **and produces a verifiable local output (e.g., confirmation log, sample data file, or queryable local vector store).**
+
+---
 
 ## Epic 2: Core Conversational & Contextual Intelligence
 
-**Epic Goal:** Implement robust NLU, advanced information retrieval/synthesis, and initial role-based context awareness to provide accurate and tailored CWE responses. This epic focuses on the core AI intelligence.
+**Epic Goal:** Implement robust NLU and the **core Retrieval Augmented Generation (RAG) process**, including advanced information retrieval/synthesis and initial role-based context awareness, to provide accurate and tailored CWE responses. This epic focuses on building the core AI intelligence and minimizing hallucination (FR1-FR6, FR12-FR17).
 
 ### Story 2.1: Implement Core NLU & Initial CWE Query Matching
 
@@ -264,8 +271,8 @@ This section outlines the high-level epics that represent significant, deployabl
 1.  **AC1:** The Chainlit application successfully receives and processes natural language input from the user.
 2.  **AC2:** Basic Natural Language Understanding (NLU) capabilities are integrated (e.g., leveraging an underlying LLM for intent recognition and entity extraction related to security concepts).
 3.  **AC3:** The system can reliably identify direct mentions of specific CWE IDs (e.g., "Tell me about CWE-79") within user queries.
-4.  **AC4:** For identified CWE IDs, the system retrieves and displays the basic name and a concise short description from the vector database (using data ingested in Story 1.3).
-5.  **AC5:** The system gracefully handles unrecognized or out-of-scope queries by responding with a polite message indicating it doesn't understand or cannot fulfill the request (FR17).
+4.  **AC4:** For identified CWE IDs, the system retrieves and displays the basic name and a concise short description from the vector database (using data ingested in Story 1.3), **verifiable by sending a test query via a local script or the Chainlit UI.**
+5.  **AC5:** The system gracefully handles unrecognized or out-of-scope queries by responding with a polite message indicating it doesn't understand or cannot fulfill the request (FR17), **verifiable via sending diverse test queries locally.**
 
 ### Story 2.2: Contextual Retrieval & Basic Follow-up Questions
 
@@ -275,9 +282,9 @@ This section outlines the high-level epics that represent significant, deployabl
 
 #### Acceptance Criteria
 
-1.  **AC1:** When a CWE is successfully identified from a query, the system retrieves and presents comprehensive information (e.g., full description, common consequences, relationships to other CWEs or categories) from the vector database (NFR19).
-2.  **AC2:** The system can understand and respond accurately to simple follow-up questions that are directly related to the previously discussed CWE context (e.g., "What are its common consequences?", "Give me an example", "How does this relate to X?").
-3.  **AC3:** Responses to follow-up questions are extracted or synthesized directly from the detailed, stored CWE metadata, ensuring factual accuracy.
+1.  **AC1:** When a CWE is successfully identified from a query, the system retrieves and presents comprehensive information (e.g., full description, common consequences, relationships to other CWEs or categories) from the vector database (NFR19), **verifiable by local queries that return expected structured data.**
+2.  **AC2:** The system can understand and respond accurately to simple follow-up questions that are directly related to the previously discussed CWE context (e.g., "What are its common consequences?", "Give me an example", "How does this relate to X?"), **verifiable through interactive local testing in the Chainlit UI.**
+3.  **AC3:** Responses to follow-up questions are extracted or synthesized directly from the detailed, stored CWE metadata, ensuring factual accuracy, **verifiable by comparing chatbot output against raw CWE data locally.**
 4.  **AC4:** The ChatBot can respond to queries asking for "similar CWEs" by retrieving and listing related CWEs identified within the corpus (FR6).
 5.  **AC5:** For detailed information, the ChatBot initially provides a concise answer or summary, with an explicit option or prompt for the user to request more in-depth details (FR5, NFR21).
 
@@ -290,10 +297,12 @@ This section outlines the high-level epics that represent significant, deployabl
 #### Acceptance Criteria
 
 1.  **AC1:** The ChatBot explicitly prompts the user to select their role (e.g., PSIRT member, Developer, Academic Researcher, Bug Bounty Hunter, Product Manager) at the start of a new session, or provides a command/option to change role during a session (FR4).
-2.  **AC2:** For a given CWE, the system can dynamically tailor its response content and emphasis based on the selected role (e.g., for Developers, prioritize code-level remediation steps; for PSIRT, focus on impact, advisory language, and risk assessment details) (FR4).
-3.  **AC3:** Core AI mechanisms are implemented to actively minimize AI hallucination, such as directly citing specific passages from the CWE corpus for critical information or indicating when information is derived rather than directly quoted (NFR6, FR12).
+2.  **AC2:** For a given CWE, the system can dynamically tailor its response content and emphasis based on the selected role (e.g., for Developers, prioritize code-level remediation steps; for PSIRT, focus on impact, advisory language, and risk assessment details) (FR4), **verifiable by testing different role selections in the Chainlit UI and observing response variations.**
+3.  **AC3:** Core AI mechanisms are implemented to actively minimize AI hallucination, such as directly citing specific passages from the CWE corpus for critical information or indicating when information is derived rather than directly quoted (NFR6, FR12), **verifiable by local automated tests that flag unexpected or uncited responses for known queries.**
 4.  **AC4:** The system displays a confidence score or a prioritization order alongside its CWE suggestions or answers (FR15).
-5.  **AC5:** When the system's confidence in a mapping or a response is low or information is insufficient, it clearly states this limitation and suggests ways the user can refine their query to get a better result (FR17, NFR26).
+5.  **AC5:** When the system's confidence in a mapping or a response is low or information is insufficient, it clearly states this limitation and suggests ways the user can refine their query to get a better result (FR17, NFR26), **verifiable through local tests using ambiguous inputs.**
+
+---
 
 ## Epic 3: Enhanced User Interaction & Feedback Loop
 
@@ -307,11 +316,11 @@ This section outlines the high-level epics that represent significant, deployabl
 
 #### Acceptance Criteria
 
-1.  **AC1:** The ChatBot supports common and flexible input patterns, including directly pasting vulnerability descriptions, CVE advisories, and tool outputs into the chat interface (NFR27).
-2.  **AC2:** The ChatBot provides a secure mechanism for users to submit code snippets or documentation files for analysis (FR25).
-3.  **AC3:** The system guarantees that any internal confidential or sensitive information provided by the user (e.g., code snippets) never leaves the user's defined domain or company, ensuring data privacy and isolation (FR19, NFR33).
-4.  **AC4:** A user's conversational context (e.g., previously discussed CWEs, chosen role, follow-up questions) is preserved throughout a single session and, optionally, across multiple user sessions (NFR35).
-5.  **AC5:** The system defines and gracefully enforces size limits on submitted text and code to prevent abuse and manage performance (NFR32).
+1.  **AC1:** The ChatBot supports common and flexible input patterns, including directly pasting vulnerability descriptions, CVE advisories, and tool outputs into the chat interface (NFR27), **verifiable by submitting various input types locally.**
+2.  **AC2:** The ChatBot provides a secure mechanism for users to submit code snippets or documentation files for analysis (FR25), **verifiable through local file submission tests confirming secure handling and rejection of unsafe inputs.**
+3.  **AC3:** The system guarantees that any internal confidential or sensitive information provided by the user (e.g., code snippets) never leaves the user's defined domain or company, ensuring data privacy and isolation (FR19, NFR33), **verifiable through network traffic analysis in self-hosted environments and data flow audits in centrally-hosted ones.**
+4.  **AC4:** A user's conversational context (e.g., previously discussed CWEs, chosen role, follow-up questions) is preserved throughout a single session and, optionally, across multiple user sessions (NFR35), **verifiable through local session testing in the Chainlit UI.**
+5.  **AC5:** The system defines and gracefully enforces size limits on submitted text and code to prevent abuse and manage performance (NFR32), **verifiable by attempting to submit oversized inputs locally.**
 
 ### Story 3.2: Refined Mapping Suggestions & Explanations
 
@@ -321,11 +330,11 @@ This section outlines the high-level epics that represent significant, deployabl
 
 #### Acceptance Criteria
 
-1.  **AC1:** The ChatBot presents a concise list of prioritized CWE recommendations, each accompanied by a clear confidence score (NFR22).
+1.  **AC1:** The ChatBot presents a concise list of prioritized CWE recommendations, each accompanied by a clear confidence score (NFR22), **verifiable through local test queries and inspecting the UI output.**
 2.  **AC2:** The system intelligently limits the number of suggested CWEs to avoid information overload and explicitly avoids recommending Prohibited or Discouraged CWEs from the corpus (NFR23).
-3.  **AC3:** The ChatBot provides clear, concise explanations for its mapping reasoning, ideally quoting relevant snippets from CWE descriptions, mapping notes, or related documentation (FR16, NFR24).
-4.  **AC4:** The system allows users to explore CWE relationships (e.g., parent/child relationships, associations) directly within the conversation, enabling chaining of related concepts (NFR25).
-5.  **AC5:** For low-confidence suggestions, the ChatBot proactively offers specific guidance to the user on how to refine their input or provide more detail to improve the accuracy of future recommendations (NFR26).
+3.  **AC3:** The ChatBot provides clear, concise explanations for its mapping reasoning, ideally quoting relevant snippets from CWE descriptions, mapping notes, or related documentation (FR16, NFR24), **verifiable by reviewing chatbot explanations for a diverse set of queries locally.**
+4.  **AC4:** The system allows users to explore CWE relationships (e.g., parent/child relationships, associations) directly within the conversation, enabling chaining of related concepts (NFR25), **verifiable through interactive local testing of relationship queries.**
+5.  **AC5:** For low-confidence suggestions, the ChatBot proactively offers specific guidance to the user on how to refine their input or provide more detail to improve the accuracy of future recommendations (NFR26), **verifiable by submitting ambiguous inputs locally and checking the chatbot's response.**
 
 ### Story 3.3: User Feedback and Continuous Improvement Integration
 
@@ -335,11 +344,14 @@ This section outlines the high-level epics that represent significant, deployabl
 
 #### Acceptance Criteria
 
-1.  **AC1:** A clear, intuitive, and easily accessible mechanism is implemented within the chatbot interface for users to report incorrect mappings, inaccurate information, or provide general suggestions and feedback on responses (FR27).
-2.  **AC2:** All user feedback, interaction logs, and relevant conversational data are securely collected and stored for analysis and audit purposes (NFR11, NFR40).
+1.  **AC1:** A clear, intuitive, and easily accessible mechanism is implemented within the chatbot interface for users to report incorrect mappings, inaccurate information, or provide general suggestions and feedback on responses (FR27), **verifiable through local UI interaction to submit feedback.**
+2.  **AC2:** All user feedback, interaction logs, and relevant conversational data are securely collected and stored for analysis and audit purposes (NFR11, NFR40), **verifiable by inspecting local storage/logs after submitting feedback.**
 3.  **AC3:** A defined, automated, or semi-automated process exists for reviewing collected user feedback and systematically incorporating it into the chatbot's knowledge base, response logic, or underlying AI model for continuous improvement (FR18, NFR36).
 4.  **AC4:** The system adheres to predefined data retention policies for all collected user data, feedback, and conversational history, ensuring compliance and privacy (NFR39).
-5.  **AC5:** The ChatBot supports the export of mapped CWEs and user's conversational history in various common formats (e.g., Markdown, JSON) for external use or record-keeping (NFR45).
+5.  **AC5:** The ChatBot supports the export of mapped CWEs and user's conversational history in various common formats (e.g., Markdown, JSON) for external use or record-keeping (NFR45), **verifiable by locally triggering export functionality and confirming file format.**
+
+
+
 
 ## Appendices
 
