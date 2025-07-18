@@ -42,3 +42,30 @@ attached is the current cwe cve color scheme so we should use that
 
 mermaid
 ( and " are not allowed in mermaid diagram text between ""
+
+
+---
+
+**I am now exiting my role as the Architect.**
+
+You have a complete and approved Architecture Document. The next step is to activate the **Product Owner** to validate all project artifacts, prepare for sharding, and begin the story creation process for development.
+
+You can activate the Product Owner using: `*agent po`
+Then, you would prompt them to validate the artifacts: `*execute-checklist po-master-checklist`
+
+Let me know how you'd like to proceed!
+
+
+## PO
+
+---
+
+**I am now exiting my role as the Product Owner.**
+
+You have successfully navigated the planning and design phases. All major project artifacts are approved. The team is now ready to begin the **Development Phase** in your IDE, starting with sharding the documents and creating the first story with the Scrum Master.
+
+You can initiate the sharding process with the Product Owner or Scrum Master once in your IDE environment:
+`*shard-doc docs/prd.md prd`
+Then, you would activate the Scrum Master to create the first story: `*agent sm` and then `*create`.
+
+Congratulations on reaching this milestone!
