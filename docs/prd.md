@@ -26,6 +26,7 @@ The current methods for engaging with the extensive Common Weakness Enumeration 
 | July 18, 2025 | 1.5 | Added NFR48 for Technical Debt Management (continuous tools, epic reviews); Added NFR49 for Contract-Centric Documentation ("live with code"). | John (PM) |
 | July 18, 2025 | 1.6 | Added NFR50 for Stakeholder Communication Plan and NFR51 for Decision Approval Process. | John (PM) |
 | July 18, 2025 | 1.7 | Added Mermaid diagram to Proposed Solution; Updated Business Objectives as per latest feedback. | John (PM) |
+| July 18, 2025 | 1.8 | Updated Branding & Style Guide's Color Palette with CVE/CWE specific colors. | John (PM) |
 
 ## Requirements
 
@@ -167,9 +168,52 @@ We will aim for **WCAG 2.1 AA compliance**. This includes considerations for:
 
 The ChatBot's visual identity should align with a professional, clean, and trustworthy aesthetic. It should evoke confidence and reliability, avoiding overly playful or distracting elements. Branding elements should facilitate clarity and ease of use, making complex information approachable. If existing organizational branding guidelines are available, they will take precedence.
 
-### Target Device and Platforms: Web Responsive
+### Color Palette
 
-The application will be developed as a **web-responsive** application, ensuring an optimal viewing and interaction experience across desktop browsers, tablets, and mobile devices without requiring separate native applications.
+We will adopt a palette directly inspired by the official CWE and CVE brand colors, balancing professionalism with clear communication of status and interaction.
+
+| Color Type | Hex Code | Usage |
+| :--------- | :------- | :---- |
+| Primary    | `#4169E1` | Main interactive elements (buttons, links, active states), conveying trust and reliability (based on CWE logo blue). |
+| Secondary  | `#8B0000` | Accent color for key highlights, warnings, and emphasis (based on CWE logo outline maroon/red). |
+| Accent     | `#FFA500` | Call-to-action elements, success indicators, or attention-grabbing details (based on CVE logo orange). |
+| Neutral 1  | `#333333` | Primary text, strong headings. |
+| Neutral 2  | `#6c757d` | Secondary text, subtle borders, inactive elements. |
+| Background | `#f8f9fa` | Clean, light backgrounds for readability. |
+| Success    | `#28a745` | Positive confirmations, successful operations (standard green). |
+| Warning    | `#ffc107` | Cautions, important notices (standard yellow/orange, complements Accent). |
+| Error      | `#dc3545` | Error messages, destructive actions (standard red). |
+
+### Typography
+
+Clear and legible typography is paramount for conveying technical information effectively.
+
+  * **Font Families:**
+      * **Primary:** A modern, highly readable sans-serif font family (e.g., **'Inter'**, 'Roboto', or 'Open Sans') for all body text and UI elements.
+      * **Monospace:** A clear, developer-friendly monospace font (e.g., **'Fira Code'**, 'JetBrains Mono', or 'Source Code Pro') for displaying code snippets within chatbot responses.
+  * **Type Scale:** A responsive type scale will ensure optimal readability and hierarchy across all screen sizes.
+
+| Element | Size (px, base 16px) | Weight | Line Height (em) |
+|---|---|---|---|
+| H1 (Page Title) | 36 | Bold | 1.2 |
+| H2 (Section) | 28 | Semi-Bold | 1.3 |
+| H3 (Subsection) | 22 | Medium | 1.4 |
+| Body | 16 | Regular | 1.5 |
+| Small/Caption | 14 | Regular | 1.4 |
+
+### Iconography
+
+Icons will be used sparingly to enhance clarity and reinforce meaning without clutter.
+
+  * **Icon Library:** A well-established, open-source icon library (e.g., **'Material Icons'** or 'Font Awesome') will be the primary source for standard UI icons.
+  * **Usage Guidelines:** Icons should maintain a consistent visual style, stroke weight, and fill. Custom icons will only be created for truly unique functionalities not covered by the chosen library.
+
+### Spacing & Layout
+
+A consistent spacing and layout system will ensure visual harmony and predictable element placement.
+
+  * **Grid System:** While a traditional grid might not apply to the conversational flow, a responsive **fluid grid for supporting views** (e.g., settings pages) will be used.
+  * **Spacing Scale:** A base 8-pixel spacing unit will be used to define all margins, padding, and gaps between elements, ensuring visual rhythm and alignment.
 
 ## Technical Assumptions
 

@@ -1,5 +1,8 @@
 # Notes
 
+Gemini 2.5 Flash was used
+GEM
+
 
 Ref: https://github.com/bmadcode/BMAD-METHOD/blob/main/docs/bmad-workflow-guide.md
 
@@ -24,3 +27,13 @@ docs/project-brief.md
 Product Manager, please start in 'PRD Generation Mode', review the brief thoroughly to work with the user to create the PRD section by section as the template indicates, asking for any necessary clarification or suggesting improvements.
 
 > proceed with executing the PM Requirements Checklist against the entire document to provide a final validation report
+
+
+## Architecture
+
+> *agent architect
+
+
+## UI
+
+attached is the current cwe cve color scheme so we should use that 
