@@ -1,7 +1,3 @@
-You got it! Here is the complete Project Brief we've generated for the CWE ChatBot:
-
----
-
 # Project Brief: CWE ChatBot
 
 ## Executive Summary
@@ -275,10 +271,11 @@ This section outlines potential challenges and areas requiring further investiga
 ## Appendices
 
 ### A. Research Summary
-*(This section is currently empty. If you have any market research, competitive analysis, user interviews, or technical feasibility studies you'd like summarized here, please let me know.)*
+
+**Chainlit** is the primary framework for building the conversational UI of our LLM-powered CWE mapping assistant (per ADR).
 
 ### B. Stakeholder Input
-*(This section is currently empty. If you have any specific feedback or input from key stakeholders you'd like to document here, please provide it.)*
+ToDo
 
 ### C. References
-*(This section is currently empty. Please provide any relevant links to external documents or resources that informed this Project Brief.)*
+ToDo
