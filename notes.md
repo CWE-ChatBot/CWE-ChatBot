@@ -37,3 +37,8 @@ Product Manager, please start in 'PRD Generation Mode', review the brief thoroug
 ## UI
 
 attached is the current cwe cve color scheme so we should use that 
+
+
+
+mermaid
+( and " are not allowed in mermaid diagram text between ""
