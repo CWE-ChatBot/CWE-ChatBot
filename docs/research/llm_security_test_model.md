@@ -1,4 +1,3 @@
-
 # Conversational LLM Security Scanners
 
 ## Prompt to a Research LLM (ChatGPT Deep Research)
@@ -190,25 +189,3 @@ Finally, it’s worth noting that these tools are complementary. Many organizati
 
     > CyberSecEval focuses on red-teaming for code-generating LLMs and is placed in the ready-to-use end of the spectrum. Its test-suite is designed to expose code-related security issues. This makes it valuable for red-teaming groups dealing with generative AI for software and cybersecurity, where the integrity of auto-generated code is crucial.
 
-
-
-  ## Notes
-
-
-## Summary Extracts from [Insights and Current Gaps in Open-Source LLM Vulnerability Scanners: A Comparative Analysis](https://arxiv.org/abs/2410.16527)
-
-  * **[Garak](https://arxiv.org/html/2406.11036v1)**
-
-    > Garak offers the most extensive test-suite, making it suitable for red-teaming groups that deal with diverse use-cases. However, it focuses more on a static attack dataset, limiting customizability. Garak also integrates with Nvidia’s NeMo Guardrails, enabling setting additional safety layers.
-
-  * **[Giskard](https://docs.giskard.ai/en/stable/open_source/scan/scan_llm/index.html)**
-
-    > Giskard is ideal for users seeking flexible attack generation with both static and LLM-based methods. It offers a simple yet effective customization of LLM-based attacks via userprovided natural language context - enabling tailored test suites for various attack types, useful for dynamic online
-
-  * **[PyRIT](https://www.google.com/search?q=https://arxiv.org/pdf/2410.02828)**
-
-    > PyRIT offers the most customizable test suite, focusing on LLM-based attacks. It allows users to edit both attacker and evaluator LLMs, providing full access to their instructions. This offers extensive flexibility but requires significant prompt engineering. Therefore, PyRIT is best suited for red-teams focusing on an internally crafted test-suite rather than relying on external knowledge. PyRIT’s distinctive multi-step attacks and rich ’semi-automatic’ options provide an additional edge.
-
-  * **[CyberSecEval](https://arxiv.org/pdf/2404.13161)**
-
-    > CyberSecEval focuses on red-teaming for code-generating LLMs and is placed in the ready-to-use end of the spectrum. Its test-suite is designed to expose code-related security issues. This makes it valuable for red-teaming groups dealing with generative AI for software and cybersecurity, where the integrity of auto-generated code is crucial.

@@ -1,12 +1,3 @@
-Here is the updated unified cost summary table showing LLM costs for scenarios with 100, 1,000, and 10,000 users. Each user is assumed to perform one chatbot interaction per day over a 30-day month.
-
-Next, I’ll generate a full updated version of the **Cloud Cost Summary Report**, integrating these LLM costs and updating all sections (compute, logging, storage, etc.). Let me proceed with that.
-
-
-Here is the **Unified Cloud Cost Summary Report** for the CWE Mapping Chatbot, incorporating updated Gemini 2.0 Flash Lite pricing, compute scenarios (serverless and VM), storage, telemetry, and user-scale costs.
-
----
-
 ## 🧠 1. LLM API Costs — Gemini 2.0 Flash Lite
 
 | Scenario     | Monthly Interactions | Input Tokens | Output Tokens | Input Cost | Output Cost | **Total LLM Cost** |
