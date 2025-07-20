@@ -59,7 +59,7 @@ The current methods for engaging with the extensive Common Weakness Enumeration 
 25. \<a id="FR\_FILE\_FORMAT\_SUPPORT"\>\</a\>**FR25: Input File Format Support** The ChatBot shall support specified file formats for vulnerability descriptions and code snippets.
 26. \<a id="FR\_AMBIGUOUS\_INFO"\>\</a\>**FR26: Ambiguous Information Handling** The ChatBot shall gracefully handle incomplete or ambiguous vulnerability information by seeking clarification or indicating insufficient data.
 27. \<a id="FR\_REPORT\_INCORRECT\_MAPPING"\>\</a\>**FR27: Incorrect Mapping Feedback** The ChatBot SHALL provide a mechanism for users to report incorrect mappings or provide feedback.
-28. \<a id="FR\_BYO\_LLM\_KEY"\>\</a\>**FR28: Bring Your Own LLM API Key** As a user, I MUST be able to configure the ChatBot to use my own Large Language Model (LLM) API key, so that I can utilize my preferred or licensed LLM services.
+28. \<a id="FR\_BYO\_LLM\_KEY"\>\</a\>**FR28: Bring Your Own LLM API Key** As a user, I MUST be able to configure the ChatBot to use my own Large Language Model (LLM) API key, so that I can utilize my preferred or licensed LLM services. Example GenAI tool that supports Bring Your Own LLM API Key: https://stridegpt.streamlit.app/
 29. \<a id="FR\_BYO\_LLM\_MODEL"\>\</a\>**FR29: Bring Your Own Self-Hosted LLM Model** As a user, I MUST be able to configure the ChatBot to use my own self-hosted LLM model, so that I can leverage private or custom models within my own infrastructure.
 
 ### Non Functional
