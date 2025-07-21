@@ -1,6 +1,6 @@
 # STRIDE Threat Model
 
-[docs/architecture.md](../architecture.md) was provided as input to [STRIDE GPT](https://stridegpt.streamlit.app/) and the files in this directory were generated:
+[docs/architecture.md](../../architecture.md) was provided as input to [STRIDE GPT](https://stridegpt.streamlit.app/) and the files in this directory were generated:
 
 | Document | Description |
 |----------|-------------|
