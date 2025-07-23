@@ -1,40 +1,42 @@
-# CWE ChatBot Fullstack Architecture Document
+# **CWE ChatBot Fullstack Architecture Document**
 
-## Introduction
+## **Introduction**
 
 This document outlines the complete fullstack architecture for the **CWE ChatBot**, including backend systems, frontend implementation, and their integration. It serves as the single source of truth for AI-driven development, ensuring consistency across the entire technology stack.
 
 This unified approach combines what would traditionally be separate backend and frontend architecture documents, streamlining the development process for modern fullstack applications where these concerns are increasingly intertwined.
 
-### Change Log
+### **Change Log**
 
 | Date | Version | Description | Author |
-|---|---|---|---|
+| :---- | :---- | :---- | :---- |
 | July 18, 2025 | 1.0 | Initial Architecture Draft | Winston (Architect) |
+| July 23, 2025 | 2.0 | Integrated security agent's findings (WAF, AI Guardrails, DoS Protection, Enhanced Logging). | Winston (Architect) |
 
-## High Level Architecture
+## **High Level Architecture**
 
-### Technical Summary
+### **Technical Summary**
 
-The CWE ChatBot will be architected as a **Python-based conversational AI application**, primarily leveraging **Chainlit** for its integrated web UI and core backend logic. Deployed on **Google Cloud Platform (GCP) Cloud Run**, this full-stack solution will interact with a managed **Vector Database** (e.g., Pinecone/Weaviate) for efficient Retrieval Augmented Generation (RAG) against the CWE corpus, and a **PostgreSQL database (Cloud SQL)** for structured application data. The architecture emphasizes modularity through logical microservices, secure data handling, and supports both centralized hosting and self-hosting options. This design directly supports the PRD's goals for efficient, accurate, and role-based CWE interaction, as well as the "Bring Your Own Key/Model" requirements.
+The CWE ChatBot will be architected as a **Python-based conversational AI application**, primarily leveraging **Chainlit** for its integrated web UI and core backend logic. Deployed on **Google Cloud Platform (GCP) Cloud Run** and protected by **Google Cloud Armor (WAF)**, this full-stack solution will interact with a managed **Vector Database** (e.g., Pinecone/Weaviate) for efficient Retrieval Augmented Generation (RAG) against the CWE corpus, and a **PostgreSQL database (Cloud SQL)** for structured application data. The architecture emphasizes modularity through logical microservices, secure data handling, and supports both centralized hosting and self-hosting options. This design directly supports the PRD's goals for efficient, accurate, and role-based CWE interaction, as well as the "Bring Your Own Key/Model" requirements.
 
-### Platform and Infrastructure Choice
+### **Platform and Infrastructure Choice**
 
-  * **Provider:** Google Cloud Platform (GCP)
-  * **Key Services:**
-      * **Cloud Run:** For deploying the containerized Chainlit application, providing automatic scaling and a serverless execution model (aligning with NFR2).
-      * **Cloud SQL (PostgreSQL):** For managing structured application data (e.g., user profiles, chat history, BYO LLM/API key configurations).
-      * **Managed Vector Database (e.g., Pinecone, Weaviate, or self-hosted via GCP Kubernetes Engine):** For storing and efficiently querying CWE embeddings for RAG.
-      * **Vertex AI (Optional/BYO LLM):** For managed Large Language Model and embedding services, if not leveraging user-provided external LLMs or self-hosted models.
-  * **Deployment Regions:** To be determined based on user base distribution and data residency requirements, prioritizing low latency and compliance.
-  * **Rationale:** GCP offers a robust suite of serverless and managed services that align with our cost-efficiency, scalability, and security NFRs. Cloud Run is ideal for Chainlit deployments, and its ecosystem supports flexible database and AI integrations.
+  \* Provider: Google Cloud Platform (GCP)  
+  \* Key Services:  
+      \* Cloud Run: For deploying the containerized Chainlit application, providing automatic scaling and a serverless execution model (aligning with NFR2).  
+      \* Cloud Armor: As a Web Application Firewall (WAF) to protect the public-facing Cloud Run endpoint from common web attacks and DDoS.  
+      \* Cloud SQL (PostgreSQL): For managing structured application data (e.g., user profiles, chat history, BYO LLM/API key configurations).  
+      \* Managed Vector Database (e.g., Pinecone, Weaviate, or self-hosted via GCP Kubernetes Engine): For storing and efficiently querying CWE embeddings for RAG.  
+      \* Vertex AI (Optional/BYO LLM): For managed Large Language Model and embedding services, if not leveraging user-provided external LLMs or self-hosted models.  
+  \* Deployment Regions: To be determined based on user base distribution and data residency requirements, prioritizing low latency and compliance.  
+  \* Rationale: GCP offers a robust suite of serverless and managed services that align with our cost-efficiency, scalability, and security NFRs. Cloud Run is ideal for Chainlit deployments, and its ecosystem supports flexible database and AI integrations.
 
-### Repository Structure: Monorepo
+### **Repository Structure: Monorepo**
 
-  * **Structure:** A **Monorepo** approach will be adopted for code organization.
-  * **Monorepo Tool:** While general Python monorepo structures (e.g., using `poetry` or `pipenv` workspaces with a well-defined folder structure) might suffice for the MVP, tools like **Nx or Turborepo** remain an option if multi-language components become necessary or if a more opinionated monorepo management is desired in the future.
-  * **Package Organization:** The primary Chainlit application will reside in `apps/chatbot`. Shared code (e.g., Python packages for common utilities, data models, API interfaces) will be organized in `packages/shared` or similar directories, facilitating code reuse across services (if further microservices are introduced).
-  * **Rationale:** A monorepo centralizes code management, simplifies dependency synchronization, and fosters code reuse between different logical components (backend services, data ingestion pipelines). This aligns with NFR5 (Codebase Adherence) and NFR49 (Contract-Centric Documentation).
+  \* Structure: A Monorepo approach will be adopted for code organization.  
+  \* Monorepo Tool: While general Python monorepo structures (e.g., using poetry or pipenv workspaces with a well-defined folder structure) might suffice for the MVP, tools like Nx or Turborepo remain an option if multi-language components become necessary or if a more opinionated monorepo management is desired in the future.  
+  \* Package Organization: The primary Chainlit application will reside in apps/chatbot. Shared code (e.g., Python packages for common utilities, data models, API interfaces) will be organized in packages/shared or similar directories, facilitating code reuse across services (if further microservices are introduced).  
+  \* Rationale: A monorepo centralizes code management, simplifies dependency synchronization, and fosters code reuse between different logical components (backend services, data ingestion pipelines). This aligns with NFR5 (Codebase Adherence) and NFR49 (Contract-Centric Documentation).
 
 
 ### C4 Architecture Diagrams
@@ -116,43 +118,62 @@ C1: Container: A container diagram shows the high-level technology choices, how 
 
 
 
-### High Level Architecture Diagram
-
+### **High Level Architecture Diagram**
 ```mermaid
-graph TD
-    User(User) -- Accesses --> WebUI[Chainlit Web UI - Python App on Cloud Run];
-
-    WebUI -- Queries --> BackendAPI[Chainlit Backend - Python App on Cloud Run];
-
-    BackendAPI -- Executes --> NLP_AI[NLP/AI Service - Internal to Chainlit or separate Python module];
-    NLP_AI -- Searches Embeddings --> VectorDB[Vector Database - Managed Service / Self-Hosted];
-    VectorDB -- Returns Relevant Chunks --> NLP_AI;
-    NLP_AI -- Interacts with --> LLM[LLM / Embedding Model External API or Self-Hosted BYO FR28, FR29];
-    LLM -- Provides Embeddings/Responses --> NLP_AI;
-
-    BackendAPI -- Manages Data --> TraditionalDB[Traditional DB PostgreSQL - Cloud SQL];
-
-    CWE_Data[CWE Corpus XML/JSON from MITRE] --> DataIngestion[Data Ingestion Pipeline - Python Script/Service];
-    DataIngestion -- Stores Embeddings --> VectorDB;
-    DataIngestion -- Stores Metadata --> TraditionalDB;
-
-    subgraph DeploymentFlexibility [Deployment Flexibility NFR41]
-        Direction[Centralized Cloud Hosting] --and/or--> SelfHost[Self-Hosted Option];
-        SelfHost -- Data Never Leaves --> UserNetwork[Users Private Network FR19, NFR33];
+  graph TD
+    subgraph "User's Browser"
+        User(User)
     end
 
-    style User fill:#FFF,stroke:#333,stroke-width:2px;
-    style WebUI fill:#E0F7FA,stroke:#00BCD4,stroke-width:2px;
-    style BackendAPI fill:#DCEDC8,stroke:#8BC34A,stroke-width:2px;
-    style NLP_AI fill:#FFE0B2,stroke:#FF9800,stroke-width:2px;
-    style VectorDB fill:#BBDEFB,stroke:#2196F3,stroke-width:2px;
-    style TraditionalDB fill:#CFD8DC,stroke:#607D8B,stroke-width:2px;
-    style CWE_Data fill:#F0F4C3,stroke:#CDDC39,stroke-width:2px;
-    style DataIngestion fill:#FFF9C4,stroke:#FFEB3B,stroke-width:2px;
-    style LLM fill:#D1C4E9,stroke:#673AB7,stroke-width:2px;
-    style DeploymentFlexibility fill:#F5F5F5,stroke:#9E9E9E,stroke-width:2px,stroke-dasharray: 5 5;
-    style SelfHost fill:#FFFACD,stroke:#FFD700,stroke-width:2px;
-    style UserNetwork fill:#FFDAB9,stroke:#FF8C00,stroke-width:2px;
+    subgraph "Google Cloud Platform (GCP)"
+        WAF[Google Cloud Armor - WAF]
+        WebUI[Chainlit Web UI - Python App on Cloud Run]
+        BackendAPI[Chainlit Backend - Python App on Cloud Run]
+        VectorDB[Vector Database - Managed Service / Self-Hosted]
+        TraditionalDB[Traditional DB PostgreSQL - Cloud SQL]
+        DataIngestion[Data Ingestion Pipeline - Python Script/Service]
+        LLM[LLM / Embedding Model<br>External API or Self-Hosted BYO<br>FR28, FR29]
+
+        User -- HTTPS --> WAF
+        WAF -- Forwards valid traffic --> WebUI
+
+        WebUI -- Queries --> BackendAPI
+
+        BackendAPI -- Executes --> NLP_AI[NLP/AI Service - Internal to Chainlit or separate Python module]
+        NLP_AI -- Searches Embeddings --> VectorDB
+        VectorDB -- Returns Relevant Chunks --> NLP_AI
+        NLP_AI -- Interacts with --> LLM
+
+        BackendAPI -- Manages Data --> TraditionalDB
+    end
+
+    subgraph "External Sources"
+        CWE_Data[CWE Corpus XML/JSON from MITRE]
+    end
+
+    CWE_Data --> DataIngestion
+    DataIngestion -- Stores Embeddings --> VectorDB
+    DataIngestion -- Stores Metadata --> TraditionalDB
+
+    subgraph DeploymentFlexibility [Deployment Flexibility NFR41]
+        Direction[Centralized Cloud Hosting] --and/or--> SelfHost[Self-Hosted Option]
+        SelfHost -- Data Never Leaves --> UserNetwork[User's Private Network FR19, NFR33]
+    end
+
+    style User fill:#FFF,stroke:#333,stroke-width:2px
+    style WAF fill:#FFCDD2,stroke:#D32F2F,stroke-width:2px
+    style WebUI fill:#E0F7FA,stroke:#00BCD4,stroke-width:2px
+    style BackendAPI fill:#DCEDC8,stroke:#8BC34A,stroke-width:2px
+    style NLP_AI fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
+    style VectorDB fill:#BBDEFB,stroke:#2196F3,stroke-width:2px
+    style TraditionalDB fill:#CFD8DC,stroke:#607D8B,stroke-width:2px
+    style CWE_Data fill:#F0F4C3,stroke:#CDDC39,stroke-width:2px
+    style DataIngestion fill:#FFF9C4,stroke:#FFEB3B,stroke-width:2px
+    style LLM fill:#D1C4E9,stroke:#673AB7,stroke-width:2px
+    style DeploymentFlexibility fill:#F5F5F5,stroke:#9E9E9E,stroke-width:2px,stroke-dasharray: 5 5
+    style SelfHost fill:#FFFACD,stroke:#FFD700,stroke-width:2px
+    style UserNetwork fill:#FFDAB9,stroke:#FF8C00,stroke-width:2px
+
 ```
 
 ### Architectural and Design Patterns
@@ -181,6 +202,7 @@ This section is the definitive record of the technologies and their specific ver
 
 | Category | Technology | Version | Purpose | Rationale |
 | :--- | :--- | :--- | :--- | :--- |
+| **Network Security** | Google Cloud Armor | N/A | Web Application Firewall (WAF) and DDoS protection. | Provides a critical layer of defense against common web attacks and DoS, directly mitigating identified threats. |
 | **Frontend UI** | Chainlit | Latest Stable (0.7.x) | Provides integrated web-based conversational UI. | Purpose-built for LLM chat apps, offers quick UI development, streaming, user feedback, built-in auth hooks, and observability (PRD Tech Assump.). Responsive on web/mobile and easily themed. |
 | **Backend Language** | Python | 3.10+ | Primary language for all backend logic, NLP/AI processing. | Aligns with Chainlit's Python-native ecosystem and leverages Python's strength and extensive libraries in AI/ML development. |
 | **Backend Framework** | Chainlit | Latest Stable (0.7.x) | Core framework for chatbot logic and backend APIs. | Simplifies full-stack deployment by integrating UI and backend logic. Provides necessary abstractions for LLM interactions. |
@@ -661,6 +683,10 @@ For the Vector Database, the structure is optimized for high-dimensional vector 
   * **Optimized for Search:** Focuses on the core components needed for efficient vector similarity search.
   * **RAG Support:** The `full_text` in metadata is crucial for passing relevant context to the LLM during RAG.
   * **Metadata Richness:** Including metadata allows for filtering results before sending to the LLM (e.g., only show CWEs related to web applications) and provides additional context for response generation.
+
+**Security Considerations:**
+
+* **CRITICAL:** The Vector Database, which provides context for the RAG process, **MUST** only be populated with public, non-sensitive data (e.g., the official CWE corpus). This is a fundamental control to prevent the leakage of confidential information to user-configured BYO LLM endpoints, as identified in threat **I-4**.
 
 ## REST API Spec
 
@@ -1237,6 +1263,12 @@ Distinct environments will be used to ensure proper testing and separation of de
   * **Staging:** A dedicated GCP project or set of resources, mirroring the production environment. Used for integration testing, user acceptance testing (UAT), DAST, and pre-release validation.
   * **Production:** A fully isolated and hardened GCP project, hosting the live application accessible by end-users.
 
+### Availability & DoS Protection
+
+* **Rate Limiting:** The system will implement per-user rate limiting on all public endpoints via Google Cloud Armor to mitigate API Flooding (**D-2**) and Financial DoS (**D-3**).  
+* **Billing Alerts:** GCP billing alerts will be configured via Terraform to provide early warning of potential FDoS attacks (**D-3**).  
+* **Query Complexity:** The application logic will include timeouts and complexity analysis on AI-driven queries to prevent resource exhaustion (**D-1**).
+* 
 ### Rollback Strategy
 
 A clear rollback strategy is essential to quickly recover from critical issues post-deployment (NFR42).
@@ -1268,6 +1300,12 @@ Consistent and comprehensive logging is vital for monitoring, debugging, and aud
       * `session_id`: For tracing errors within a specific user's chat session.
       * `service_name` / `module`: To identify the source of the log.
       * `request_id`: For API requests.
+  * **Mandatory Security Events:** The following events must be logged with a "SECURITY" tag for auditing (**R-1**):  
+    * Login success/failure  
+    * BYO endpoint or API key configuration changes (with old/new values, excluding secrets)  
+    * User role modifications  
+    * Any event triggered by the AI/Prompt Security guardrails (e.g., detected prompt injection)  
+    * Any failed authorization attempt (e.g., IDOR attempt)
 
 ### Error Handling Patterns
 
@@ -1341,6 +1379,13 @@ This section defines the mandatory security requirements for AI and human develo
   * **Validation Location:** Input validation shall occur at all system entry points, including API boundaries (e.g., Chainlit message handlers, custom backend endpoints) and data ingestion points (CWE Data Ingestion Service).
   * **Required Rules:** All external inputs MUST be rigorously validated (NFR8). A **whitelist approach** (explicitly allowing known safe inputs) is preferred over a blacklist approach (blocking known bad inputs). Inputs must be sanitized to prevent common web vulnerabilities like Cross-Site Scripting (XSS), SQL Injection, and Prompt Injection (NFR8).
 
+### AI & Prompt Security
+
+* **Input Guardrails:** All user input must be sanitized before being sent to an LLM to detect and neutralize prompt injection patterns (**T-1**).  
+* **Output Validation:** All responses from LLMs must be scanned to prevent the leaking of confidential system prompts or instructions (**I-2**).  
+* **Untrusted BYO Endpoints:** All user-configured BYO LLM endpoints are to be treated as untrusted external services. Responses must be sanitized, and network requests should be made through a sandboxed egress proxy (**S-3**, **I-4**).  
+* **LLM Tooling Permissions:** If/when the LLM is granted access to internal tools, a strict, user-permission-based authorization model must be implemented to prevent abuse (**E-2**).
+  
 ### Authentication & Authorization
 
   * **Auth Method:** **OAuth 2.0 / OpenID Connect** (via providers like Google, GitHub) will be the primary authentication mechanism (FR19, NFR33, NFR34). Chainlit's built-in authentication hooks will be leveraged.
