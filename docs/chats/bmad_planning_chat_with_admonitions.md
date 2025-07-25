@@ -4291,7 +4291,7 @@ The **CWE ChatBot** proposes a novel, conversational AI interface designed to tr
 
 To illustrate the core interaction, consider the following high-level flow:
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B{Ask Query about CWE};  
     B \--\> C\[ChatBot Interface\];  
@@ -4303,6 +4303,9 @@ graph TD
     D \--\> G\[Generate Response\];  
     G \--\> C;  
     C \--\> H\[User Receives Answer\];
+```
+
+
 
 **Key Differentiators from Existing Solutions:** Unlike current static search and browse tools that require users to manually filter and interpret vast amounts of information, the CWE ChatBot offers:
 
@@ -5424,7 +5427,7 @@ Defining the information architecture helps us understand the structure of the c
 
 The core of the CWE ChatBot's UI will be its conversational interface, with supporting views for configuration and feedback. Here's a conceptual overview:
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Onboarding/Introduction);  
     B \--\> C(Main Chat Interface);  
@@ -5433,6 +5436,8 @@ graph TD
     D \--\> D1\[User Preferences\];  
     D \--\> D2\[Auth/API Key Management\];  
     D \--\> D3\[Chat History Export\];
+```
+
 
 **Rationale for Site Map:** This diagram illustrates the main interactive components of the chatbot. The "Main Chat Interface" is central, with supporting "pages" for onboarding, settings, and feedback accessed from or around it. Nodes are based on the "Core Screens and Views" identified in the PRD.
 
@@ -5488,7 +5493,7 @@ This section details the critical user journeys within the CWE ChatBot, mapping 
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Access Main Chat Interface);  
     B \--\> C{Enter Query about CWE};  
@@ -5500,6 +5505,8 @@ graph TD
     H \--\> I\[User Reads Response\];  
     E \-- No \--\> J\[Display "I don't understand" Message (FR17)\];  
     J \--\> I;
+
+```
 
 #### **Edge Cases & Error Handling:**
 
@@ -5577,7 +5584,7 @@ Thank you for providing the corrected diagram. I've updated the **Basic CWE Quer
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Access Main Chat Interface);  
     B \--\> C{Enter Query about CWE};  
@@ -5589,6 +5596,8 @@ graph TD
     H \--\> I\[User Reads Response\];  
     E \-- No \--\> J\[Display I don't understand Message FR17\];  
     J \--\> I;
+
+```
 
 #### **Edge Cases & Error Handling:**
 
@@ -5624,7 +5633,7 @@ Okay, let's draft the **Role-Based Information Retrieval** flow. This flow is cr
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Access Main Chat Interface);  
     B \--\> C{Enter Query & State/Infer Role};  
@@ -5636,6 +5645,8 @@ graph TD
     H \--\> I\[User Reads Tailored Response\];  
     E \-- No \--\> J\[Prompt User for Role Clarification AC1 of Story 2.3\];  
     J \--\> C;
+
+```
 
 #### **Edge Cases & Error Handling:**
 
@@ -5692,7 +5703,7 @@ Okay, let's draft the third critical user flow: **Handling Ambiguous/Insufficien
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Access Main Chat Interface);  
     B \--\> C{Enter Ambiguous/Insufficient Query};  
@@ -5708,6 +5719,8 @@ graph TD
     E \-- No \--\> L\[Continue to Normal Query Processing\];  
     L \--\> M\[Generate Response\];  
     M \--\> H;
+
+```
 
 #### **Edge Cases & Error Handling:**
 
@@ -6769,7 +6782,7 @@ Defining the information architecture helps us understand the structure of the c
 
 The core of the CWE ChatBot's UI will be its conversational interface, with supporting views for configuration and feedback. Here's a conceptual overview:
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Onboarding/Introduction);  
     B \--\> C(Main Chat Interface);  
@@ -6778,6 +6791,8 @@ graph TD
     D \--\> D1\[User Preferences\];  
     D \--\> D2\[Auth/API Key Management\];  
     D \--\> D3\[Chat History Export\];
+```
+
 
 **Rationale for Site Map:** This diagram illustrates the main interactive components of the chatbot. The "Main Chat Interface" is central, with supporting "pages" for onboarding, settings, and feedback accessed from or around it. Nodes are based on the "Core Screens and Views" identified in the PRD.
 
@@ -6799,7 +6814,7 @@ This section details the critical user journeys within the CWE ChatBot, mapping 
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Access Main Chat Interface);  
     B \--\> C{Enter Query about CWE};  
@@ -6811,6 +6826,8 @@ graph TD
     H \--\> I\[User Reads Response\];  
     E \-- No \--\> J\[Display I don't understand Message FR17\];  
     J \--\> I;
+
+```
 
 #### **Edge Cases & Error Handling:**
 
@@ -6831,7 +6848,7 @@ graph TD
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Access Main Chat Interface);  
     B \--\> C{Enter Query & State/Infer Role};  
@@ -6843,6 +6860,8 @@ graph TD
     H \--\> I\[User Reads Tailored Response\];  
     E \-- No \--\> J\[Prompt User for Role Clarification AC1 of Story 2.3\];  
     J \--\> C;
+
+```
 
 #### **Edge Cases & Error Handling:**
 
@@ -6864,7 +6883,7 @@ graph TD
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Access Main Chat Interface);  
     B \--\> C{Enter Ambiguous/Insufficient Query};  
@@ -6880,6 +6899,8 @@ graph TD
     E \-- No \--\> L\[Continue to Normal Query Processing\];  
     L \--\> M\[Generate Response\];  
     M \--\> H;
+
+```
 
 #### **Edge Cases & Error Handling:**
 
@@ -7098,7 +7119,7 @@ The CWE ChatBot will be architected as a **Python-based conversational AI applic
 
 ### **High Level Architecture Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     User(User) \-- Accesses \--\> WebUI\[Chainlit Web UI \- Python App on Cloud Run\];
 
@@ -7134,9 +7155,10 @@ graph TD
     style SelfHost fill:\#FFFACD,stroke:\#FFD700,stroke-width:2px;  
     style UserNetwork fill:\#FFDAB9,stroke:\#FF8C00,stroke-width:2px;
 
+```
 
-> [!IMPORTANT] **User**
-> **Rationale for Architecture Diagram:** This diagram provides a visual representation of the entire full-stack system. It clearly shows the user's interaction path, the flow through the Chainlit application, the separate NLP/AI and data components, and the chosen database types. Crucially, it highlights the integration of the BYO LLM/Model concept and explicitly illustrates the dual-deployment model (Centralized vs. Self-Hosted) with its data residency implications, directly addressing FR19, NFR33, and NFR41.
+**Rationale for Architecture Diagram:** This diagram provides a visual representation of the entire full-stack system. It clearly shows the user's interaction path, the flow through the Chainlit application, the separate NLP/AI and data components, and the chosen database types. Crucially, it highlights the integration of the BYO LLM/Model concept and explicitly illustrates the dual-deployment model (Centralized vs. Self-Hosted) with its data residency implications, directly addressing FR19, NFR33, and NFR41.
+
 
 ### **Architectural and Design Patterns**
 
@@ -7214,7 +7236,7 @@ The CWE ChatBot will be architected as a **Python-based conversational AI applic
 
 ### **High Level Architecture Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     User(User) \-- Accesses \--\> WebUI\[Chainlit Web UI \- Python App on Cloud Run\];
 
@@ -7249,6 +7271,8 @@ graph TD
     style DeploymentFlexibility fill:\#F5F5F5,stroke:\#9E9E9E,stroke-width:2px,stroke-dasharray: 5 5;  
     style SelfHost fill:\#FFFACD,stroke:\#FFD700,stroke-width:2px;  
     style UserNetwork fill:\#FFDAB9,stroke:\#FF8C00,stroke-width:2px;
+
+```
 
 ### **Architectural and Design Patterns**
 
@@ -7375,7 +7399,7 @@ The CWE ChatBot will be architected as a **Python-based conversational AI applic
 
 ### **High Level Architecture Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     User(User) \-- Accesses \--\> WebUI\[Chainlit Web UI \- Python App on Cloud Run\];
 
@@ -7410,6 +7434,8 @@ graph TD
     style DeploymentFlexibility fill:\#F5F5F5,stroke:\#9E9E9E,stroke-width:2px,stroke-dasharray: 5 5;  
     style SelfHost fill:\#FFFACD,stroke:\#FFD700,stroke-width:2px;  
     style UserNetwork fill:\#FFDAB9,stroke:\#FF8C00,stroke-width:2px;
+
+```
 
 ### **Architectural and Design Patterns**
 
@@ -7881,7 +7907,7 @@ This section identifies the major logical components and services within the CWE
 
 This diagram provides a high-level visual representation of the logical components within the CWE ChatBot system and their primary interactions.
 
-Code snippet  
+```mermaid  
 graph LR  
     User(User) \--\> ChatbotApp\[Chatbot Application Chainlit Core\]
 
@@ -7902,6 +7928,8 @@ graph LR
     User\_Service \-- Stores/Retrieves from \--\> TraditionalDB
 
     ChatbotApp \-- Stores/Retrieves Session/History \--\> TraditionalDB
+```
+
 
 **Rationale for this draft:**
 
@@ -8078,7 +8106,7 @@ This section illustrates key system workflows using sequence diagrams, highlight
 
 #### **Sequence Diagram**
 
-Code snippet  
+```mermaid  
 sequenceDiagram  
     participant U as User  
     participant CA as Chatbot Application (Chainlit Core)  
@@ -8106,6 +8134,8 @@ sequenceDiagram
     deactivate NAI  
     CA-\>\>U: 10\. Display Response to User (FR5)  
     deactivate CA
+```
+
 
 **Rationale for Sequence Diagram:** This diagram clearly visualizes the multi-step process of an AI-powered conversational response. It maps how the user's query travels through the system, gets enriched with relevant data from the vector database (RAG), interacts with the LLM, and finally delivers a tailored answer back to the user. It explicitly ties into the FRs and NFRs related to NLU, retrieval, response generation, and hallucination mitigation.
 
@@ -8157,7 +8187,7 @@ This section illustrates key system workflows using sequence diagrams, highlight
 
 #### **Sequence Diagram**
 
-Code snippet  
+```mermaid  
 sequenceDiagram  
     participant U as User  
     participant CA as Chatbot Application Chainlit Core  
@@ -8185,6 +8215,8 @@ sequenceDiagram
     deactivate NAI  
     CA-\>\>U: 10\. Display Response to User FR5  
     deactivate CA
+```
+
 
 **Rationale for Sequence Diagram:** This diagram clearly visualizes the multi-step process of an AI-powered conversational response. It maps how the user's query travels through the system, gets enriched with relevant data from the vector database (RAG), interacts with the LLM, and finally delivers a tailored answer back to the user. It explicitly ties into the FRs and NFRs related to NLU, retrieval, response generation, and hallucination mitigation.
 
@@ -8768,7 +8800,7 @@ class CweRepository:
 Authentication will be **passwordless** using OAuth 2.0 / OpenID Connect. Authorization will be role-based, ensuring secure access control (NFR34).
 
 **Auth Flow Diagram (Mermaid):** This sequence illustrates the user authentication flow via an external OAuth provider.  
-Code snippet  
+```mermaid  
 sequenceDiagram  
     participant U as User  
     participant UI as Chatbot UI  
@@ -8794,6 +8826,8 @@ sequenceDiagram
     UI-\>\>CA: 12\. Subsequent Authenticated Requests with Token
 
 * 
+```
+
 
 **Middleware/Guards:** Authentication and authorization checks will be enforced at the API entry points of relevant services. Chainlit's built-in authentication hooks will be utilized to protect conversational endpoints. For separately deployed microservices (if applicable), standard Python web framework middleware will apply.  
 Python  
@@ -9587,7 +9621,7 @@ The CWE ChatBot will be architected as a **Python-based conversational AI applic
 
 ### **High Level Architecture Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     User(User) \-- Accesses \--\> WebUI\[Chainlit Web UI \- Python App on Cloud Run\];
 
@@ -9622,6 +9656,8 @@ graph TD
     style DeploymentFlexibility fill:\#F5F5F5,stroke:\#9E9E9E,stroke-width:2px,stroke-dasharray: 5 5;  
     style SelfHost fill:\#FFFACD,stroke:\#FFD700,stroke-width:2px;  
     style UserNetwork fill:\#FFDAB9,stroke:\#FF8C00,stroke-width:2px;
+
+```
 
 ### **Architectural and Design Patterns**
 
@@ -9852,7 +9888,7 @@ This section illustrates key system workflows using sequence diagrams, highlight
 
 #### **Sequence Diagram**
 
-Code snippet  
+```mermaid  
 sequenceDiagram  
     participant U as User  
     participant CA as Chatbot Application Chainlit Core  
@@ -9880,6 +9916,8 @@ sequenceDiagram
     deactivate NAI  
     CA-\>\>U: 10\. Display Response to User FR5  
     deactivate CA
+```
+
 
 **Rationale for Sequence Diagram:** This diagram clearly visualizes the multi-step process of an AI-powered conversational response. It maps how the user's query travels through the system, gets enriched with relevant data from the vector database (RAG), interacts with the LLM, and finally delivers a tailored answer back to the user. It explicitly ties into the FRs and NFRs related to NLU, retrieval, response generation, and hallucination mitigation.
 
@@ -10482,7 +10520,7 @@ class CweRepository:
 Authentication will be **passwordless** using OAuth 2.0 / OpenID Connect. Authorization will be role-based, ensuring secure access control (NFR34).
 
 **Auth Flow Diagram (Mermaid):** This sequence illustrates the user authentication flow via an external OAuth provider.  
-Code snippet  
+```mermaid  
 sequenceDiagram  
     participant U as User  
     participant UI as Chatbot UI  
@@ -10508,6 +10546,8 @@ sequenceDiagram
     UI-\>\>CA: 12\. Subsequent Authenticated Requests with Token
 
 * 
+```
+
 
 **Middleware/Guards:** Authentication and authorization checks will be enforced at the API entry points of relevant services. Chainlit's built-in authentication hooks will be utilized to protect conversational endpoints. For separately deployed microservices (if applicable), standard Python web framework middleware will apply.  
 Python  
@@ -11292,7 +11332,7 @@ This section details the critical user journeys within the CWE ChatBot, mapping 
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Access Main Chat Interface);  
     B \--\> C{Enter Query about CWE};  
@@ -11304,6 +11344,8 @@ graph TD
     H \--\> I\[User Reads Response\];  
     E \-- No \--\> J\[Display I don't understand Message FR17\];  
     J \--\> I;
+
+```
 
 #### **Edge Cases & Error Handling:**
 
@@ -11324,7 +11366,7 @@ graph TD
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Access Main Chat Interface);  
     B \--\> C{Enter Query & State/Infer Role};  
@@ -11336,6 +11378,8 @@ graph TD
     H \--\> I\[User Reads Tailored Response\];  
     E \-- No \--\> J\[Prompt User for Role Clarification AC1 of Story 2.3\];  
     J \--\> C;
+
+```
 
 #### **Edge Cases & Error Handling:**
 
@@ -11357,7 +11401,7 @@ graph TD
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 graph TD  
     A\[User\] \--\> B(Access Main Chat Interface);  
     B \--\> C{Enter Ambiguous/Insufficient Query};  
@@ -11373,6 +11417,8 @@ graph TD
     E \-- No \--\> L\[Continue to Normal Query Processing\];  
     L \--\> M\[Generate Response\];  
     M \--\> H;
+
+```
 
 #### **Edge Cases & Error Handling:**
 
@@ -11394,7 +11440,7 @@ graph TD
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 sequenceDiagram  
     participant U as User  
     participant T as CWE Support Tool  
@@ -11433,6 +11479,8 @@ sequenceDiagram
     T--\>\>-U: Final Recommendation  
     Note right of T: \- Confirmed CWE mapping\<br/\>- Detailed rationale\<br/\>- Related resources\<br/\>- Mitigation suggestions \<br/\>-  reference links to cwe.mitre.org site
 
+```
+
 #### **Edge Cases & Error Handling:**
 
 * **Insufficient Initial Information:** The tool should initiate the Interactive Q\&A Phase immediately if the initial input is too sparse to provide a confident assessment.  
@@ -11453,7 +11501,7 @@ sequenceDiagram
 
 #### **Flow Diagram**
 
-Code snippet  
+```mermaid  
 ```
 sequenceDiagram  
     participant U as User  
@@ -11523,6 +11571,8 @@ sequenceDiagram
     Note over L: Continuous Logging  
     Note right of L: Log entries include:\<br/\>- Timestamp\<br/\>- User ID (anonymized)\<br/\>- Action type\<br/\>- Input/Output summary\<br/\>- Validation results\<br/\>- Error states
 ```
+```
+
 #### **Edge Cases & Error Handling:**
 
 * **Validation Failure (Input/Output):** If input validation (`G`) fails, the request should be rejected or sanitized, and logged (NFR8, NFR11). If output validation (`O`) detects issues (e.g., hallucination, sensitive data leak), the response should be blocked or re-generated, and the event logged (NFR6, NFR7).  
@@ -11660,7 +11710,7 @@ The C4 model is used to describe the static structure of the CWE ChatBot system,
 
 C0: Context: A high-level diagram that sets the scene, including key system dependencies and people (actors/roles/personas/etc).
 
-Code snippet  
+```mermaid  
    C4Context  
       title C0: System Context diagram for CWE Chatbot
 
@@ -11674,13 +11724,15 @@ Code snippet
         BiRel(userA, cwe\_chatbot, "Uses")  
         BiRel(cwe\_corpus, cwe\_chatbot, "Gets knowledge from")
 
+```
+
 ### **C1: CWE Chatbot Container Diagram**
 
 C1: Container: A container diagram shows the high-level technology choices, how responsibilities are distributed across them and how the containers communicate.
 
 * Not to be confused with "containers" ala Docker
 
-Code snippet
+```mermaid
 
     C4Container
 
@@ -11719,7 +11771,9 @@ Code snippet
     Rel(api, session\_mgmt, "Manages sessions via")  
     Rel(cwe\_corpus, cwe\_list, "Fetches CWE definitions from")  
     Rel(cwe\_corpus, cwe\_rcm, "Fetches guidance from")
+```
 
+```
 
 Please review these newly added C4 diagrams. Do they accurately represent the system context and container breakdown as you envisioned?
 
