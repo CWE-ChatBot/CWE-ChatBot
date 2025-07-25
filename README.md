@@ -14,7 +14,7 @@ The following documents were created in order during the project planning phase:
 | 4 | [docs/architecture.md](docs/architecture.md) | [docs/architecture_review.md](docs/architecture_review.md) | Complete technical architecture and system design |
 | 5 | [docs/product_owner_review.md](docs/product_owner_review.md) | - | Final product owner review and approval |
 
-## Additional Documentation
+## Pre-existing Documentation
 
 | Category | Document | Description |
 |----------|----------|-------------|
