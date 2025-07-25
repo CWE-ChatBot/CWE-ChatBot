@@ -15,7 +15,8 @@ First things first, what mode would you prefer for creating this document?
 Also, do you have an existing **Project Brief** document available? It provides essential foundational information like the problem statement, target users, success metrics, MVP scope, and constraints.
 
 
-> **USER:** **interactive mode. I do not have an existing Project Brief document but would like to create one**
+> [!IMPORTANT] "User"
+> **interactive mode. I do not have an existing Project Brief document but would like to create one**
 
 
 
