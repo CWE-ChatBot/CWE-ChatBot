@@ -25,5 +25,5 @@ def update_chat_formatting(input_file, output_file):
         f.write(updated_content)
 
 if __name__ == "__main__":
-    update_chat_formatting('docs/bmad_planning_chat_manual.md', 'docs/bmad_planning_chat_admonitions.md')
+    update_chat_formatting('docs/chats/bmad_user_stories_properly_formatted.md', 'docs/chats/bmad_user_stories_with_admonitions.md')
     print("Updated chat formatting with GitHub admonitions!")

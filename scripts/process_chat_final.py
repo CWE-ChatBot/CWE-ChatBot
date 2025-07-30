@@ -97,5 +97,5 @@ def format_chat(input_file, output_file):
         f.write('\n'.join(formatted_lines))
 
 if __name__ == "__main__":
-    format_chat('docs/bmad_planning_chat.md', 'docs/bmad_planning_chat_properly_formatted.md')
+    format_chat('docs/chats/bmad_user_stories.md', 'docs/chats/bmad_user_stories_properly_formatted.md')
     print("Chat formatting complete!")

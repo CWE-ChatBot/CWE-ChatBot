@@ -40,24 +40,24 @@ graph LR
     end
 
     subgraph Techniques for A
-        C2 --> C2a[1. Discover user config API endpoint];
-        C2a --> C2b[2. Send tampered request with admin role];
-        C3 --> C3a[1. Discover LLM uses internal tools];
-        C3a --> C3b[2. Craft prompt injection to call admin tool];
+        C2 --> C2a[Discover user config API endpoint];
+        C2a --> C2b[Send tampered request with admin role];
+        C3 --> C3a[Discover LLM uses internal tools];
+        C3a --> C3b[Craft prompt injection to call admin tool];
     end
 
     subgraph Techniques for B
-        D2 --> D2a[1. Discover XSS vulnerability];
-        D2a --> D2b[2. Steal admin session cookie];
-        D3 --> D3a[1. Exploit OAuth redirect URI misconfiguration];
-        D3a --> D3b[2. Intercept authorization code];
+        D2 --> D2a[Discover XSS vulnerability];
+        D2a --> D2b[Steal admin session cookie];
+        D3 --> D3a[Exploit OAuth redirect URI misconfiguration];
+        D3a --> D3b[Intercept authorization code];
     end
 
     subgraph Techniques for C
-        E2 --> E2a[1. Find RCE in app dependency];
-        E2a --> E2b[2. Gain shell access on container];
-        E3 --> E3a[1. Phish a developer for GCP credentials];
-        E3a --> E3b[2. Access backend resources directly];
+        E2 --> E2a[Find RCE in app dependency];
+        E2a --> E2b[Gain shell access on container];
+        E3 --> E3a[Phish a developer for GCP credentials];
+        E3a --> E3b[Access backend resources directly];
     end
 ```
 
