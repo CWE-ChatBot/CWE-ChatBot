@@ -82,5 +82,13 @@ def format_user_stories_chat(input_file, output_file):
         f.write('\n'.join(formatted_lines))
 
 if __name__ == "__main__":
-    format_user_stories_chat('docs/chats/bmad_user_stories.md', 'docs/chats/bmad_user_stories_formatted_final.md')
-    print("User stories chat formatting complete!")
+    import sys
+    if len(sys.argv) > 1:
+        input_file = sys.argv[1]
+        output_file = sys.argv[2] if len(sys.argv) > 2 else input_file.replace('.md', '_formatted_final.md')
+    else:
+        input_file = 'docs/chats/bmad_user_stories.md'
+        output_file = 'docs/chats/bmad_user_stories_formatted_final.md'
+    
+    format_user_stories_chat(input_file, output_file)
+    print(f"Chat formatting complete! Output: {output_file}")
