@@ -12,6 +12,11 @@ This unified approach combines what would traditionally be separate backend and 
 | :---- | :---- | :---- | :---- |
 | July 18, 2025 | 1.0 | Initial Architecture Draft | Winston (Architect) |
 | July 23, 2025 | 2.0 | Integrated security agent's findings (WAF, AI Guardrails, DoS Protection, Enhanced Logging). | Winston (Architect) |
+| July 30, 2025 | 2.1 | Aligned architecture with OWASP Securing Agentic Applications guide Version 1.0 July 28, 2025; defined Key Components (KCs) and added Runtime Hardening section. | Chris (Security Agent) |
+
+## **High Level Architecture**
+
+### **Technical Summary**
 
 ## **High Level Architecture**
 
@@ -120,34 +125,35 @@ C1: Container: A container diagram shows the high-level technology choices, how 
 
 ### **High Level Architecture Diagram**
 ```mermaid
-  graph TD
+graph TD
     subgraph "User's Browser"
         User(User)
     end
 
     subgraph "Google Cloud Platform (GCP)"
         WAF[Google Cloud Armor - WAF]
-        WebUI[Chainlit Web UI - Python App on Cloud Run]
-        BackendAPI[Chainlit Backend - Python App on Cloud Run]
-        VectorDB[Vector Database - Managed Service / Self-Hosted]
-        TraditionalDB[Traditional DB PostgreSQL - Cloud SQL]
-        DataIngestion[Data Ingestion Pipeline - Python Script/Service]
-        LLM[LLM / Embedding Model<br>External API or Self-Hosted BYO<br>FR28, FR29]
+        subgraph "Chainlit Application on Cloud Run (KC2 - Orchestration)"
+            WebUI[Chainlit Web UI]
+            BackendAPI[Chainlit Backend]
+        end
+        subgraph "KC4 - Memory"
+            VectorDB[Vector Database - RAG]
+            TraditionalDB[Traditional DB PostgreSQL - App Data]
+        end
+        subgraph "KC6 - Operational Environment"
+             DataIngestion[Data Ingestion Pipeline]
+             LLM["KC1 - LLM / Embedding Model (BYO)"]
+        end
 
         User -- HTTPS --> WAF
         WAF -- Forwards valid traffic --> WebUI
-
         WebUI -- Queries --> BackendAPI
-
-        BackendAPI -- Executes --> NLP_AI[NLP/AI Service - Internal to Chainlit or separate Python module]
-        NLP_AI -- Searches Embeddings --> VectorDB
-        VectorDB -- Returns Relevant Chunks --> NLP_AI
-        NLP_AI -- Interacts with --> LLM
-
-        BackendAPI -- Manages Data --> TraditionalDB
+        BackendAPI -- Executes RAG --> VectorDB
+        BackendAPI -- Generates Response --> LLM
+        BackendAPI -- Manages State --> TraditionalDB
     end
 
-    subgraph "External Sources"
+    subgraph "External Sources (Part of KC6)"
         CWE_Data[CWE Corpus XML/JSON from MITRE]
     end
 
@@ -1422,6 +1428,19 @@ This section defines the mandatory security requirements for AI and human develo
   * **Scanning Tool:** Automated dependency vulnerability scanning tools (e.g., [Dependabot](https://github.com/features/security/), [Snyk](https://snyk.io/), [Trivy](https://aquasecurity.github.io/trivy/)) will be integrated into the CI/CD pipeline (NFR47).
   * **Update Policy:** A regular policy for reviewing and applying dependency updates, prioritizing critical security patches and known vulnerabilities, will be established.
   * **Approval Process:** A formal process for reviewing and approving new third-party dependencies will be followed to minimize supply chain risks.
+
+
+### Runtime Hardening
+
+To protect the production environment, the following runtime hardening principles will be applied:
+
+- Harden the Virtual Machine (Base Level): The Cloud Run environment will be based on minimal, hardened base images. All unnecessary services and packages will be removed. Network access will be restricted by default. 
+- Contain the Agentic Runtime: The Chainlit application will be containerized. Where it executes tools (like code interpreters in the future), it will do so in a sandboxed environment to restrict syscalls and filesystem access. 
+- Secure the Agent's Memory, Tools, and Context: In-memory state will be encrypted where feasible and auto-cleared at session end. All tool calls will be validated at runtime. 
+- Observability + Forensics: Every agent action (tool use, memory writes) will be logged with a timestamp, agent/user ID, and session ID for full traceability. 
+- Identity, Authentication, and Agent Authorization: Each agent service will have a distinct, manageable machine identity (GCP Service Account) with least-privilege IAM roles. 
+
+
 
 ### Security Testing
 
