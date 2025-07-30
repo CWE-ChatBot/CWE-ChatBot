@@ -316,3 +316,160 @@ Markdown
 This concludes the \`security-architecture-checklist\`. The architecture is sound and provides an excellent blueprint for building a secure application. The recommendations above are focused on maturing the operational and procedural aspects of your security program.
 
 These updates align our project's security posture with the latest industry-leading guidance for agentic AI systems.
+
+
+
+> [!IMPORTANT] **User Input**
+> do the user stories need to be updated based on owasp guide?
+
+
+
+Directory structure:
+
+└── /./
+
+    ├── S-2.LLM-Input-Output-Guardrails.md
+
+    ├── S-1.Rate-Limiting-and-Budget-Monitoring.md
+
+    ├── S-8.Integrity-of-Ingested-CWE-Corpus-Data.md
+
+    ├── 1.3.CWE-Data-Ingestion-Pipeline.md
+
+    ├── S-4.Comprehensive-and-Secure-Audit-Logging.md
+
+    ├── 1.1.Project-Repository-Setup.md
+
+    ├── S-7.Application-Resiliency-against-Complex-Queries.md
+
+    ├── 2.3.Role-Based-Context-and-Hallucination-Mitigation.md
+
+    ├── S-3.API-Authorization-and-Access-Control.md
+
+    ├── 2.2.Contextual-Retrieval-and-Follow-ups.md
+
+    ├── S-6.Secure-BYO-LLM-Endpoint-Interactions.md
+
+    ├── 2.1.Core-NLU-and-Query-Matching.md
+
+    ├── 1.2.Chainlit-Deployment-to-Cloud-Run.md
+
+    └── S-5.Harden-Session-and-Authentication-Flow.md
+
+
+Yes, the user stories should be updated. While they are already strong, the OWASP guide provides more specific and actionable language that can make them even better. The core substance of the stories is correct, but we can enhance them by incorporating the guide's explicit recommendations for agentic systems.
+
+I will update the two most relevant stories, S-2 (Guardrails) and S-8 (Data Integrity), to reflect this best practice.
+
+File: /S-2.LLM-Input-Output-Guardrails.md (Updated)
+This story is updated to include more specific OWASP-recommended techniques like using clear delimiters and schema enforcement.
+
+Markdown
+
+# Story S-2: Implement LLM Input/Output Guardrails
+
+**Status**: Approved
+
+## Story
+
+**As a** Security Engineer,
+**I want** all user input to be sanitized before being sent to the LLM and all LLM output to be validated before being displayed,
+**so that** prompt injection and system prompt leaking attacks are prevented.
+
+## Acceptance Criteria
+
+1.  [cite_start]A Python module for input sanitization is created to detect and neutralize common prompt injection patterns and **escape or strip special delimiters** (`##`, `<<`, `{{}}`) before they are inserted into a prompt[cite: 652].
+2.  [cite_start]All user-provided chat messages are processed by this input sanitization module before being used in an LLM prompt[cite: 589].
+3.  An output validation module is created to scan LLM responses for keywords or patterns that match the confidential system prompt.
+4.  [cite_start]If a potential system prompt leak is detected in an LLM response, the response is blocked, a generic error message is returned to the user, and the event is logged[cite: 616].
+5.  Any detected prompt injection attempt (on input or output) is logged as a "CRITICAL" security event with the full payload for analysis.
+6.  Unit tests are created for the guardrail modules that verify their effectiveness against a list of known prompt injection attack strings.
+7.  [cite_start]**New:** The system uses a structured format (like JSON) for tool arguments to constrain LLM output and reduce the risk of hallucinating new instructions[cite: 660].
+
+## Security Requirements
+
+1.  **Secure LLM Boundary:** The LLM must be treated as an untrusted component. [cite_start]All data flowing into it (input) and out of it (output) must pass through a security checkpoint or "guardrail." [cite: 646]
+2.  **Defense in Depth:** Both input sanitization and output validation must be implemented. Relying on only one is insufficient.
+
+## Tasks / Subtasks
+
+-   [ ] **Task 1: Implement Input Sanitization Module** (AC: 1, 6)
+    -   [ ] Create `apps/chatbot/src/security/guardrails.py`.
+    -   [ ] Implement a function `sanitize_input(prompt: str) -> str` that uses regular expressions or keyword matching to detect and neutralize injection patterns.
+    -   [cite_start][ ] **Update:** Explicitly add logic to escape or remove special characters and delimiters that could be misinterpreted by the LLM[cite: 652].
+    -   [ ] Develop a comprehensive suite of unit tests with known attack strings to validate the sanitizer.
+-   [ ] **Task 2: Implement Structured Output for Tools** (AC: 7)
+    -   [cite_start][ ] Define strict Pydantic or JSON schemas for any internal tools the LLM may call in the future[cite: 659].
+    -   [ ] Update the prompt templating to require the LLM to respond with JSON that conforms to these schemas, rather than natural language commands.
+-   [ ] **Task 3: Implement Output Validation Module** (AC: 3, 6)
+    -   [ ] In `guardrails.py`, implement `validate_output(response: str) -> bool` to check the LLM response against a confidential list of system prompt keywords.
+-   [ ] **Task 4: Integrate Guardrails into Chat Flow** (AC: 2, 4)
+    -   [ ] In the main chat processing logic, integrate the `sanitize_input()` and `validate_output()` functions at the appropriate points.
+    -   [ ] Ensure failures in either guardrail block the response and trigger logging.
+-   [ ] **Task 5: Implement Critical Security Logging** (AC: 5)
+    -   [ ] Extend the logging module to handle "CRITICAL" log level events from the guardrails.
+
+## Dev Notes
+
+### Threat Considerations
+
+* **Threats Mitigated:**
+    * `T6 (Intent Breaking)` / `T-1 (Prompt Injection)`: Addressed by the input sanitization guardrail.
+    * `I-2 (System Prompt Extraction)`: Addressed by the output validation guardrail.
+* **PRD Reference:** Implements `NFR8` (Abuse Prevention) and `NFR9` (System Confidentiality).
+
+### Implementation Guidance
+
+* [cite_start]**Prompt Hardening:** Use clear delimiters (like XML tags) to separate system instructions from user input within the prompt itself[cite: 589]. This makes it harder for the LLM to confuse the two.
+* [cite_start]**Output Validation:** The list of keywords to detect in the output must be stored securely and not be part of the main prompt context itself[cite: 663].
+
+... (Testing and Change Log sections remain the same) ...
+File: /S-8.Integrity-of-Ingested-CWE-Corpus-Data.md (Updated)
+This story is updated to be more explicit about its role in preventing Memory Poisoning, a key threat from the OWASP guide.
+
+Markdown
+
+# Story S-8: Ensure Integrity of Ingested CWE Corpus Data
+
+**Status**: Approved
+
+## Story
+
+**As a** Data Engineer,
+**I want** to verify the integrity of the CWE corpus data during the ingestion process,
+**so that** the application's core knowledge base (RAG Memory) cannot be poisoned with malicious information.
+
+## Acceptance Criteria
+
+1.  The data ingestion pipeline must exclusively use secure, certificate-validated TLS connections when downloading data from the official MITRE source.
+2.  [cite_start]If MITRE provides file checksums (e.g., SHA-256) or digital signatures for their data archives, the pipeline must download and validate them before processing the data[cite: 1392].
+3.  If a checksum or signature validation fails, the ingestion process must immediately abort, and a "CRITICAL" alert must be logged.
+4.  The data ingestion service is architected to run in an isolated environment with minimal necessary privileges.
+5.  [cite_start]**New:** All retrieved CWE data is validated against an expected schema before being processed for embedding to prevent storing corrupted or malformed data in the vector database[cite: 637].
+
+## Security Requirements
+1.  **Prevent Memory Poisoning:** The RAG knowledge base is a form of long-term memory. [cite_start]The system must have controls to prevent an attacker from corrupting this memory with false or malicious information[cite: 193].
+2.  **Secure Supply Chain:** The data pipeline for the CWE corpus is a critical part of our software supply chain and must be secured against tampering.
+
+## Tasks / Subtasks
+-   [ ] **Task 1: Secure Data Download** (AC: 1)
+-   [ ] **Task 2: Implement Integrity Validation** (AC: 2, 3)
+-   [ ] **Task 3: Implement Schema Validation** (AC: 5)
+    -   [ ] Define a schema (e.g., Pydantic model) that represents a valid CWE entry.
+    -   [ ] After parsing the downloaded file, validate each entry against this schema before it is sent for embedding.
+-   [ ] **Task 4: Isolate the Ingestion Service** (AC: 4)
+    -   [ ] Review the IAM roles and network policies for the data ingestion service to ensure it has no unnecessary permissions.
+
+## Dev Notes
+
+### Threat Considerations
+
+* **Threats Mitigated:**
+    * **`T1 (Memory Poisoning)`**: This is the primary threat mitigated by this story. [cite_start]By validating the source data's integrity, we prevent the RAG's long-term memory from being corrupted[cite: 193].
+    * `T-2 (CWE Data Poisoning)`: The original threat name, which is a specific form of Memory Poisoning.
+
+## Testing
+### Integration Tests
+- [ ] Create a test that attempts to run the ingestion pipeline with a corrupted or schema-invalid data file and verify that the process aborts and logs a critical error.
+
+... (Change Log section remains the same) ...
