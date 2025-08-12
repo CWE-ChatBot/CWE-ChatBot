@@ -84,7 +84,9 @@ The ticket content is reviewed.
 If AOK, then the ticket is manually moved to Done.
 
 Notes
-1. The transition of tickets on the board are deliberately manual as these are manual review points before and after the ticket is implemented.
+1. The transition of tickets on the board is deliberately manual as these are manual review points before and after the ticket is implemented.
 2. The User Story has the Task list already (and other info).
-3. The plan is saved on the ticket (as a comment) as it provides useful detail for review.
+3. The plan is saved on the ticket (as a comment) as it provides useful detail for pre/post implementation review.
 4. Claude Code commands for git are not used or created or necessary (for what I wanted).
+
+
