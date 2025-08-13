@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository contains the **CWE ChatBot** project - a conversational AI application designed to revolutionize interaction with the MITRE Common Weakness Enumeration (CWE) corpus. The project aims to shift from static search and browse experiences to dynamic, interactive conversational interfaces for cybersecurity professionals.
 
+**Current Status**: Planning and Documentation Phase - Ready for implementation
+
 ### Key Project Goals
 - Enable efficient vulnerability advisory creation for PSIRT members
 - Provide contextual CWE mapping assistance for developers
@@ -15,20 +17,33 @@ This repository contains the **CWE ChatBot** project - a conversational AI appli
 
 ## Repository Structure
 
-This is a **documentation-heavy project** currently in the planning phase. The repository follows a structured approach with comprehensive documentation driving development:
+This is a **documentation-driven project** that follows BMad-Method principles. The comprehensive documentation drives all development decisions:
 
 ```
 cwe_chatbot_bmad/
-├── docs/                    # Core project documentation
-│   ├── architecture.md      # Complete technical architecture (Python/Chainlit-based)
-│   ├── prd.md              # Product Requirements Document with user stories
-│   ├── project-brief.md    # Executive summary and problem statement
-│   ├── ui_ux.md           # UI/UX specifications
-│   └── *_review.md        # Review documents for each phase
+├── docs/                    # Core project documentation (READ FIRST)
+│   ├── architecture/        # Detailed architecture breakdown
+│   │   ├── tech-stack.md           # Definitive technology selections and versions
+│   │   ├── development-workflow.md # Local setup and development commands
+│   │   ├── unified-project-structure.md # Future monorepo structure
+│   │   ├── database-schema.md      # PostgreSQL and vector DB schemas
+│   │   ├── rest-api-spec.md        # Complete API specifications
+│   │   └── security.md             # Security architecture and requirements
+│   ├── prd/                 # Product Requirements breakdown
+│   │   ├── user-stories.md         # Detailed user stories with acceptance criteria
+│   │   ├── requirements.md         # Functional and non-functional requirements
+│   │   └── epic-*.md              # Development epics and story groupings
+│   ├── security/            # Comprehensive security analysis
+│   │   ├── bmad_fullagent_security/ # Complete security assessment
+│   │   ├── threat_model_*.md       # Multiple threat modeling approaches
+│   │   └── attack_tree.md          # Attack surface analysis
+│   ├── stories/             # Individual user stories for implementation
+│   └── plans/               # Implementation planning documents
+├── scripts/                 # Python utility scripts (mostly for documentation processing)
 ├── web-bundles/            # BMad-Method AI agent framework
 │   ├── agents/            # Specialized AI agents (analyst, architect, dev, etc.)
 │   └── teams/             # Agent team configurations
-└── notes.md               # Development notes and references
+└── tmp*/                   # Temporary working directories
 ```
 
 ## Architecture Overview
@@ -51,51 +66,40 @@ Based on the comprehensive architecture document, this project will be built as:
 
 ## Development Commands
 
-This project is currently in planning phase. Once implementation begins, these commands will be relevant:
+**Current Phase**: Documentation and Planning - No code implementation yet.
 
-### Setup and Environment
+**Key Reference**: See `docs/architecture/development-workflow.md` for complete setup instructions when implementation begins.
+
+### Future Development Commands (from architecture docs)
+When implementation starts, these will be the primary commands:
+
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Project setup (Poetry-based monorepo)
+poetry install                                    # Install all dependencies
+gcloud auth login                                # Authenticate with GCP
 
-# Install dependencies (when available)
-pip install -r requirements.txt
-# Or using Poetry
-poetry install
+# Development
+poetry run chainlit run apps/chatbot/main.py -w  # Start with hot-reload
+poetry run pytest                               # Run all tests
+poetry run pytest apps/chatbot/tests/           # Test specific app
+
+# Data processing
+poetry run python services/cwe_data_ingestion/ingestion.py --local-dev
+
+# Code quality
+black .                                         # Format code
+ruff check .                                    # Lint
+mypy .                                         # Type checking
+
+# Container builds
+docker build -t cwe-chatbot-app apps/chatbot/  # Build Docker image
 ```
 
-### Running the Application
+### Script Utilities
 ```bash
-# Start Chainlit application (future)
-chainlit run apps/chatbot/main.py
-
-# With hot reload for development
-chainlit run apps/chatbot/main.py -w
-```
-
-### Testing
-```bash
-# Run all tests
-pytest
-
-# Run specific test directory
-pytest apps/chatbot/tests/
-
-# Run with coverage
-pytest --cov=apps/chatbot
-```
-
-### Code Quality
-```bash
-# Format code
-black .
-
-# Lint with Ruff
-ruff check .
-
-# Type checking
-mypy .
+# Process documentation (existing scripts)
+python3 scripts/process_chat_precise.py        # Format chat conversations
+python3 scripts/update_chat_admonitions.py     # Add GitHub admonitions
 ```
 
 ## Key Development Patterns
@@ -186,9 +190,71 @@ This project uses the BMad-Method framework for AI-driven development:
 - The system must handle **sensitive vulnerability information** appropriately
 - Implementation will follow **security-first development practices**
 
-## Files to Reference
+## Essential Documentation to Read First
 
-- `docs/architecture.md`: Complete technical specifications and API designs
-- `docs/prd.md`: Detailed functional and non-functional requirements
-- `docs/project-brief.md`: High-level project vision and user personas
-- `web-bundles/agents/`: BMad-Method AI agents for development assistance
+When working on this project, always start with these key documents:
+
+### Architecture & Technical Design
+- `docs/architecture.md`: Comprehensive fullstack architecture with C4 diagrams
+- `docs/architecture/tech-stack.md`: **Definitive technology choices and versions** - ALL development must follow these selections
+- `docs/architecture/development-workflow.md`: Local setup, environment vars, development commands
+- `docs/architecture/unified-project-structure.md`: Future monorepo structure for implementation
+- `docs/architecture/database-schema.md`: PostgreSQL and vector database schemas
+- `docs/architecture/rest-api-spec.md`: Complete API specifications
+
+### Product Requirements & Business Logic  
+- `docs/prd.md`: Master PRD with functional/non-functional requirements
+- `docs/prd/user-stories.md`: Detailed user stories with acceptance criteria
+- `docs/prd/requirements.md`: All FR/NFR requirements with IDs for traceability
+
+### Security Architecture (Critical for this project)
+- `docs/security/bmad_fullagent_security/`: Complete security assessment and test cases
+- `docs/security/threat_model_stride/`: STRIDE-based threat modeling
+- `docs/architecture/security.md`: Security architecture requirements
+
+### Implementation Planning
+- `docs/stories/`: Individual implementation stories (1.1.*, 1.2.*, etc.)
+- `docs/plans/`: Implementation planning documents
+
+### BMad-Method Agent Framework
+- `web-bundles/agents/`: Specialized AI agents for different development roles
+- `web-bundles/teams/`: Pre-configured agent teams for different task types
+
+## Critical Implementation Guidelines
+
+### Technology Stack Compliance
+**MUST READ**: `docs/architecture/tech-stack.md` contains definitive technology selections including specific versions. All code must use:
+- Python 3.10+
+- Chainlit (latest stable 0.7.x) for UI and backend
+- PostgreSQL 14.x via Cloud SQL
+- Pinecone for vector database (or self-hosted alternative)
+- Poetry for dependency management
+- Google Cloud Platform (GCP) with Cloud Run deployment
+
+### Security-First Development
+This is a **defensive security project** handling sensitive vulnerability data:
+- Never hardcode secrets - use environment variables exclusively
+- Follow OWASP guidelines for AI security (documented in security/)
+- Implement comprehensive input validation and sanitization
+- All features require security review before implementation
+- RAG pattern is mandatory to prevent AI hallucination
+
+### Documentation-Driven Development
+- ALL features must be traced back to specific PRD requirements (FR/NFR IDs)
+- User stories in `docs/stories/` provide acceptance criteria for implementation
+- Architecture decisions are binding and documented in `docs/architecture/`
+- Security requirements are non-negotiable (see `docs/security/`)
+
+### Environment Configuration
+When implementation begins, environment setup follows `docs/architecture/development-workflow.md`:
+- Use `.env.example` as template for local `.env` file
+- GCP authentication required: `gcloud auth login`
+- Poetry-based monorepo with workspace dependencies
+- All secrets via GCP Secret Manager in production
+
+### Testing Requirements
+- Unit tests: pytest with comprehensive coverage
+- Integration tests: API endpoint testing
+- E2E tests: Playwright for Chainlit UI flows  
+- Security tests: SAST, DAST, and LLM security validation
+- All tests must pass before any deployment
