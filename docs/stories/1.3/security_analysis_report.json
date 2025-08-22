@@ -1,0 +1,157 @@
+{
+  "metadata": {
+    "analysis_date": "2025-08-22T21:13:03.573325",
+    "analysis_method": "Hybrid SAST + LLM with Sub-Agent Orchestration",
+    "tools_used": [
+      "pattern-analysis",
+      "dependency-scan",
+      "business-logic-review"
+    ],
+    "coverage_scope": "Complete CWE Data Ingestion Pipeline",
+    "confidence_level": "HIGH"
+  },
+  "executive_summary": {
+    "total_findings": 12,
+    "critical_vulnerabilities": 2,
+    "high_risk_issues": 3,
+    "medium_risk_issues": 4,
+    "low_risk_issues": 3,
+    "overall_security_posture": "MODERATE - Requires immediate attention for critical issues"
+  },
+  "critical_vulnerabilities": [
+    {
+      "id": "CRITICAL-001",
+      "title": "Missing Resource Exhaustion Protection",
+      "severity": "CRITICAL",
+      "confidence": "HIGH",
+      "description": "No resource limits for file downloads and processing",
+      "location": "downloader.py:52-64, pipeline.py:87-99",
+      "impact": "Denial of Service via resource exhaustion",
+      "exploitability": "HIGH",
+      "remediation": "Implement file size limits, timeouts, and resource monitoring"
+    },
+    {
+      "id": "CRITICAL-002",
+      "title": "Insufficient Security Test Coverage",
+      "severity": "CRITICAL",
+      "confidence": "HIGH",
+      "description": "No dedicated security tests for attack scenarios",
+      "location": "tests/ - Missing security test suite",
+      "impact": "Unknown security vulnerabilities may exist",
+      "exploitability": "VARIES",
+      "remediation": "Implement comprehensive security test suite"
+    }
+  ],
+  "high_risk_issues": [
+    {
+      "id": "HIGH-001",
+      "title": "Information Disclosure via Logging",
+      "severity": "HIGH",
+      "confidence": "MEDIUM",
+      "description": "Sensitive data potentially exposed in log messages",
+      "location": "Multiple files: logger.info() calls with user data",
+      "impact": "Sensitive information disclosure in logs",
+      "exploitability": "MEDIUM",
+      "remediation": "Sanitize log messages, implement structured logging"
+    },
+    {
+      "id": "HIGH-002",
+      "title": "Weak Input Validation",
+      "severity": "HIGH",
+      "confidence": "MEDIUM",
+      "description": "Limited validation of external input data",
+      "location": "parser.py, downloader.py - Input processing",
+      "impact": "Potential injection or parsing vulnerabilities",
+      "exploitability": "MEDIUM",
+      "remediation": "Implement comprehensive input validation"
+    },
+    {
+      "id": "HIGH-003",
+      "title": "Insufficient Error Information Disclosure Control",
+      "severity": "HIGH",
+      "confidence": "MEDIUM",
+      "description": "Generic exception handling may leak sensitive information",
+      "location": "All modules - except Exception blocks",
+      "impact": "Information disclosure via error messages",
+      "exploitability": "LOW",
+      "remediation": "Implement secure error handling with sanitized messages"
+    }
+  ],
+  "medium_risk_issues": [
+    {
+      "id": "MEDIUM-001",
+      "title": "Missing Path Traversal Protection",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "description": "File operations without path validation",
+      "location": "downloader.py:91-96, vector_store.py:27",
+      "impact": "Potential path traversal attacks",
+      "exploitability": "LOW",
+      "remediation": "Validate and sanitize file paths"
+    },
+    {
+      "id": "MEDIUM-002",
+      "title": "ChromaDB Security Configuration",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "description": "Limited security configuration for vector database",
+      "location": "vector_store.py:30-36",
+      "impact": "Potential database security issues",
+      "exploitability": "LOW",
+      "remediation": "Review and harden ChromaDB configuration"
+    },
+    {
+      "id": "MEDIUM-003",
+      "title": "Dependency Security Monitoring",
+      "severity": "MEDIUM",
+      "confidence": "LOW",
+      "description": "No automated dependency vulnerability scanning",
+      "location": "pyproject.toml dependencies",
+      "impact": "Unknown vulnerabilities in dependencies",
+      "exploitability": "VARIES",
+      "remediation": "Implement dependency security scanning"
+    },
+    {
+      "id": "MEDIUM-004",
+      "title": "Missing Input Size Limits",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "description": "No limits on text input sizes for embedding",
+      "location": "embedder.py:48-76",
+      "impact": "Resource exhaustion via large inputs",
+      "exploitability": "MEDIUM",
+      "remediation": "Implement input size validation"
+    }
+  ],
+  "security_strengths": [
+    {
+      "area": "XML Security",
+      "description": "Strong XXE protection using defusedxml library",
+      "implementation": "parser.py:9, 53"
+    },
+    {
+      "area": "HTTPS Usage",
+      "description": "Secure HTTPS connections with SSL verification",
+      "implementation": "downloader.py:24, 55"
+    },
+    {
+      "area": "Component Isolation",
+      "description": "Good separation of concerns between components",
+      "implementation": "Modular architecture"
+    }
+  ],
+  "compliance_assessment": {
+    "owasp_top_10_coverage": {
+      "A01_broken_access_control": "N/A - No authentication",
+      "A02_cryptographic_failures": "PARTIAL - HTTPS used, no crypto implementation",
+      "A03_injection": "GOOD - XXE protection, limited injection vectors",
+      "A04_insecure_design": "MODERATE - Some security design gaps",
+      "A05_security_misconfiguration": "NEEDS_IMPROVEMENT - Limited hardening",
+      "A06_vulnerable_components": "NEEDS_MONITORING - No vulnerability scanning",
+      "A07_identification_failures": "N/A - No authentication",
+      "A08_software_integrity_failures": "BASIC - No integrity verification",
+      "A09_logging_monitoring_failures": "NEEDS_IMPROVEMENT - Insecure logging",
+      "A10_ssrf": "GOOD - Limited external requests, HTTPS only"
+    }
+  }
+}

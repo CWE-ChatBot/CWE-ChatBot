@@ -14,7 +14,14 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "^3.10"
-# Core dependencies will be added in subsequent stories
+# Core dependencies for CWE data ingestion pipeline
+requests = "^2.31.0"
+lxml = "^4.9.3"
+defusedxml = "^0.7.1" 
+sentence-transformers = "^2.2.2"
+chromadb = "^0.4.15"
+click = "^8.1.7"
+numpy = "^1.24.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
