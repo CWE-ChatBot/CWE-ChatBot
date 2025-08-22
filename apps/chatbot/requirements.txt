@@ -1,0 +1,14 @@
+# Core dependencies for CWE ChatBot
+chainlit>=2.7.0,<3.0.0
+
+# Production server
+gunicorn>=21.0.0,<22.0.0
+
+# HTTP client for health checks
+requests>=2.31.0,<3.0.0
+
+# Security and validation
+python-dotenv>=1.0.0,<2.0.0
+
+# Logging
+structlog>=23.0.0,<24.0.0
