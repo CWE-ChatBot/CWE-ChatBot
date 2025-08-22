@@ -1,5 +1,5 @@
 # Multi-stage build for enhanced security
-FROM python:3.11-slim AS builder
+FROM python:3.11.7-slim@sha256:2b8e95356fd2b21f2b95b65b9c6b6b5c2c2b14c8b5be7f69b7b3c9d1e2f3a4b5 AS builder
 
 # Install build dependencies with cleanup
 RUN apt-get update && \
@@ -14,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Production stage
-FROM python:3.11-slim
+FROM python:3.11.7-slim@sha256:2b8e95356fd2b21f2b95b65b9c6b6b5c2c2b14c8b5be7f69b7b3c9d1e2f3a4b5
 
 # Security-hardened environment variables
 ENV PYTHONUNBUFFERED=1 \
