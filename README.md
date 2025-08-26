@@ -22,7 +22,7 @@ The following documents were created in order during the project planning phase:
 
 | Category | Document | Description |
 |----------|----------|-------------|
-| Cost Analysis | [docs/costs.md](docs/costs.md) | Project cost breakdown and analysis |
+| Cost Analysis | [docs/costs.md](docs/costs/costs.md) | Project cost breakdown and analysis |
 | Architecture Decision Records | [docs/ADR/](docs/ADR/) | Technical decisions and rationale |
 | Research Documents | [docs/research/](docs/research/) | Security research and guardrails analysis |
 
