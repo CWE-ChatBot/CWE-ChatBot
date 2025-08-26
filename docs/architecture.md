@@ -236,63 +236,110 @@ This section defines the core data models and entities that will underpin the CW
 
 ```mermaid
 graph TD
+    %% ===== External Sources =====
     subgraph "External Sources"
-        U(👤 User)
-        MITRE[🏢 MITRE CWE Corpus <br> XML/JSON Files]
-        OAUTH[🔐 OAuth Provider <br> e.g., Google, GitHub]
+        U[👤 User]
+        MITRE[🏢 MITRE CWE Corpus <br> XML / JSON Files]
+        OAUTH[🔐 OAuth Provider <br> Google, GitHub]
     end
 
-    subgraph "Application & Processing Layer"
+    %% ===== App and Processing =====
+    subgraph "Application and Processing Layer"
         direction LR
         Ingest[⚙️ Data Ingestion Pipeline]
         App[🌐 CWE ChatBot Application <br> Chainlit Backend]
+        OTEL[📝 Structured Logger SDK <br> OpenTelemetry JSON Logs]
     end
 
-    subgraph "Data Storage Layer (Data at Rest)"
+    %% ===== Data Storage Layer - Data at Rest =====
+    subgraph "Data Storage Layer - Data at Rest"
         direction LR
-        subgraph "Vector Database (e.g., Pinecone)"
-            VecDB("
-                <b>CWE_Embedding</b><br>
-                - cwe_id (string)<br>
-                - embedding (float vector)<br>
-                - metadata (full_text, version, etc.)
-            ")
+        
+        %% --- Object Storage on GCP ---
+        subgraph "Object Storage - Cloud Storage"
+            ObjRaw["📁 raw_cwe <br> XML JSON snapshots"]
+            ObjArtifacts["📁 ingest_runs <br> cleaned text parquet csv run metadata"]
+            ObjBackups["📁 backups <br> Cloud SQL dumps configs"]
         end
-        subgraph "PostgreSQL Database"
-            SQLDB("
-                <b>users</b><br>
-                - id (UUID)<br>
+        
+        %% --- Cloud SQL with pgvector ---
+        subgraph "Cloud SQL for PostgreSQL with pgvector"
+            SQLDB["<b>users</b><br>
+                - id UUID<br>
                 - email<br>
                 - oauth_provider_user_id<br><br>
+                
                 <b>conversations</b><br>
-                - id (UUID)<br>
+                - id UUID<br>
                 - user_id<br><br>
+                
                 <b>messages</b><br>
-                - id (UUID)<br>
-                - sender ('user'/'chatbot')<br>
-                - content (User Query Text)
-            ")
+                - id UUID<br>
+                - sender user or chatbot<br>
+                - content User Query Text<br><br>
+                
+                <b>cwe_embedding</b><br>
+                - cwe_id string<br>
+                - embedding vector<br>
+                - metadata full_text version etc.<br><br>
+                
+                <b>audit_events</b><br>
+                - id UUID<br>
+                - user_id nullable<br>
+                - action login query ingest ...<br>
+                - resource conversation_id cwe_id etc.<br>
+                - status success failure<br>
+                - ip_address nullable<br>
+                - created_at timestamptz"]
+        end
+        
+        %% --- Observability and Logs on GCP ---
+        subgraph "Observability and Logs"
+            LogCollector["🧲 Log Collector <br> OTEL Collector Fluent Bit on GKE or Cloud Run"]
+            LogStore["🗃️ Central Log Store <br> Cloud Logging"]
+            MetricsTraces["📈 Metrics and Traces <br> Cloud Monitoring and Cloud Trace"]
         end
     end
 
-    %% Data Flows
-    MITRE -- "1. Fetches raw data" --> Ingest
-    Ingest -- "2. Processes & creates embeddings" --> VecDB
-    
-    U -- "3. Authenticates via Redirect" --> OAUTH
-    OAUTH -- "4. Returns User Info/Token" --> App
-    App -- "5. Creates/updates User record" --> SQLDB
+    %% ===== Data Flows =====
+    MITRE -- "1. Fetch raw corpus" --> Ingest
+    Ingest -- "2a. Persist raw snapshots" --> ObjRaw
+    Ingest -- "2b. Persist cleaned artifacts and run metadata" --> ObjArtifacts
+    Ingest -- "3. Create embeddings and insert into cwe_embedding" --> SQLDB
 
-    U -- "6. Sends Query" --> App
-    App -- "7. Stores query in 'messages'" --> SQLDB
-    App -- "8. Searches for relevant CWEs" --> VecDB
-    VecDB -- "9. Returns CWE data" --> App
-    App -- "10. Generates & stores response" --> SQLDB
-    App -- "11. Displays response" --> U
+    U -- "4. Authenticate via redirect" --> OAUTH
+    OAUTH -- "5. Return user info token" --> App
+    App -- "6. Create update user" --> SQLDB
 
-    style U fill:#cde4ff
-    style MITRE fill:#f5f5dc
-    style OAUTH fill:#f8d7da
+    U -- "7. Send query" --> App
+    App -- "8. Store query in messages" --> SQLDB
+    App -- "9. Semantic search using pgvector" --> SQLDB
+    SQLDB -- "10. Return relevant CWE chunks" --> App
+    App -- "11. Generate and store response" --> SQLDB
+    App -- "12. Display response" --> U
+
+    App -. "A1. audit_events login query etc." .-> SQLDB
+    Ingest -. "A2. audit_events ingest run" .-> SQLDB
+
+    App -. "L1. structured logs" .-> OTEL
+    Ingest -. "L2. structured logs" .-> OTEL
+    OTEL --> LogCollector --> LogStore
+    LogCollector -. "export metrics traces" .-> MetricsTraces
+
+    SQLDB -- "B1. scheduled backups" --> ObjBackups
+
+    %% Styles
+    style U fill:#cde4ff,stroke:#6aa1ff
+    style MITRE fill:#f5f5dc,stroke:#999
+    style OAUTH fill:#f8d7da,stroke:#d88
+    style ObjRaw fill:#fff6e5,stroke:#e5b35b
+    style ObjArtifacts fill:#fff6e5,stroke:#e5b35b
+    style ObjBackups fill:#fff6e5,stroke:#e5b35b
+    style SQLDB fill:#e9f0ff,stroke:#7a9fe8
+    style LogStore fill:#f0f0f0,stroke:#bbb
+    style LogCollector fill:#f0f0f0,stroke:#bbb
+    style MetricsTraces fill:#f0f0f0,stroke:#bbb
+
 ```
 
 ### User
