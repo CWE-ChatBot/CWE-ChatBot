@@ -232,6 +232,69 @@ This section is the definitive record of the technologies and their specific ver
 
 This section defines the core data models and entities that will underpin the CWE ChatBot application. These models describe the structure of the information managed by the system, including user data, conversational history, and the representation of the CWE corpus.
 
+### Data Flow and Storage Diagram
+
+```mermaid
+graph TD
+    subgraph "External Sources"
+        U(👤 User)
+        MITRE[🏢 MITRE CWE Corpus <br> XML/JSON Files]
+        OAUTH[🔐 OAuth Provider <br> e.g., Google, GitHub]
+    end
+
+    subgraph "Application & Processing Layer"
+        direction LR
+        Ingest[⚙️ Data Ingestion Pipeline]
+        App[🌐 CWE ChatBot Application <br> Chainlit Backend]
+    end
+
+    subgraph "Data Storage Layer (Data at Rest)"
+        direction LR
+        subgraph "Vector Database (e.g., Pinecone)"
+            VecDB("
+                <b>CWE_Embedding</b><br>
+                - cwe_id (string)<br>
+                - embedding (float vector)<br>
+                - metadata (full_text, version, etc.)
+            ")
+        end
+        subgraph "PostgreSQL Database"
+            SQLDB("
+                <b>users</b><br>
+                - id (UUID)<br>
+                - email<br>
+                - oauth_provider_user_id<br><br>
+                <b>conversations</b><br>
+                - id (UUID)<br>
+                - user_id<br><br>
+                <b>messages</b><br>
+                - id (UUID)<br>
+                - sender ('user'/'chatbot')<br>
+                - content (User Query Text)
+            ")
+        end
+    end
+
+    %% Data Flows
+    MITRE -- "1. Fetches raw data" --> Ingest
+    Ingest -- "2. Processes & creates embeddings" --> VecDB
+    
+    U -- "3. Authenticates via Redirect" --> OAUTH
+    OAUTH -- "4. Returns User Info/Token" --> App
+    App -- "5. Creates/updates User record" --> SQLDB
+
+    U -- "6. Sends Query" --> App
+    App -- "7. Stores query in 'messages'" --> SQLDB
+    App -- "8. Searches for relevant CWEs" --> VecDB
+    VecDB -- "9. Returns CWE data" --> App
+    App -- "10. Generates & stores response" --> SQLDB
+    App -- "11. Displays response" --> U
+
+    style U fill:#cde4ff
+    style MITRE fill:#f5f5dc
+    style OAUTH fill:#f8d7da
+```
+
 ### User
 
   * **Purpose:** To manage user accounts, preferences, and authentication details for both centrally-hosted and self-hosted deployments. It also securely stores configurations for "Bring Your Own" (BYO) LLM API keys and models (FR28, FR29).
