@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  postgres-test:
+    image: pgvector/pgvector:pg16
+    container_name: cwe-chatbot-postgres-test
+    environment:
+      POSTGRES_DB: cwe_chatbot_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: testpassword123
+    ports:
+      - "5433:5432"  # Use 5433 to avoid conflicts
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cwe_chatbot_test"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_test_data:
