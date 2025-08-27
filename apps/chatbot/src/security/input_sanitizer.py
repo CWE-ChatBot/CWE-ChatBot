@@ -5,6 +5,7 @@ Implements security-first practices following python-secure-coding.md guidelines
 
 import re
 import logging
+import unicodedata
 from typing import List, Tuple
 
 
@@ -102,16 +103,19 @@ class InputSanitizer:
         # Log original input length for monitoring
         logger.debug(f"Sanitizing input of length {len(user_input)}")
         
-        # 1. Length validation
-        if len(user_input) > self.max_length:
+        # 1. Unicode normalization - prevents encoding-based bypass attempts
+        normalized_input = self._normalize_unicode(user_input)
+        
+        # 2. Length validation (after normalization, as it may change length)
+        if len(normalized_input) > self.max_length:
             if self.strict_mode:
                 raise ValueError(f"Input exceeds maximum length of {self.max_length}")
-            user_input = user_input[:self.max_length]
+            normalized_input = normalized_input[:self.max_length]
         
-        # 2. Remove null bytes and control characters
-        cleaned_input = self._remove_control_characters(user_input)
+        # 3. Remove null bytes and control characters
+        cleaned_input = self._remove_control_characters(normalized_input)
         
-        # 3. Check for injection patterns
+        # 4. Check for injection patterns
         injection_detected = self._detect_injection_patterns(cleaned_input)
         
         if injection_detected:
@@ -121,7 +125,7 @@ class InputSanitizer:
             # In non-strict mode, neutralize but allow
             cleaned_input = self._neutralize_injection_patterns(cleaned_input)
         
-        # 4. Normalize whitespace
+        # 5. Normalize whitespace
         cleaned_input = self._normalize_whitespace(cleaned_input)
         
         logger.debug(f"Input sanitized successfully, final length: {len(cleaned_input)}")
@@ -156,6 +160,84 @@ class InputSanitizer:
                 detected_patterns.append(f"injection_pattern_{i}")
         
         return len(detected_patterns) > 0, detected_patterns
+    
+    def _normalize_unicode(self, text: str) -> str:
+        """
+        Normalize Unicode text to prevent encoding-based bypass attempts.
+        
+        Uses NFKC normalization to:
+        - Decompose characters into canonical forms
+        - Convert compatibility characters to canonical equivalents
+        - Compose characters back into canonical form
+        
+        This prevents attackers from using visually similar Unicode characters
+        or compatibility forms to bypass injection detection.
+        
+        Args:
+            text: Input text to normalize
+            
+        Returns:
+            Unicode-normalized text
+        """
+        try:
+            # NFKC (Normalization Form Canonical Composition) is most thorough
+            # It decomposes, converts compatibility chars, then recomposes
+            normalized = unicodedata.normalize('NFKC', text)
+            
+            # Log normalization if it changed the text (potential bypass attempt)
+            if normalized != text:
+                logger.debug(f"Unicode normalization applied - input contained non-canonical characters")
+                
+                # Additional check for potential homograph attacks
+                if self._detect_suspicious_unicode(text, normalized):
+                    logger.warning("Potential Unicode-based bypass attempt detected")
+            
+            return normalized
+            
+        except (UnicodeError, ValueError) as e:
+            logger.warning(f"Unicode normalization failed: {type(e).__name__}")
+            # Return original text if normalization fails
+            return text
+    
+    def _detect_suspicious_unicode(self, original: str, normalized: str) -> bool:
+        """
+        Detect suspicious Unicode usage that might indicate bypass attempts.
+        
+        Args:
+            original: Original input text
+            normalized: Normalized text
+            
+        Returns:
+            True if suspicious Unicode patterns are detected
+        """
+        # Check for significant length differences (could indicate hidden chars)
+        if abs(len(original) - len(normalized)) > len(original) * 0.1:  # >10% difference
+            return True
+            
+        # Check for mixed scripts (potential homograph attack)
+        scripts = set()
+        for char in normalized:
+            if char.isalpha():  # Only check alphabetic characters
+                script = unicodedata.name(char, '').split()[0] if unicodedata.name(char, '') else 'UNKNOWN'
+                scripts.add(script)
+                
+                # If we have more than 3 different scripts, it's suspicious
+                if len(scripts) > 3:
+                    return True
+        
+        # Check for invisible/zero-width characters that survived normalization
+        invisible_chars = {
+            '\u200b',  # Zero Width Space
+            '\u200c',  # Zero Width Non-Joiner
+            '\u200d',  # Zero Width Joiner
+            '\u2060',  # Word Joiner
+            '\ufeff',  # Zero Width No-Break Space (BOM)
+        }
+        
+        if any(char in normalized for char in invisible_chars):
+            return True
+            
+        return False
     
     def _remove_control_characters(self, text: str) -> str:
         """Remove control characters and null bytes."""

@@ -27,6 +27,9 @@ from src.session.session_security import SessionSecurityValidator
 # Story 2.2: Progressive disclosure imports
 from src.formatting.progressive_response_formatter import ProgressiveResponseFormatter
 from src.processing.contextual_responder import ContextualResponder
+# Security imports - Rate limiting and secure logging
+from src.security.rate_limiting import action_button_rate_limit, query_rate_limit, RateLimitExceeded
+from src.security.secure_logging import get_secure_logger
 
 
 # Configure logging
@@ -34,7 +37,7 @@ logging.basicConfig(
     level=getattr(logging, config.log_level.upper()),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = get_secure_logger(__name__)
 
 # Global components (initialized on startup)
 query_processor = None
@@ -118,6 +121,7 @@ What would you like to know about cybersecurity weaknesses?"""
 
 
 @cl.on_message
+@query_rate_limit(max_requests=30, window=60)  # 30 queries per minute
 async def main(message: cl.Message):
     """Handle incoming messages with full NLU and retrieval pipeline."""
     
@@ -138,6 +142,9 @@ async def main(message: cl.Message):
     try:
         user_query = message.content.strip()
         logger.info(f"Processing user query of length {len(user_query)}")
+        
+        # Get session ID for rate limiting
+        session_id = session_manager._get_session_id()
         
         # Story 2.2: Get current session context
         current_context = session_manager.get_current_cwe()
@@ -260,9 +267,17 @@ async def main(message: cl.Message):
                 error_response = response_formatter.get_fallback_response("no_results")
                 await cl.Message(content=error_response).send()
         
+    except RateLimitExceeded as e:
+        # Handle rate limit exceeded
+        logger.warning(f"Rate limit exceeded for query processing: {e}")
+        retry_msg = f"You're sending messages too quickly. Please wait {e.retry_after} seconds before trying again."
+        await cl.Message(content=retry_msg).send()
     except Exception as e:
         # Secure error handling - never expose internal details
-        logger.error(f"Error processing query: {e}", exc_info=True)
+        logger.log_exception("Error processing query", e, extra_context={
+            'component': 'main_message_handler',
+            'query_length': len(user_query) if 'user_query' in locals() else 0
+        })
         error_response = response_formatter.get_fallback_response("system_error")
         await cl.Message(content=error_response).send()
 
@@ -270,6 +285,7 @@ async def main(message: cl.Message):
 # Story 2.2: Action handlers for progressive disclosure
 
 @cl.action_callback("tell_more")
+@action_button_rate_limit(max_requests=10, window=60)  # 10 clicks per minute
 async def on_tell_more(action):
     """Handle 'tell me more' action button clicks."""
     try:
@@ -277,8 +293,16 @@ async def on_tell_more(action):
             await cl.Message(content="System components not available.").send()
             return
         
-        # Parse action value to get CWE ID
-        action_meta = progressive_formatter.get_action_metadata(action.value)
+        # Get session ID and parse action value with CSRF validation
+        session_id = session_manager._get_session_id() if session_manager else None
+        action_meta = progressive_formatter.get_action_metadata(action.value, session_id)
+        
+        # Validate CSRF token if enabled
+        if not action_meta.get('csrf_valid', True):  # True if CSRF disabled
+            await cl.Message(content="Security validation failed. Please refresh and try again.").send()
+            logger.warning(f"CSRF validation failed for tell_more action: {action_meta.get('csrf_reason')}")
+            return
+        
         cwe_id = action_meta.get('cwe_id')
         
         if not cwe_id:
@@ -296,8 +320,11 @@ async def on_tell_more(action):
         else:
             await cl.Message(content=f"Detailed information for {cwe_id} is not available.").send()
             
+    except RateLimitExceeded as e:
+        logger.warning(f"Rate limit exceeded for tell_more action: {e}")
+        await cl.Message(content=f"Too many requests. Please wait {e.retry_after} seconds.").send()
     except Exception as e:
-        logger.error(f"Tell more action failed: {e}")
+        logger.log_exception("Tell more action failed", e, extra_context={'action': 'tell_more'})
         await cl.Message(content="Sorry, I encountered an error retrieving detailed information.").send()
 
 
@@ -327,7 +354,7 @@ async def on_show_consequences(action):
             await cl.Message(content=f"Consequences information for {cwe_id} is not available.").send()
             
     except Exception as e:
-        logger.error(f"Show consequences action failed: {e}")
+        logger.log_exception("Show consequences action failed", e, extra_context={'action': 'show_consequences'})
         await cl.Message(content="Sorry, I encountered an error retrieving consequences information.").send()
 
 
@@ -362,7 +389,7 @@ async def on_show_related(action):
             await cl.Message(content=f"No closely related CWEs found for {cwe_id}.").send()
             
     except Exception as e:
-        logger.error(f"Show related action failed: {e}")
+        logger.log_exception("Show related action failed", e, extra_context={'action': 'show_related'})
         await cl.Message(content="Sorry, I encountered an error retrieving related information.").send()
 
 
@@ -392,7 +419,7 @@ async def on_show_prevention(action):
             await cl.Message(content=f"Prevention information for {cwe_id} is not available.").send()
             
     except Exception as e:
-        logger.error(f"Show prevention action failed: {e}")
+        logger.log_exception("Show prevention action failed", e, extra_context={'action': 'show_prevention'})
         await cl.Message(content="Sorry, I encountered an error retrieving prevention information.").send()
 
 

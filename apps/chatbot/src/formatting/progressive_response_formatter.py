@@ -18,8 +18,10 @@ import chainlit as cl
 
 from ..retrieval.base_retriever import CWEResult
 from ..processing.contextual_responder import ContextualResponse
+from ..security.csrf_protection import get_csrf_protection
+from ..security.secure_logging import get_secure_logger
 
-logger = logging.getLogger(__name__)
+logger = get_secure_logger(__name__)
 
 
 class ProgressiveResponseFormatter:
@@ -63,15 +65,22 @@ class ProgressiveResponseFormatter:
         }
     }
     
-    def __init__(self):
-        """Initialize progressive response formatter."""
+    def __init__(self, enable_csrf: bool = True):
+        """Initialize progressive response formatter.
+        
+        Args:
+            enable_csrf: Whether to enable CSRF protection for action buttons
+        """
         self.response_count = 0
-        logger.info("ProgressiveResponseFormatter initialized")
+        self.enable_csrf = enable_csrf
+        self.csrf_protection = get_csrf_protection() if enable_csrf else None
+        logger.info(f"ProgressiveResponseFormatter initialized (CSRF: {enable_csrf})")
     
     def format_summary_response(
         self, 
         cwe_data: CWEResult, 
-        include_actions: bool = True
+        include_actions: bool = True,
+        session_id: Optional[str] = None
     ) -> Tuple[str, List[cl.Action]]:
         """
         Format concise summary response with 'more details' option.
@@ -79,6 +88,7 @@ class ProgressiveResponseFormatter:
         Args:
             cwe_data: CWE result data to format
             include_actions: Whether to include interactive action buttons
+            session_id: Current session ID for CSRF protection
             
         Returns:
             Tuple of (summary_content, action_buttons)
@@ -115,13 +125,13 @@ class ProgressiveResponseFormatter:
             # Create action buttons if requested
             actions = []
             if include_actions:
-                actions = self._create_action_buttons(cwe_data)
+                actions = self._create_action_buttons(cwe_data, session_id)
             
             logger.debug(f"Created summary response for {cwe_data.cwe_id}")
             return summary_content, actions
             
         except Exception as e:
-            logger.error(f"Summary response formatting failed: {e}")
+            logger.log_exception("Summary response formatting failed", e)
             fallback_content = f"**{cwe_data.cwe_id}**: {cwe_data.name}\n\nUnable to format detailed response."
             return fallback_content, []
     
@@ -172,13 +182,14 @@ class ProgressiveResponseFormatter:
             return detailed_content
             
         except Exception as e:
-            logger.error(f"Detailed response formatting failed: {e}")
+            logger.log_exception("Detailed response formatting failed", e)
             return f"**{cwe_data.cwe_id}**: {cwe_data.name}\n\nUnable to format detailed response."
     
     def format_contextual_summary(
         self,
         contextual_response: ContextualResponse,
-        original_cwe_data: Optional[CWEResult] = None
+        original_cwe_data: Optional[CWEResult] = None,
+        session_id: Optional[str] = None
     ) -> Tuple[str, List[cl.Action]]:
         """
         Format summary for contextual responses (follow-up questions).
@@ -186,6 +197,7 @@ class ProgressiveResponseFormatter:
         Args:
             contextual_response: Generated contextual response
             original_cwe_data: Original CWE data for action creation
+            session_id: Current session ID for CSRF protection
             
         Returns:
             Tuple of (content, actions)
@@ -197,49 +209,69 @@ class ProgressiveResponseFormatter:
             # Create relevant actions based on response type
             actions = []
             if contextual_response.context_used and original_cwe_data:
-                actions = self._create_contextual_actions(contextual_response, original_cwe_data)
+                actions = self._create_contextual_actions(contextual_response, original_cwe_data, session_id)
             
             return content, actions
             
         except Exception as e:
-            logger.error(f"Contextual summary formatting failed: {e}")
+            logger.log_exception("Contextual summary formatting failed", e)
             return contextual_response.content, []
     
-    def _create_action_buttons(self, cwe_data: CWEResult) -> List[cl.Action]:
-        """Create interactive action buttons for progressive disclosure."""
+    def _create_action_buttons(self, cwe_data: CWEResult, session_id: Optional[str] = None) -> List[cl.Action]:
+        """Create interactive action buttons for progressive disclosure.
+        
+        Args:
+            cwe_data: CWE result data for button creation
+            session_id: Current user session ID for CSRF protection
+            
+        Returns:
+            List of Chainlit Action objects with CSRF protection
+        """
         actions = []
         
         try:
             # Always include "Tell me more" action
+            tell_more_value = self._create_secure_action_value(
+                'tell_more', cwe_data.cwe_id, session_id
+            )
             actions.append(cl.Action(
                 name=self.ACTION_BUTTON_CONFIGS['tell_more']['name'],
-                value=f"tell_more:{cwe_data.cwe_id}",
+                value=tell_more_value,
                 description=self.ACTION_BUTTON_CONFIGS['tell_more']['description'],
                 label=self.ACTION_BUTTON_CONFIGS['tell_more']['label']
             ))
             
             # Include consequences action if we have consequence data
             if cwe_data.consequences:
+                consequences_value = self._create_secure_action_value(
+                    'show_consequences', cwe_data.cwe_id, session_id
+                )
                 actions.append(cl.Action(
                     name=self.ACTION_BUTTON_CONFIGS['show_consequences']['name'],
-                    value=f"show_consequences:{cwe_data.cwe_id}",
+                    value=consequences_value,
                     description=self.ACTION_BUTTON_CONFIGS['show_consequences']['description'],
                     label=self.ACTION_BUTTON_CONFIGS['show_consequences']['label']
                 ))
             
             # Include related action if we have relationship data
             if cwe_data.relationships:
+                related_value = self._create_secure_action_value(
+                    'show_related', cwe_data.cwe_id, session_id
+                )
                 actions.append(cl.Action(
                     name=self.ACTION_BUTTON_CONFIGS['show_related']['name'],
-                    value=f"show_related:{cwe_data.cwe_id}",
+                    value=related_value,
                     description=self.ACTION_BUTTON_CONFIGS['show_related']['description'],
                     label=self.ACTION_BUTTON_CONFIGS['show_related']['label']
                 ))
             
             # Always include prevention action
+            prevention_value = self._create_secure_action_value(
+                'show_prevention', cwe_data.cwe_id, session_id
+            )
             actions.append(cl.Action(
                 name=self.ACTION_BUTTON_CONFIGS['show_prevention']['name'],
-                value=f"show_prevention:{cwe_data.cwe_id}",
+                value=prevention_value,
                 description=self.ACTION_BUTTON_CONFIGS['show_prevention']['description'],
                 label=self.ACTION_BUTTON_CONFIGS['show_prevention']['label']
             ))
@@ -248,13 +280,14 @@ class ProgressiveResponseFormatter:
             return actions
             
         except Exception as e:
-            logger.error(f"Action button creation failed: {e}")
+            logger.log_exception("Action button creation failed", e)
             return []
     
     def _create_contextual_actions(
         self,
         contextual_response: ContextualResponse,
-        cwe_data: CWEResult
+        cwe_data: CWEResult,
+        session_id: Optional[str] = None
     ) -> List[cl.Action]:
         """Create actions relevant to the contextual response."""
         actions = []
@@ -264,25 +297,34 @@ class ProgressiveResponseFormatter:
             intent = contextual_response.metadata.get('intent', '')
             
             if intent != 'tell_more':
+                tell_more_value = self._create_secure_action_value(
+                    'tell_more', cwe_data.cwe_id, session_id
+                )
                 actions.append(cl.Action(
                     name='tell_more',
-                    value=f"tell_more:{cwe_data.cwe_id}",
+                    value=tell_more_value,
                     description="Get comprehensive details",
                     label="📖 Tell me more"
                 ))
             
             if intent != 'consequences' and cwe_data.consequences:
+                consequences_value = self._create_secure_action_value(
+                    'show_consequences', cwe_data.cwe_id, session_id
+                )
                 actions.append(cl.Action(
                     name='show_consequences',
-                    value=f"show_consequences:{cwe_data.cwe_id}",
+                    value=consequences_value,
                     description="View consequences",
                     label="⚠️ Show consequences"
                 ))
             
             if intent != 'related' and cwe_data.relationships:
+                related_value = self._create_secure_action_value(
+                    'show_related', cwe_data.cwe_id, session_id
+                )
                 actions.append(cl.Action(
                     name='show_related',
-                    value=f"show_related:{cwe_data.cwe_id}",
+                    value=related_value,
                     description="Find related CWEs",
                     label="🔗 Show related"
                 ))
@@ -290,8 +332,38 @@ class ProgressiveResponseFormatter:
             return actions[:3]  # Limit to 3 actions to avoid UI clutter
             
         except Exception as e:
-            logger.error(f"Contextual action creation failed: {e}")
+            logger.log_exception("Contextual action creation failed", e)
             return []
+    
+    def _create_secure_action_value(
+        self, 
+        action_type: str, 
+        cwe_id: str, 
+        session_id: Optional[str] = None
+    ) -> str:
+        """Create a secure action value with CSRF protection.
+        
+        Args:
+            action_type: Type of action (e.g., 'tell_more')
+            cwe_id: CWE identifier
+            session_id: Current session ID for CSRF token generation
+            
+        Returns:
+            Secure action value string with format: action_type:cwe_id:csrf_token
+        """
+        if self.enable_csrf and self.csrf_protection and session_id:
+            try:
+                csrf_token = self.csrf_protection.generate_token(
+                    session_id, action_type, cwe_id
+                )
+                return f"{action_type}:{cwe_id}:{csrf_token}"
+            except Exception as e:
+                logger.log_exception("CSRF token generation failed", e)
+                # Fallback to basic format without CSRF protection
+                return f"{action_type}:{cwe_id}"
+        else:
+            # No CSRF protection enabled or no session
+            return f"{action_type}:{cwe_id}"
     
     def _format_comprehensive_details(self, cwe_data: CWEResult) -> List[str]:
         """Format comprehensive detailed information."""
@@ -415,35 +487,69 @@ class ProgressiveResponseFormatter:
         else:
             return truncated + "..."
     
-    def get_action_metadata(self, action_value: str) -> Dict[str, str]:
-        """Parse action value to get metadata with enhanced validation."""
+    def get_action_metadata(self, action_value: str, session_id: Optional[str] = None) -> Dict[str, any]:
+        """Parse action value to get metadata with enhanced validation and CSRF checking.
+        
+        Args:
+            action_value: Action value string to parse
+            session_id: Current session ID for CSRF validation
+            
+        Returns:
+            Dictionary with action metadata and CSRF validation status
+        """
         try:
             # Enhanced input validation
             if not action_value or not isinstance(action_value, str):
                 raise ValueError("Invalid action value: must be a non-empty string")
             
-            if len(action_value) > 100:  # Prevent abuse
-                raise ValueError("Action value too long: maximum 100 characters")
+            if len(action_value) > 500:  # Increased limit to accommodate CSRF tokens
+                raise ValueError("Action value too long: maximum 500 characters")
             
-            if ':' in action_value:
-                action_type, cwe_id = action_value.split(':', 1)
-                
-                # Validate CWE ID format if present
-                if cwe_id and not re.match(r'^CWE-\d+$', cwe_id):
-                    raise ValueError(f"Invalid CWE ID format: {cwe_id}")
-                
+            # Parse action value format: action_type:cwe_id:csrf_token
+            parts = action_value.split(':', 2)
+            
+            if len(parts) < 2:
                 return {
-                    'action_type': action_type,
-                    'cwe_id': cwe_id
+                    'action_type': parts[0] if parts else 'unknown',
+                    'cwe_id': None,
+                    'csrf_token': None,
+                    'csrf_valid': False,
+                    'csrf_reason': 'No CSRF token provided'
                 }
-            else:
-                return {
-                    'action_type': action_value,
-                    'cwe_id': None
-                }
+            
+            action_type = parts[0]
+            cwe_id = parts[1]
+            csrf_token = parts[2] if len(parts) > 2 else None
+            
+            # Validate CWE ID format if present
+            if cwe_id and not re.match(r'^CWE-\d+$', cwe_id):
+                raise ValueError(f"Invalid CWE ID format: {cwe_id}")
+            
+            # Validate CSRF token if CSRF protection is enabled
+            csrf_valid = False
+            csrf_reason = "CSRF protection disabled"
+            
+            if self.enable_csrf and self.csrf_protection and csrf_token and session_id:
+                csrf_valid, csrf_reason = self.csrf_protection.validate_token(
+                    csrf_token, session_id, action_type, cwe_id
+                )
+            elif self.enable_csrf:
+                csrf_reason = "Missing CSRF token or session ID"
+            
+            return {
+                'action_type': action_type,
+                'cwe_id': cwe_id,
+                'csrf_token': csrf_token,
+                'csrf_valid': csrf_valid,
+                'csrf_reason': csrf_reason
+            }
+            
         except Exception as e:
-            logger.error(f"Action metadata parsing failed: {e}")
+            logger.log_exception("Action metadata parsing failed", e)
             return {
                 'action_type': 'unknown',
-                'cwe_id': None
+                'cwe_id': None,
+                'csrf_token': None,
+                'csrf_valid': False,
+                'csrf_reason': f'Parsing error: {type(e).__name__}'
             }
