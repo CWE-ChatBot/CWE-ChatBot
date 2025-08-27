@@ -8,9 +8,11 @@ import os
 from typing import List, Dict, Any, Optional
 import psycopg2
 from pgvector.psycopg2 import register_vector
+from psycopg2 import sql
 
 from .base_retriever import ChatBotBaseRetriever, CWEResult
 from ..processing.embedding_service import EmbeddingService
+from .secure_query_builder import SecureQueryBuilder
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,9 @@ class ChatBotDenseRetriever(ChatBotBaseRetriever):
         self.table_name = "cwe_embeddings"
         self.embedding_model = "text-embedding-3-small"
         self.embedding_dimensions = 1536
+        
+        # Initialize secure query builder
+        self.query_builder = SecureQueryBuilder()
         
         # Initialize embedding service
         if embedding_service is None:
@@ -114,21 +119,10 @@ class ChatBotDenseRetriever(ChatBotBaseRetriever):
         
         try:
             with self.connection.cursor() as cursor:
-                # SQL query with vector similarity search
-                sql = """
-                SELECT 
-                    cwe_id,
-                    name,
-                    description,
-                    1 - (embedding <=> %s) as similarity_score,
-                    metadata
-                FROM {table_name}
-                WHERE 1 - (embedding <=> %s) > %s
-                ORDER BY embedding <=> %s
-                LIMIT %s;
-                """.format(table_name=self.table_name)
+                # Build secure SQL query with proper table name validation
+                secure_query = self.query_builder.build_vector_similarity_query(self.table_name)
                 
-                cursor.execute(sql, (
+                cursor.execute(secure_query, (
                     query_embedding,  # For similarity calculation
                     query_embedding,  # For threshold filter
                     threshold,        # Similarity threshold
@@ -177,22 +171,19 @@ class ChatBotDenseRetriever(ChatBotBaseRetriever):
         
         try:
             with self.connection.cursor() as cursor:
-                sql = """
-                SELECT cwe_id, name, description, metadata
-                FROM {table_name}
-                WHERE cwe_id = %s;
-                """.format(table_name=self.table_name)
+                # Build secure direct lookup query with proper table name validation
+                secure_query = self.query_builder.build_direct_cwe_lookup_query(self.table_name)
                 
-                cursor.execute(sql, (cwe_id,))
+                cursor.execute(secure_query, (cwe_id,))
                 row = cursor.fetchone()
                 
                 if row:
-                    cwe_id, name, description, metadata = row
+                    cwe_id, name, description, confidence_score, metadata = row
                     return CWEResult(
                         cwe_id=cwe_id,
                         name=name or "",
                         description=description or "",
-                        confidence_score=1.0,  # Perfect match for direct lookup
+                        confidence_score=confidence_score,  # From query (1.0 for direct lookup)
                         source_method="direct",
                         metadata=metadata or {}
                     )

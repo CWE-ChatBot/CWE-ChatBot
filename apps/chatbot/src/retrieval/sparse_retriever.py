@@ -6,9 +6,11 @@ Implements keyword-based search using BM25 algorithm.
 import logging
 from typing import List, Dict, Any, Optional
 import psycopg2
+from psycopg2 import sql
 from rank_bm25 import BM25Okapi
 
 from .base_retriever import ChatBotBaseRetriever, CWEResult
+from .secure_query_builder import SecureQueryBuilder
 
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,9 @@ class ChatBotSparseRetriever(ChatBotBaseRetriever):
         self.bm25 = None
         self.cwe_id_to_index = {}
         
+        # Initialize secure query builder
+        self.query_builder = SecureQueryBuilder()
+        
         # Initialize database connection and load data
         self._connect()
         self._load_cwe_entries()
@@ -58,13 +63,10 @@ class ChatBotSparseRetriever(ChatBotBaseRetriever):
         
         try:
             with self.connection.cursor() as cursor:
-                sql = """
-                SELECT cwe_id, name, description, full_text, metadata
-                FROM {table_name}
-                ORDER BY cwe_id;
-                """.format(table_name=self.table_name)
+                # Build secure query to load CWE entries with proper table name validation
+                secure_query = self.query_builder.build_load_cwe_entries_query(self.table_name)
                 
-                cursor.execute(sql)
+                cursor.execute(secure_query)
                 rows = cursor.fetchall()
                 
                 self.entries = []
