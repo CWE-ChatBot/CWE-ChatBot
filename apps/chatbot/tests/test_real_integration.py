@@ -34,12 +34,23 @@ from pathlib import Path
 from typing import List, Dict, Any
 import asyncio
 
+# Add src to path first
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+# Import application components
+try:
+    from config import Config
+    from processing.embedding_service import EmbeddingService  
+    from security.input_sanitizer import InputSanitizer
+    from processing.cwe_extractor import CWEExtractor
+except ImportError as e:
+    print(f"Warning: Could not import application components: {e}")
+
 # Load environment using configurable loader
 def load_environment():
     """Load environment using the configurable environment loader."""
     try:
         # Import environment loader (handle import issues gracefully)
-        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
         from config.env_loader import load_env_auto, get_env_info
         
         success = load_env_auto()

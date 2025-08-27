@@ -20,7 +20,7 @@ We will use a single **Cloud SQL for PostgreSQL** instance as the sole database 
 * **Structured Data:** Standard relational tables (users, conversations, messages) will be used for all application data.  
 * **Vector Data:** The pgvector extension will be enabled on the instance. A dedicated cwe\_embeddings table will store the vector embeddings and their associated metadata.
 
-This approach provides a single, unified data layer for the entire application, simplifying development, deployment, and maintenance.
+This approach provides a single, unified data layer for the entire application, simplifying development, deployment, and maintenance. Additionally, PostgreSQL can be run locally for development and testing, which significantly improves the development experience and debugging capabilities.
 
 ## **Status**
 

@@ -104,6 +104,7 @@ class LoanConfiguration:
 5. **Fast and isolated** - No external dependencies, runs in milliseconds
 6. **Fails for the right reason** - Verify the error message when test fails
 
+
 ### 3. One Feature at a Time
 - **SINGLE FOCUS**: Complete one feature entirely before moving to the next
 - **DEFINITION OF DONE**:
@@ -124,6 +125,17 @@ class LoanConfiguration:
 - **MAKE IT RIGHT**: Clean up and refactor with tests as safety net
 - **MAKE IT FAST**: Only optimize after profiling shows real bottlenecks
 - **MEASURE FIRST**: Never optimize based on assumptions
+
+### 6. Implement per the original specification
+e.g. if the  preferred or specified component is not available then install it, rather than creating an alternative solution.
+
+#### BAD EXAMPLE. DON'T DO THIS!
+I see the issue - psycopg2 isn't actually available in the poetry environment even though it shows in poetry show. Let me check why and provide a solution that works with your current environment. Let me create a practical database setup guide instead.
+
+#### GOOD EXAMPLE. DO THIS!
+why not load psycopg2 if this is the preferred option
+
+You're absolutely right! If PostgreSQL+pgvector is the preferred architecture choice (per the database ADR), we should properly install and use psycopg2. Let me fix the missing dependencies and get the real database integration working.
 
 ## Implementation Checklist
 
