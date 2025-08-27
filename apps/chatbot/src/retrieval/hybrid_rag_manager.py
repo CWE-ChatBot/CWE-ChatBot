@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .base_retriever import CWEResult
 from .dense_retriever import ChatBotDenseRetriever
 from .sparse_retriever import ChatBotSparseRetriever
+from .cwe_relationship_manager import CWERelationshipManager
 from ..processing.embedding_service import EmbeddingService
 
 
@@ -57,6 +58,9 @@ class HybridRAGManager:
         # Initialize retrievers
         self.dense_retriever = ChatBotDenseRetriever(pg_config, self.embedding_service)
         self.sparse_retriever = ChatBotSparseRetriever(pg_config)
+        
+        # Initialize relationship manager for Story 2.2
+        self.relationship_manager = CWERelationshipManager(pg_config)
         
         logger.info(f"Initialized HybridRAGManager with weights: {self.weights}")
     
@@ -311,3 +315,84 @@ class HybridRAGManager:
             },
             "embedding_model": self.embedding_service.get_model_info()
         }
+    
+    # Story 2.2: Enhanced retrieval methods with relationships
+    
+    def search_with_relationships(
+        self, 
+        query: str, 
+        k: int = 5, 
+        include_relationships: bool = True,
+        **kwargs
+    ) -> List[CWEResult]:
+        """
+        Enhanced search including CWE relationships and comprehensive metadata.
+        
+        Args:
+            query: Search query string
+            k: Number of results to return
+            include_relationships: Whether to include relationship data
+            **kwargs: Additional search parameters
+            
+        Returns:
+            List of enhanced CWEResult objects with relationships
+        """
+        # First perform regular hybrid search
+        base_results = self.search(query, k, **kwargs)
+        
+        if not include_relationships or not base_results:
+            return base_results
+        
+        # Enhance results with comprehensive data
+        enhanced_results = []
+        for result in base_results:
+            comprehensive_result = self.relationship_manager.get_comprehensive_cwe_data(result.cwe_id)
+            if comprehensive_result:
+                # Preserve original confidence score and source method
+                comprehensive_result.confidence_score = result.confidence_score
+                comprehensive_result.source_method = f"{result.source_method}_enhanced"
+                enhanced_results.append(comprehensive_result)
+            else:
+                # Fallback to original result if enhancement fails
+                enhanced_results.append(result)
+        
+        logger.info(f"Enhanced {len(enhanced_results)} results with relationship data")
+        return enhanced_results
+    
+    def get_comprehensive_cwe(self, cwe_id: str) -> Optional[CWEResult]:
+        """
+        Get comprehensive CWE data including relationships for a specific CWE ID.
+        
+        Args:
+            cwe_id: CWE identifier (e.g., "CWE-79")
+            
+        Returns:
+            CWEResult with comprehensive data or None if not found
+        """
+        return self.relationship_manager.get_comprehensive_cwe_data(cwe_id)
+    
+    def get_related_cwes(self, cwe_id: str, relationship_type: str = "ChildOf") -> List[CWEResult]:
+        """
+        Get CWEs related to a specific CWE by relationship type.
+        
+        Args:
+            cwe_id: Source CWE identifier
+            relationship_type: Type of relationship ("ChildOf", "ParentOf", "PeerOf")
+            
+        Returns:
+            List of related CWEResult objects
+        """
+        return self.relationship_manager.get_related_cwes(cwe_id, relationship_type)
+    
+    def find_similar_cwes(self, cwe_id: str, k: int = 5) -> List[CWEResult]:
+        """
+        Find CWEs similar to a given CWE using vector similarity.
+        
+        Args:
+            cwe_id: Source CWE identifier
+            k: Number of similar CWEs to return
+            
+        Returns:
+            List of similar CWEResult objects
+        """
+        return self.relationship_manager.find_similar_cwes_by_vector(cwe_id, k)

@@ -8,6 +8,8 @@ from typing import Dict, List, Set, Any, Optional
 
 from ..security.input_sanitizer import InputSanitizer
 from .cwe_extractor import CWEExtractor
+# Story 2.2: Follow-up processing imports
+from .followup_processor import FollowupProcessor
 
 
 logger = logging.getLogger(__name__)
@@ -39,7 +41,10 @@ class QueryProcessor:
         )
         self.cwe_extractor = CWEExtractor()
         
-        logger.info("Initialized QueryProcessor with security-first design")
+        # Story 2.2: Follow-up processor initialization
+        self.followup_processor = FollowupProcessor()
+        
+        logger.info("Initialized QueryProcessor with security-first design and follow-up support")
     
     def preprocess_query(self, query: str) -> Dict[str, Any]:
         """
@@ -223,3 +228,76 @@ class QueryProcessor:
             "changes_made": sanitized != query,
             "security_level": "high_risk" if is_malicious else "safe"
         }
+    
+    # Story 2.2: Context-aware processing methods
+    
+    def process_with_context(
+        self, 
+        query: str, 
+        session_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Enhanced processing with session context awareness for follow-up queries.
+        
+        Args:
+            query: User query string
+            session_context: Current session context (current CWE, history, etc.)
+            
+        Returns:
+            Enhanced processing results with context and follow-up intent
+        """
+        if not query or not query.strip():
+            raise ValueError("Empty query provided")
+        
+        try:
+            # Start with standard preprocessing
+            base_result = self.preprocess_query(query)
+            
+            # Add context-aware processing
+            context_cwe = None
+            if session_context and session_context.get('current_cwe'):
+                context_cwe = session_context['current_cwe'].get('cwe_id')
+            
+            # Detect follow-up intent
+            followup_intent = self.followup_processor.detect_followup_intent(query)
+            
+            # If it's a follow-up and we have context, process contextually
+            if followup_intent.is_followup and context_cwe:
+                followup_result = self.followup_processor.process_followup_query(
+                    query, context_cwe, followup_intent
+                )
+                
+                # Merge results
+                base_result.update({
+                    'is_followup': True,
+                    'followup_intent': followup_intent,
+                    'context_cwe': context_cwe,
+                    'enhanced_query': followup_result.get('enhanced_query', query),
+                    'retrieval_strategy': followup_result.get('retrieval_strategy', 'hybrid'),
+                    'retrieval_params': followup_result.get('retrieval_params', {}),
+                    'contextual_processing': True
+                })
+                
+                logger.info(f"Processed follow-up query: {followup_intent.intent_type} for {context_cwe}")
+            
+            else:
+                # Standard processing without context
+                base_result.update({
+                    'is_followup': False,
+                    'followup_intent': followup_intent,
+                    'context_cwe': None,
+                    'contextual_processing': False
+                })
+            
+            return base_result
+            
+        except Exception as e:
+            logger.error(f"Context-aware query processing failed: {e}")
+            # Fallback to basic processing
+            base_result = self.preprocess_query(query)
+            base_result.update({
+                'is_followup': False,
+                'contextual_processing': False,
+                'processing_error': str(e)
+            })
+            return base_result

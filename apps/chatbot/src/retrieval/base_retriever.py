@@ -16,6 +16,12 @@ class CWEResult:
     confidence_score: float
     source_method: str  # 'dense', 'sparse', or 'hybrid'
     metadata: Optional[Dict[str, Any]] = None
+    # Enhanced fields for Story 2.2
+    extended_description: Optional[str] = None
+    abstraction: Optional[str] = None
+    status: Optional[str] = None
+    relationships: Optional[Dict[str, List[str]]] = None  # e.g., {"ChildOf": ["CWE-20"], "ParentOf": ["CWE-80"]}
+    consequences: Optional[List[Dict[str, str]]] = None
 
 
 class ChatBotBaseRetriever(ABC):
