@@ -6,6 +6,10 @@ Handles environment variables and application settings.
 import os
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
+from .config.env_loader import load_env_auto
+
+# Auto-load environment on import
+load_env_auto()
 
 
 @dataclass

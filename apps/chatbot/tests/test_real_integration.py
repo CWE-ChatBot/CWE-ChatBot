@@ -7,7 +7,7 @@ These tests follow CLAUDE.md principles:
 - Verify it works with the real system (no mocks!)
 - Understand the ACTUAL integration
 
-Environment Variables Required:
+Environment Variables (can be loaded from ../../env/.env):
 - POSTGRES_HOST: PostgreSQL host (default: localhost)
 - POSTGRES_PORT: PostgreSQL port (default: 5432) 
 - POSTGRES_DATABASE: Database name (default: cwe_chatbot_test)
@@ -19,7 +19,10 @@ Usage:
   # Skip if no real database configured
   pytest apps/chatbot/tests/test_real_integration.py
   
-  # Run with real database
+  # Run with environment file
+  cd /path/to/project && pytest apps/chatbot/tests/test_real_integration.py
+  
+  # Run with explicit environment variables  
   POSTGRES_PASSWORD=test123 OPENAI_API_KEY=sk-... pytest apps/chatbot/tests/test_real_integration.py
 """
 
@@ -30,6 +33,27 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any
 import asyncio
+
+# Load environment using configurable loader
+def load_environment():
+    """Load environment using the configurable environment loader."""
+    try:
+        # Import environment loader (handle import issues gracefully)
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+        from config.env_loader import load_env_auto, get_env_info
+        
+        success = load_env_auto()
+        if success:
+            env_info = get_env_info()
+            logging.info(f"✅ Environment loaded from: {env_info.get('loaded_from')}")
+        return success
+    except ImportError as e:
+        logging.warning(f"Could not import environment loader: {e}")
+        # Fallback: check if required vars are already set
+        return bool(os.getenv("POSTGRES_PASSWORD") and os.getenv("OPENAI_API_KEY"))
+
+# Load environment on module import
+load_environment()
 
 # Add src to path for imports - handle both direct execution and pytest
 src_path = Path(__file__).parent.parent / "src"

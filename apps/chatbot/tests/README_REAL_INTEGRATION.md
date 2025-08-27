@@ -71,8 +71,29 @@ poetry install
 
 ### 3. Environment Variables
 
-Create `.env` file or set environment variables:
+**Configurable Environment Loading** - No hardcoded paths!
 
+The application automatically searches for environment files in this order:
+1. `ENV_FILE_PATH` environment variable (if set) - **recommended for CI/CD**
+2. `.env` (current directory)
+3. `../env/.env` (parent env directory)  
+4. `../../env/.env` (two levels up)
+5. `~/.config/cwe-chatbot/.env` (user config directory)
+
+**Option A: Set explicit path**
+```bash
+export ENV_FILE_PATH="/your/custom/path/to/.env"
+pytest apps/chatbot/tests/test_real_integration.py
+```
+
+**Option B: Place .env in project directory**
+```bash
+# Create .env file in project root or env/ subdirectory
+echo 'POSTGRES_PASSWORD="testpassword123"' > .env
+echo 'OPENAI_API_KEY="sk-your-key"' >> .env
+```
+
+**Option C: Set environment variables directly**
 ```bash
 # Required for real integration tests
 export POSTGRES_PASSWORD="testpassword123"
