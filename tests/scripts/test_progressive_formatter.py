@@ -249,6 +249,37 @@ class TestProgressiveResponseFormatter:
         assert metadata['action_type'] == 'unknown'
         assert metadata['cwe_id'] is None
     
+    def test_action_metadata_enhanced_validation(self):
+        """Test enhanced action metadata validation (M1 security fix)."""
+        # Test invalid input types
+        metadata = self.formatter.get_action_metadata(None)
+        assert metadata['action_type'] == 'unknown'
+        assert metadata['cwe_id'] is None
+        
+        metadata = self.formatter.get_action_metadata(123)
+        assert metadata['action_type'] == 'unknown'
+        assert metadata['cwe_id'] is None
+        
+        # Test oversized input
+        long_string = "a" * 101  # Over 100 char limit
+        metadata = self.formatter.get_action_metadata(long_string)
+        assert metadata['action_type'] == 'unknown'
+        assert metadata['cwe_id'] is None
+        
+        # Test invalid CWE ID format
+        metadata = self.formatter.get_action_metadata("tell_more:INVALID-ID")
+        assert metadata['action_type'] == 'unknown'
+        assert metadata['cwe_id'] is None
+        
+        metadata = self.formatter.get_action_metadata("tell_more:CWE-abc")
+        assert metadata['action_type'] == 'unknown'
+        assert metadata['cwe_id'] is None
+        
+        # Test valid CWE ID format (should work)
+        metadata = self.formatter.get_action_metadata("tell_more:CWE-123")
+        assert metadata['action_type'] == 'tell_more'
+        assert metadata['cwe_id'] == 'CWE-123'
+    
     def test_comprehensive_details_formatting(self):
         """Test comprehensive details formatting method."""
         details = self.formatter._format_comprehensive_details(self.sample_cwe_data)

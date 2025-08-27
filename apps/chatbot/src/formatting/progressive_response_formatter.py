@@ -12,6 +12,7 @@ Key Features:
 """
 
 import logging
+import re
 from typing import Dict, List, Any, Optional, Tuple
 import chainlit as cl
 
@@ -415,10 +416,22 @@ class ProgressiveResponseFormatter:
             return truncated + "..."
     
     def get_action_metadata(self, action_value: str) -> Dict[str, str]:
-        """Parse action value to get metadata."""
+        """Parse action value to get metadata with enhanced validation."""
         try:
+            # Enhanced input validation
+            if not action_value or not isinstance(action_value, str):
+                raise ValueError("Invalid action value: must be a non-empty string")
+            
+            if len(action_value) > 100:  # Prevent abuse
+                raise ValueError("Action value too long: maximum 100 characters")
+            
             if ':' in action_value:
                 action_type, cwe_id = action_value.split(':', 1)
+                
+                # Validate CWE ID format if present
+                if cwe_id and not re.match(r'^CWE-\d+$', cwe_id):
+                    raise ValueError(f"Invalid CWE ID format: {cwe_id}")
+                
                 return {
                     'action_type': action_type,
                     'cwe_id': cwe_id

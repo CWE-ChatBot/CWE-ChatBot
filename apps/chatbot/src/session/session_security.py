@@ -12,6 +12,8 @@ Key Security Features:
 """
 
 import logging
+import json
+import hashlib
 from typing import Dict, Any, List, Optional
 import threading
 import time
@@ -350,18 +352,49 @@ class SessionSecurityValidator:
             return False
     
     def _log_security_violation(self, session_id: str, violation_type: str, details: str = "") -> None:
-        """Log security violations for audit purposes."""
-        violation_log = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "session_id": session_id,
+        """Log security violations with structured logging for audit purposes."""
+        security_event = {
+            "event_type": "security_violation",
+            "session_id": self._hash_session_id(session_id),  # Hash for privacy
             "violation_type": violation_type,
+            "timestamp": datetime.utcnow().isoformat(),
+            "source_ip": self._get_client_ip(),  # If available
+            "severity": self._get_violation_severity(violation_type),
             "details": details,
             "validator_instance": id(self)
         }
         
-        logger.error(f"SECURITY VIOLATION: {violation_log}")
+        # Structured JSON logging for better parsing and monitoring
+        logger.error(json.dumps(security_event))
         
         # In a production system, this would also:
         # - Send alerts to security team
         # - Update security metrics
         # - Potentially block the session
+    
+    def _hash_session_id(self, session_id: str) -> str:
+        """Hash session ID for privacy in logs."""
+        if not session_id:
+            return "unknown"
+        return hashlib.sha256(session_id.encode()).hexdigest()[:16]
+    
+    def _get_client_ip(self) -> Optional[str]:
+        """Get client IP if available from Chainlit context."""
+        try:
+            # In a real implementation, this would extract IP from request context
+            # For now, return None as Chainlit doesn't expose this directly
+            return None
+        except Exception:
+            return None
+    
+    def _get_violation_severity(self, violation_type: str) -> str:
+        """Determine severity level based on violation type."""
+        high_severity = ["isolation_failure", "contamination_detected", "session_hijack"]
+        medium_severity = ["validation_error", "timestamp_anomaly", "size_anomaly"]
+        
+        if violation_type in high_severity:
+            return "HIGH"
+        elif violation_type in medium_severity:
+            return "MEDIUM"
+        else:
+            return "LOW"

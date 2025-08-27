@@ -366,3 +366,54 @@ class TestSessionIntegration:
             
             # 6. Verify context is gone
             assert self.session_manager.has_context() is False
+    
+    def test_enhanced_security_logging(self):
+        """Test enhanced structured security logging (M2 security fix)."""
+        import json
+        from unittest.mock import patch
+        
+        # Capture log output
+        with patch('src.session.session_security.logger') as mock_logger:
+            # Trigger a security violation
+            self.security_validator._log_security_violation(
+                'test-session-123', 
+                'isolation_failure', 
+                'Test violation details'
+            )
+            
+            # Verify structured logging was called
+            assert mock_logger.error.called
+            logged_call = mock_logger.error.call_args[0][0]
+            
+            # Parse the JSON log entry
+            log_data = json.loads(logged_call)
+            
+            # Verify structured log format
+            assert log_data['event_type'] == 'security_violation'
+            assert log_data['violation_type'] == 'isolation_failure'
+            assert log_data['severity'] == 'HIGH'  # isolation_failure is high severity
+            assert log_data['details'] == 'Test violation details'
+            assert 'timestamp' in log_data
+            assert 'session_id' in log_data  # Should be hashed
+            assert log_data['session_id'] != 'test-session-123'  # Should be hashed
+    
+    def test_security_logging_helper_methods(self):
+        """Test security logging helper methods (M2 security fix)."""
+        # Test session ID hashing
+        hashed_id = self.security_validator._hash_session_id('test-session-123')
+        assert hashed_id != 'test-session-123'
+        assert len(hashed_id) == 16  # Truncated hash
+        assert hashed_id == self.security_validator._hash_session_id('test-session-123')  # Consistent
+        
+        # Test empty session ID
+        hashed_empty = self.security_validator._hash_session_id('')
+        assert hashed_empty == 'unknown'
+        
+        # Test severity levels
+        assert self.security_validator._get_violation_severity('isolation_failure') == 'HIGH'
+        assert self.security_validator._get_violation_severity('validation_error') == 'MEDIUM'
+        assert self.security_validator._get_violation_severity('unknown_type') == 'LOW'
+        
+        # Test client IP (should return None in test environment)
+        client_ip = self.security_validator._get_client_ip()
+        assert client_ip is None
