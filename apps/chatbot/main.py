@@ -8,6 +8,7 @@ import asyncio
 import logging
 import sys
 import os
+import subprocess
 from pathlib import Path
 
 import chainlit as cl
@@ -175,4 +176,17 @@ def main_cli():
 if __name__ == "__main__":
     # This allows running the app directly with: python main.py
     main_cli()
-    os.system("chainlit run main.py")
+    
+    # SECURITY FIX: Replace os.system() with secure subprocess.run()
+    # This prevents shell command injection vulnerabilities
+    try:
+        subprocess.run([
+            "python", "-m", "chainlit", "run", "main.py",
+            "--host", "0.0.0.0", "--port", "8080"
+        ], check=True, cwd=Path(__file__).parent)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to start Chainlit server: {e}")
+        sys.exit(1)
+    except FileNotFoundError:
+        logger.error("Chainlit not found. Please install with: pip install chainlit")
+        sys.exit(1)
