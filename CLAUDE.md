@@ -23,12 +23,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 
 ## CRITICAL: Virtual Environment Usage
-**ALWAYS use the project's virtual environment for ALL Python commands:**
-- pytest: Use `/home/bj/python/REI-Tracker/venv/bin/pytest` (NOT `/home/bj/.local/bin/pytest`)
-- python: Use `/home/bj/python/REI-Tracker/venv/bin/python` (NOT system python)
-- pip: Use `/home/bj/python/REI-Tracker/venv/bin/pip` (NOT system pip)
+**ALWAYS use Poetry for dependency management in this project:**
+- pytest: Use `poetry run pytest` (NOT system pytest)
+- python: Use `poetry run python` (NOT system python)
+- security tests: Run from project root with `python3 tests/scripts/[test_name].py`
+- chainlit: Use `poetry run chainlit run apps/chatbot/main.py`
 
-**NEVER use system-wide Python executables.**
+**For standalone test scripts**: Use system python3 as they are designed to be independent
+**For application code**: Always use `poetry run [command]`
+
+**NEVER use system-wide Python executables for application code.**
 
 ## Core Development Principles
 
@@ -45,7 +49,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **BEFORE ANY IMPLEMENTATION**:
    - Create test file FIRST (e.g., `test_feature_name.py`)
    - Write the FIRST failing test for the simplest behavior
-   - Run the test with `/home/bj/python/REI-Tracker/venv/bin/pytest` and VERIFY it fails
+   - Run the test with `poetry run pytest` and VERIFY it fails
    - Only then write MINIMAL implementation code to pass
 
 2. **RED-GREEN-REFACTOR Cycle**:
@@ -60,9 +64,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    2. Break down into small testable behaviors
    3. Create test file
    4. Write first failing test
-   5. Run test (see it fail) - use venv/bin/pytest
+   5. Run test (see it fail) - use poetry run pytest
    6. Implement minimal code
-   7. Run test (see it pass) - use venv/bin/pytest
+   7. Run test (see it pass) - use poetry run pytest
    8. Refactor if needed
    9. Repeat 4-9 for next behavior
    ```
@@ -84,7 +88,7 @@ def test_can_create_loan_configuration():
     assert loan.loan_number == 1
 
 # STEP 2: Run test - see it fail with "NameError: name 'LoanConfiguration' is not defined"
-# ALWAYS use: /home/bj/python/REI-Tracker/venv/bin/pytest test_loan_configuration.py
+# ALWAYS use: poetry run pytest test_loan_configuration.py
 
 # STEP 3: Create minimal implementation to pass
 # loan_configuration.py
@@ -382,12 +386,14 @@ This project handles sensitive security information and must maintain strict sec
 
 ## Current Project Status
 
-**Phase**: Planning and Documentation
+**Phase**: Story 2.1 Complete - Core NLU Implementation
 - ✅ Project Brief completed
 - ✅ Comprehensive PRD with user stories and NFRs
 - ✅ Complete technical architecture designed
 - ✅ UI/UX specifications defined
-- 🔄 Ready for implementation phase
+- ✅ **Story 2.1**: Core NLU and Query Matching - **COMPLETE WITH SECURITY REVIEW**
+- ✅ **Critical Security Vulnerabilities**: All eliminated (CRI-002, MED-001)
+- ⏭️ **Next Phase**: Cloud production security (Story S-9)
 
 ## Next Steps for Implementation
 
@@ -484,9 +490,103 @@ When implementation begins, environment setup follows `docs/architecture/develop
 - Poetry-based monorepo with workspace dependencies
 - All secrets via GCP Secret Manager in production
 
-### Testing Requirements
+#### Testing Requirements
 - Unit tests: pytest with comprehensive coverage
 - Integration tests: API endpoint testing
 - E2E tests: Playwright for Chainlit UI flows  
 - Security tests: SAST, DAST, and LLM security validation
 - All tests must pass before any deployment
+
+### Test Organization
+**All test scripts must be organized in proper directory structure:**
+- `tests/scripts/` - Standalone security and infrastructure test scripts
+- `tests/unit/` - Unit tests for individual components  
+- `tests/integration/` - Integration tests for component interaction
+- `tests/security/` - Comprehensive security test suites
+
+**Security Test Scripts Location**: `tests/scripts/`
+- Command injection verification: `test_command_injection_fix.py`
+- Container security verification: `test_container_security_fix.py`
+- SQL injection prevention: `test_sql_injection_prevention_simple.py`
+- Infrastructure setup: `docker-compose.test.yml`, `setup_database.py`
+
+## Security-First Development (CRITICAL)
+
+### Mandatory Security Practices
+This is a **defensive security project** - security is NON-NEGOTIABLE:
+
+1. **Security Review Required for ALL Changes**
+   - Every code change must undergo security analysis
+   - Critical vulnerabilities (CVSS ≥ 7.0) must be fixed immediately
+   - Medium vulnerabilities (CVSS 4.0-6.9) must be addressed within sprint
+   - Document all security findings and fixes
+
+2. **Vulnerability Management Process**
+   ```
+   1. Implement feature/fix
+   2. Run security test suites (tests/scripts/)
+   3. Fix any identified vulnerabilities  
+   4. Re-run tests to verify fixes
+   5. Document security review completion
+   6. Only then mark story/task complete
+   ```
+
+3. **Security Test Automation**
+   - Run `python3 tests/scripts/test_command_injection_fix.py` after ANY main.py changes
+   - Run `python3 tests/scripts/test_container_security_fix.py` after Dockerfile changes
+   - Run `python3 tests/scripts/test_sql_injection_prevention_simple.py` for database changes
+   - ALL security tests must pass before deployment
+
+4. **Container Security Standards**
+   - All Docker base images MUST be SHA256-pinned
+   - Never use floating tags (`:latest`, `:3.11`) in production Dockerfiles
+   - Multi-stage builds with non-root users mandatory
+   - Regular base image updates with security scanning
+
+5. **Command Execution Security**
+   - NEVER use `os.system()` or `subprocess.shell=True`
+   - Always use `subprocess.run()` with argument lists
+   - Validate and sanitize all external command inputs
+   - Use proper exception handling for command failures
+
+### Security Documentation Requirements
+- Update story documents with security review completion
+- Document cloud vs local security requirements separation
+- Create security test scripts for all critical fixes
+- Maintain security completion reports for audit trail
+
+## Lessons Learned from Story 2.1 Security Work
+
+### Critical Security Findings (August 2025)
+Based on comprehensive vulnerability assessment and remediation:
+
+1. **Command Injection (CRI-002) - CRITICAL**
+   - **Root Cause**: Use of `os.system()` for subprocess execution
+   - **Impact**: CVSS 8.8 - Remote code execution potential
+   - **Fix**: Replace with `subprocess.run()` using argument lists
+   - **Lesson**: Never use shell-based command execution with user-controlled data
+
+2. **Container Supply Chain (MED-001) - MEDIUM** 
+   - **Root Cause**: Unpinned Docker base images (`python:3.11-slim`)
+   - **Impact**: CVSS 5.9 - Supply chain attack vulnerability
+   - **Fix**: SHA256-pinned images (`python:3.11-slim@sha256:8df0e8f...`)
+   - **Lesson**: Always pin container images to specific digests for production
+
+3. **SQL Injection Prevention - VERIFIED EXCELLENT**
+   - **Implementation**: SecureQueryBuilder with psycopg2.sql.Identifier()
+   - **Protection Level**: 95/100 with comprehensive table name whitelisting
+   - **Lesson**: Multi-layered SQL injection prevention is effective
+
+### Security Testing Best Practices Established
+1. **Automated Security Verification**: Every security fix must have a corresponding test script
+2. **Continuous Validation**: Security tests run on every relevant code change
+3. **Documentation Standards**: All vulnerabilities must be documented with CVSS scores
+4. **Separation of Concerns**: Local vs cloud security requirements clearly separated
+
+### Development Process Improvements
+1. **Security-First Mindset**: Security review is mandatory before story completion
+2. **Test Organization**: Proper directory structure for maintainable test suites
+3. **Real Integration Testing**: No mocks for security-critical components
+4. **Vulnerability Lifecycle**: Clear process from identification to verification
+
+**Key Takeaway**: Security is not an afterthought - it must be integrated into every development cycle from story planning to completion verification.
