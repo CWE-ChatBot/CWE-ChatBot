@@ -13,6 +13,7 @@ from ..prompts.role_templates import RolePromptTemplates
 from ..user.role_manager import UserRole
 from ..retrieval.base_retriever import CWEResult
 from ..security.secure_logging import get_secure_logger
+from ..security.input_sanitizer import InputSanitizer
 from .confidence_manager import ConfidenceManager
 
 logger = get_secure_logger(__name__)
@@ -47,8 +48,9 @@ class RoleAwareResponder:
         """
         self.prompt_templates = RolePromptTemplates()
         self.confidence_manager = ConfidenceManager()
+        self.input_sanitizer = InputSanitizer(max_length=2000, strict_mode=False)
         self.mock_llm = mock_llm
-        logger.info("Initialized RoleAwareResponder with enhanced confidence scoring")
+        logger.info("Initialized RoleAwareResponder with enhanced confidence scoring and input sanitization")
     
     async def generate_role_based_response(
         self,
@@ -70,17 +72,20 @@ class RoleAwareResponder:
             RoleAwareResponse with tailored content
         """
         try:
-            # Build context for prompt generation
+            # Build context for prompt generation with sanitization
             context = self._build_context(query, cwe_results, confidence_score)
             
+            # Apply comprehensive sanitization to all context data
+            sanitized_context = self._sanitize_context_data(context)
+            
             # Calculate enhanced confidence metrics
-            query_type = context.get('query_type', 'general')
+            query_type = sanitized_context.get('query_type', 'general')
             confidence_metrics = self.confidence_manager.calculate_confidence_metrics(
                 confidence_score, query_type, len(cwe_results)
             )
             
-            # Generate role-specific prompt
-            role_prompt = self.prompt_templates.get_role_prompt(role, context)
+            # Generate role-specific prompt with sanitized context
+            role_prompt = self.prompt_templates.get_role_prompt(role, sanitized_context)
             
             # Add confidence-based guidance
             confidence_guidance = self.prompt_templates.get_confidence_guidance_prompt(confidence_score)
@@ -90,7 +95,7 @@ class RoleAwareResponder:
             if self.mock_llm:
                 response_content = self._generate_mock_response(role, query, cwe_results, confidence_score)
             else:
-                response_content = await self._generate_llm_response(full_prompt, context)
+                response_content = await self._generate_llm_response(full_prompt, sanitized_context)
             
             # Extract citations from CWE results
             citations = self._extract_citations(cwe_results)
@@ -158,6 +163,86 @@ class RoleAwareResponder:
         
         return context
     
+    def _sanitize_context_data(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Sanitize all context data to prevent injection attacks.
+        
+        This method addresses MED-007 by ensuring consistent input sanitization
+        across all role-specific response paths.
+        
+        Args:
+            context: Raw context dictionary
+            
+        Returns:
+            Sanitized context dictionary safe for prompt generation
+        """
+        sanitized_context = {}
+        
+        for key, value in context.items():
+            if key == 'cwe_data' and isinstance(value, dict):
+                # Sanitize CWE data fields specifically
+                sanitized_context[key] = self._sanitize_cwe_data(value)
+            elif isinstance(value, str):
+                # Sanitize string values
+                sanitized_value = self.input_sanitizer.sanitize(value)
+                if sanitized_value != value:
+                    logger.warning(f"Input sanitization applied to {key} field in role-aware responder")
+                sanitized_context[key] = sanitized_value
+            elif isinstance(value, list):
+                # Sanitize list items
+                sanitized_context[key] = [
+                    self.input_sanitizer.sanitize(item) if isinstance(item, str) else item
+                    for item in value
+                ]
+            else:
+                # Keep other types as-is (numbers, booleans, etc.)
+                sanitized_context[key] = value
+        
+        return sanitized_context
+    
+    def _sanitize_cwe_data(self, cwe_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Sanitize CWE data fields specifically.
+        
+        Args:
+            cwe_data: Raw CWE data dictionary
+            
+        Returns:
+            Sanitized CWE data dictionary
+        """
+        sanitized = {}
+        
+        # Define expected CWE fields and their sanitization requirements
+        string_fields = ['cwe_id', 'name', 'description', 'extended_description', 'likelihood', 'impact']
+        list_fields = ['consequences']
+        
+        for field in string_fields:
+            if field in cwe_data and isinstance(cwe_data[field], str):
+                original_value = cwe_data[field]
+                sanitized_value = self.input_sanitizer.sanitize(original_value)
+                
+                if sanitized_value != original_value:
+                    logger.warning(f"Sanitization applied to CWE field '{field}' - "
+                                 f"original length: {len(original_value)}, "
+                                 f"sanitized length: {len(sanitized_value)}")
+                
+                sanitized[field] = sanitized_value
+            elif field in cwe_data:
+                # Keep non-string values as-is
+                sanitized[field] = cwe_data[field]
+        
+        # Handle list fields (like consequences)
+        for field in list_fields:
+            if field in cwe_data and isinstance(cwe_data[field], list):
+                sanitized[field] = [
+                    self.input_sanitizer.sanitize(item) if isinstance(item, str) else item
+                    for item in cwe_data[field]
+                ]
+            elif field in cwe_data:
+                sanitized[field] = cwe_data[field]
+        
+        return sanitized
+    
     def _generate_mock_response(
         self, 
         role: Optional[UserRole], 
@@ -168,7 +253,13 @@ class RoleAwareResponder:
         """
         Generate a mock response for testing purposes.
         Simulates role-specific response variations without actual LLM calls.
+        
+        Note: Query is sanitized to prevent injection attacks in mock mode.
         """
+        # Sanitize user query to prevent injection in mock responses (addresses MED-007)
+        sanitized_query = self.input_sanitizer.sanitize(query)
+        if sanitized_query != query:
+            logger.warning("Query sanitization applied in mock response generation")
         if not cwe_results:
             return "No relevant CWE information found for your query."
         

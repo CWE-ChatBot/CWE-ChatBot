@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Optional, Dict, Any
 import chainlit as cl
 from src.security.secure_logging import get_secure_logger
+from src.security.session_encryption import SessionEncryption, EncryptionError, DecryptionError
 
 logger = get_secure_logger(__name__)
 
@@ -52,28 +53,45 @@ class RoleManager:
     ROLE_SET_FLAG = "role_selection_completed"
     
     def __init__(self):
-        """Initialize the role manager."""
-        pass
+        """Initialize the role manager with session encryption."""
+        self.session_encryptor = SessionEncryption()
+        logger.debug("RoleManager initialized with session encryption")
     
     def get_current_role(self) -> Optional[UserRole]:
         """
-        Get the current user's role from session.
+        Get the current user's role from session with decryption.
+        
+        Addresses MED-006 by decrypting role data stored in session.
         
         Returns:
             UserRole or None if no role is set
         """
         try:
-            role_value = cl.user_session.get(self.ROLE_SESSION_KEY)
-            if role_value:
-                return UserRole(role_value)
-            return None
+            stored_value = cl.user_session.get(self.ROLE_SESSION_KEY)
+            if not stored_value:
+                return None
+            
+            # Decrypt the stored role value
+            try:
+                decrypted_value = self.session_encryptor.decrypt_session_data(stored_value)
+                logger.debug("Successfully decrypted role data from session")
+                return UserRole(decrypted_value)
+            except DecryptionError as e:
+                logger.error(f"Failed to decrypt role data: {e}")
+                # Clear corrupted session data
+                self._clear_corrupted_session_data()
+                return None
+                
         except (ValueError, AttributeError) as e:
             logger.warning(f"Invalid role value in session: {e}")
             return None
     
     def set_user_role(self, role: UserRole) -> bool:
         """
-        Set the user's role in session storage.
+        Set the user's role in session storage with encryption.
+        
+        Addresses MED-006 by encrypting role data before storage to prevent
+        information disclosure if session storage is compromised.
         
         Args:
             role: UserRole to set
@@ -86,11 +104,15 @@ class RoleManager:
             if not isinstance(role, UserRole):
                 raise ValueError(f"Invalid role type: {type(role)}")
             
-            # Store in secure session
-            cl.user_session[self.ROLE_SESSION_KEY] = role.value
+            # Encrypt role value before storage
+            encrypted_role = self.session_encryptor.encrypt_session_data(role.value)
+            
+            # Store encrypted role in session
+            cl.user_session[self.ROLE_SESSION_KEY] = encrypted_role
             cl.user_session[self.ROLE_SET_FLAG] = True
             
-            logger.info(f"User role set to: {role.get_display_name()}")
+            logger.info(f"User role set with encryption: {role.get_display_name()}")
+            logger.debug(f"Encrypted role data length: {len(encrypted_role)} characters")
             return True
             
         except Exception as e:
@@ -229,3 +251,16 @@ class RoleManager:
             "focus_areas": focus_areas.get(current_role, []),
             "description": current_role.get_description()
         }
+    
+    def _clear_corrupted_session_data(self) -> None:
+        """
+        Clear corrupted session data when decryption fails.
+        This provides defense against session tampering attacks.
+        """
+        try:
+            cl.user_session.pop(self.ROLE_SESSION_KEY, None)
+            cl.user_session.pop(self.ROLE_SET_FLAG, None)
+            logger.warning("Cleared corrupted session data after decryption failure")
+        except Exception as e:
+            logger.error(f"Failed to clear corrupted session data: {e}")
+    
