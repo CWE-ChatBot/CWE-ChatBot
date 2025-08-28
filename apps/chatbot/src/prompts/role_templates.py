@@ -5,7 +5,9 @@ Provides specialized prompt templates based on user roles for tailored CWE respo
 """
 
 import logging
-from typing import Dict, Any, Optional
+import html
+import re
+from typing import Dict, Any, Optional, Union
 from src.user.role_manager import UserRole
 from src.security.secure_logging import get_secure_logger
 
@@ -26,6 +28,39 @@ class RolePromptTemplates:
             "citation_requirement": "Always cite specific CWE sources for factual claims using the format 'According to CWE-XXX description...' or 'CWE-XXX states that...'",
             "confidence_requirement": "If you're uncertain about any information, clearly state your level of confidence and suggest sources for verification."
         }
+        
+        # Prompt injection patterns to detect and neutralize
+        self._injection_patterns = [
+            r'ignore\s+all\s+(previous\s+)?instructions',
+            r'ignore\s+the\s+above',
+            r'disregard\s+all\s+instructions',
+            r'forget\s+everything',
+            r'new\s+instructions?:',
+            r'system\s*:\s*',
+            r'assistant\s*:\s*',
+            r'human\s*:\s*',
+            r'###\s*new\s*instructions',
+            r'override\s+system',
+            r'reveal\s+your\s+(system\s+)?instructions',
+            r'reveal\s+your\s+system\s+configuration',
+            r'show\s+me\s+your\s+prompt',
+            r'tell\s+me\s+about\s+(internal\s+)?architecture',
+            r'javascript\s*:',
+            r'data\s*:',
+            r'vbscript\s*:',
+            r'on\w+\s*=',  # HTML event handlers
+            r'drop\s+table',
+            r'union\s+select',
+            r'insert\s+into',
+            r'delete\s+from',
+            r'update\s+\w+\s+set',
+            r';\s*(rm|del|rmdir|cat|type|more|less)',
+            r'\|\s*(cat|type|more|less|grep)',
+            r'&&\s*(whoami|pwd|ls|dir)',
+            r'\.\.[\\/]',  # Directory traversal
+            r'\$\{.*\}',   # Variable injection
+            r'`[^`]+`'     # Command substitution
+        ]
     
     def get_role_prompt(self, role: Optional[UserRole], context: Dict[str, Any]) -> str:
         """
@@ -59,6 +94,132 @@ class RolePromptTemplates:
         logger.debug(f"Generated prompt template for role: {role.value if role else 'generic'}")
         return full_prompt
     
+    def _sanitize_context_data(self, data: Any) -> str:
+        """
+        Sanitize context data to prevent prompt injection attacks.
+        
+        This method implements multiple layers of protection:
+        1. Data structure validation and field whitelisting
+        2. Content length limiting 
+        3. HTML encoding to prevent markup injection
+        4. Pattern-based injection attempt detection
+        5. Safe string conversion with truncation
+        
+        Args:
+            data: Context data to sanitize (typically CWE data dict)
+            
+        Returns:
+            Sanitized string safe for inclusion in LLM prompts
+            
+        Security Features:
+            - Prevents prompt injection via malicious instructions
+            - Limits data length to prevent prompt overflow
+            - HTML encodes to prevent markup injection
+            - Validates CWE ID format to prevent spoofing
+            - Logs security events for monitoring
+        """
+        try:
+            if isinstance(data, dict):
+                # Whitelist approach - only include expected, validated fields
+                safe_fields = {}
+                
+                # Validate and sanitize CWE ID
+                if 'cwe_id' in data:
+                    cwe_id = str(data['cwe_id']).strip()
+                    # Strict CWE ID format validation - must be exactly CWE-<digits>
+                    if re.match(r'^CWE-\d{1,6}$', cwe_id) and len(cwe_id) <= 20:
+                        safe_fields['cwe_id'] = cwe_id
+                    else:
+                        logger.warning(f"Invalid CWE ID format rejected: {cwe_id[:50]}...")
+                        safe_fields['cwe_id'] = "BLOCKED-INVALID-ID"
+                else:
+                    safe_fields['cwe_id'] = "UNKNOWN-CWE-ID"
+                
+                # Sanitize name field
+                if 'name' in data:
+                    name = str(data['name']).strip()[:100]  # Limit length
+                    name = self._detect_and_neutralize_injection(name)
+                    safe_fields['name'] = html.escape(name)  # HTML encode
+                
+                # Sanitize description field
+                if 'description' in data:
+                    desc = str(data['description']).strip()[:500]  # Limit length
+                    desc = self._detect_and_neutralize_injection(desc)
+                    safe_fields['description'] = html.escape(desc)  # HTML encode
+                
+                # Format as structured, safe output
+                return self._format_safe_cwe_data(safe_fields)
+            
+            else:
+                # For non-dict data, apply general sanitization
+                sanitized = str(data).strip()[:200]  # Limit length
+                sanitized = self._detect_and_neutralize_injection(sanitized)
+                return html.escape(sanitized)  # HTML encode
+                
+        except Exception as e:
+            logger.error(f"Error sanitizing context data: {e}")
+            return "[CWE data sanitization failed - content not available]"
+    
+    def _detect_and_neutralize_injection(self, text: str) -> str:
+        """
+        Detect and neutralize prompt injection attempts.
+        
+        Args:
+            text: Text to scan for injection patterns
+            
+        Returns:
+            Text with injection attempts neutralized
+        """
+        original_text = text
+        text_lower = text.lower()
+        
+        # Check for injection patterns
+        for pattern in self._injection_patterns:
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                logger.warning(f"Prompt injection attempt detected and blocked: {pattern}")
+                # Replace with safe placeholder
+                text = re.sub(pattern, '[BLOCKED-CONTENT]', text, flags=re.IGNORECASE)
+        
+        # Additional safety measures
+        # Remove potential instruction separators
+        dangerous_chars = ['###', '---', '```', '<|', '|>', '\n\n###', '\n---']
+        for char_seq in dangerous_chars:
+            if char_seq in text:
+                text = text.replace(char_seq, ' ')
+                logger.debug(f"Removed potential instruction separator: {char_seq}")
+        
+        # Log if modifications were made
+        if text != original_text:
+            logger.info(f"Content sanitization applied - original length: {len(original_text)}, sanitized length: {len(text)}")
+        
+        return text
+    
+    def _format_safe_cwe_data(self, safe_data: Dict[str, str]) -> str:
+        """
+        Format sanitized CWE data in a structured, safe manner.
+        
+        Args:
+            safe_data: Dictionary of sanitized CWE fields
+            
+        Returns:
+            Formatted string safe for LLM prompt inclusion
+        """
+        formatted_parts = []
+        
+        if safe_data.get('cwe_id'):
+            formatted_parts.append(f"CWE Identifier: {safe_data['cwe_id']}")
+        
+        if safe_data.get('name'):
+            formatted_parts.append(f"Weakness Name: {safe_data['name']}")
+            
+        if safe_data.get('description'):
+            formatted_parts.append(f"Description: {safe_data['description']}")
+        
+        if not formatted_parts:
+            return "[No valid CWE data available]"
+        
+        return "\n".join(formatted_parts)
+    
     def _build_full_prompt(self, role_prompt: str, context: Dict[str, Any]) -> str:
         """
         Build the complete prompt by combining base context, role instructions, and query context.
@@ -82,10 +243,11 @@ class RolePromptTemplates:
             "",
         ]
         
-        # Add context-specific instructions
+        # Add context-specific instructions with secure sanitization
         if context.get('cwe_data'):
             prompt_parts.append("Use the following CWE information to answer the user's question:")
-            prompt_parts.append(str(context['cwe_data']))
+            # SECURITY FIX: Apply comprehensive sanitization to prevent prompt injection
+            prompt_parts.append(self._sanitize_context_data(context['cwe_data']))
             prompt_parts.append("")
         
         if context.get('query_type') == 'direct_cwe_lookup':
