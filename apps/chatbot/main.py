@@ -27,6 +27,9 @@ from src.session.session_security import SessionSecurityValidator
 # Story 2.2: Progressive disclosure imports
 from src.formatting.progressive_response_formatter import ProgressiveResponseFormatter
 from src.processing.contextual_responder import ContextualResponder
+# Story 2.3: Role-based context imports
+from src.user.role_manager import RoleManager, UserRole
+from src.processing.role_aware_responder import RoleAwareResponder
 # Security imports - Rate limiting and secure logging
 from src.security.rate_limiting import action_button_rate_limit, query_rate_limit, RateLimitExceeded
 from src.security.secure_logging import get_secure_logger
@@ -49,11 +52,14 @@ session_security = None
 # Story 2.2: Progressive disclosure components
 progressive_formatter = None
 contextual_responder = None
+# Story 2.3: Role management components
+role_manager = None
+role_aware_responder = None
 
 
 def initialize_components():
     """Initialize all chatbot components with error handling."""
-    global query_processor, hybrid_rag_manager, response_formatter, session_manager, session_security, progressive_formatter, contextual_responder
+    global query_processor, hybrid_rag_manager, response_formatter, session_manager, session_security, progressive_formatter, contextual_responder, role_manager, role_aware_responder
     
     try:
         # Validate configuration
@@ -95,6 +101,10 @@ def initialize_components():
         progressive_formatter = ProgressiveResponseFormatter()
         contextual_responder = ContextualResponder()
         
+        # Story 2.3: Initialize role management components
+        role_manager = RoleManager()
+        role_aware_responder = RoleAwareResponder(mock_llm=True)  # Use mock for now
+        
         logger.info("All components initialized successfully")
         return True
         
@@ -105,8 +115,15 @@ def initialize_components():
 
 @cl.on_chat_start
 async def start():
-    """Initialize the chat session with a welcome message."""
-    welcome_message = """Hello! Welcome to the CWE ChatBot! 🛡️
+    """Initialize the chat session with role selection."""
+    global role_manager
+    
+    # Check if role is already selected (returning user)
+    if role_manager and role_manager.is_role_selected():
+        current_role = role_manager.get_current_role()
+        welcome_message = f"""Hello! Welcome back to the CWE ChatBot! 🛡️
+
+Your current role: **{current_role.get_display_name() if current_role else 'Unknown'}**
 
 I'm here to help you with Common Weakness Enumeration (CWE) information. You can:
 
@@ -115,9 +132,24 @@ I'm here to help you with Common Weakness Enumeration (CWE) information. You can
 • Get prevention guidance (e.g., "How to prevent buffer overflows")
 • Learn about security concepts and best practices
 
-What would you like to know about cybersecurity weaknesses?"""
-    
-    await cl.Message(content=welcome_message).send()
+What would you like to know about cybersecurity weaknesses?
+
+*To change your role, use the "Change Role" button below.*"""
+        
+        actions = [cl.Action(name="change_role", value="change_role", label="Change Role")]
+        await cl.Message(content=welcome_message, actions=actions).send()
+    else:
+        # New session - prompt for role selection
+        welcome_message = """Hello! Welcome to the CWE ChatBot! 🛡️
+
+To provide you with the most relevant information, please select your role:"""
+        
+        if role_manager:
+            role_actions = role_manager.get_role_actions()
+            await cl.Message(content=welcome_message, actions=role_actions).send()
+        else:
+            # Fallback if role manager not initialized
+            await cl.Message(content="System is initializing. Please try again in a moment.").send()
 
 
 @cl.on_message
@@ -126,9 +158,14 @@ async def main(message: cl.Message):
     """Handle incoming messages with full NLU and retrieval pipeline."""
     
     # Check if components are initialized
-    if not all([query_processor, hybrid_rag_manager, response_formatter, session_manager, session_security, progressive_formatter, contextual_responder]):
+    if not all([query_processor, hybrid_rag_manager, response_formatter, session_manager, session_security, progressive_formatter, contextual_responder, role_manager, role_aware_responder]):
         error_msg = response_formatter.get_fallback_response("system_error") if response_formatter else "System is initializing. Please try again in a moment."
         await cl.Message(content=error_msg).send()
+        return
+    
+    # Story 2.3: Check if user needs to select role first
+    if not role_manager.is_role_selected():
+        await cl.Message(content="Please select your role first using the buttons above before asking questions.").send()
         return
     
     # Story 2.2: Session security validation
@@ -230,7 +267,7 @@ async def main(message: cl.Message):
                     boost_factors=processed_query.get('boost_factors', {})
                 )
             
-            # Story 2.2: Use progressive disclosure for responses
+            # Story 2.2 & 2.3: Use role-aware progressive disclosure for responses
             if results:
                 primary_result = results[0]
                 
@@ -244,14 +281,51 @@ async def main(message: cl.Message):
                     }
                 )
                 
-                # Format response with progressive disclosure
+                # Story 2.3: Get user's role for tailored response
+                current_role = role_manager.get_current_role()
+                
+                # Generate role-aware response
+                role_response = await role_aware_responder.generate_role_based_response(
+                    query=user_query,
+                    role=current_role,
+                    cwe_results=results,
+                    confidence_score=primary_result.confidence_score
+                )
+                
+                # Combine role-aware content with progressive disclosure and enhanced confidence
                 if processed_query.get('query_type') == 'direct_cwe_lookup' and len(results) == 1:
-                    # Single CWE lookup - show summary with actions
+                    # Single CWE lookup - show role-tailored summary with actions
                     content, actions = progressive_formatter.format_summary_response(primary_result)
-                    await cl.Message(content=content, actions=actions).send()
+                    
+                    # Build enhanced response with confidence scoring
+                    role_context = role_aware_responder.get_role_context_summary(current_role)
+                    enhanced_content = f"*{role_context}*\n\n{role_response.content}\n\n"
+                    
+                    # Add enhanced confidence display
+                    if role_response.confidence_display:
+                        enhanced_content += f"{role_response.confidence_display}\n\n"
+                    
+                    # Add low confidence warning if present
+                    if role_response.low_confidence_warning:
+                        enhanced_content += f"{role_response.low_confidence_warning}\n\n"
+                    
+                    enhanced_content += f"---\n\n{content}"
+                    await cl.Message(content=enhanced_content, actions=actions).send()
                 else:
-                    # Multiple results - show summary of top result plus list
+                    # Multiple results - show role-aware summary of top result plus list
                     content, actions = progressive_formatter.format_summary_response(primary_result)
+                    
+                    # Build role-specific response with enhanced confidence
+                    role_context = role_aware_responder.get_role_context_summary(current_role)
+                    role_intro = f"*{role_context}*\n\n{role_response.content}\n\n"
+                    
+                    # Add enhanced confidence display
+                    if role_response.confidence_display:
+                        role_intro += f"{role_response.confidence_display}\n\n"
+                    
+                    # Add low confidence warning if present  
+                    if role_response.low_confidence_warning:
+                        role_intro += f"{role_response.low_confidence_warning}\n\n"
                     
                     if len(results) > 1:
                         additional_results = "\n\n**Other relevant CWEs:**\n"
@@ -259,9 +333,10 @@ async def main(message: cl.Message):
                             additional_results += f"• **{result.cwe_id}**: {result.name}\n"
                         content += additional_results
                     
-                    await cl.Message(content=content, actions=actions).send()
+                    final_content = role_intro + "---\n\n" + content
+                    await cl.Message(content=final_content, actions=actions).send()
                 
-                logger.info(f"Successfully processed query, returned {len(results)} results with progressive disclosure")
+                logger.info(f"Successfully processed query with role-aware response for {current_role.value if current_role else 'no role'}, returned {len(results)} results")
             else:
                 # No results found
                 error_response = response_formatter.get_fallback_response("no_results")
@@ -421,6 +496,86 @@ async def on_show_prevention(action):
     except Exception as e:
         logger.log_exception("Show prevention action failed", e, extra_context={'action': 'show_prevention'})
         await cl.Message(content="Sorry, I encountered an error retrieving prevention information.").send()
+
+
+# Story 2.3: Role selection action callbacks
+
+@cl.action_callback("select_role_psirt")
+async def on_select_psirt_role(action):
+    """Handle PSIRT role selection."""
+    await handle_role_selection(UserRole.PSIRT)
+
+@cl.action_callback("select_role_developer")
+async def on_select_developer_role(action):
+    """Handle Developer role selection."""
+    await handle_role_selection(UserRole.DEVELOPER)
+
+@cl.action_callback("select_role_academic")
+async def on_select_academic_role(action):
+    """Handle Academic role selection."""
+    await handle_role_selection(UserRole.ACADEMIC)
+
+@cl.action_callback("select_role_bug_bounty")
+async def on_select_bug_bounty_role(action):
+    """Handle Bug Bounty Hunter role selection."""
+    await handle_role_selection(UserRole.BUG_BOUNTY)
+
+@cl.action_callback("select_role_product_manager")
+async def on_select_product_manager_role(action):
+    """Handle Product Manager role selection."""
+    await handle_role_selection(UserRole.PRODUCT_MANAGER)
+
+@cl.action_callback("change_role")
+async def on_change_role(action):
+    """Handle role change request."""
+    global role_manager
+    
+    if not role_manager:
+        await cl.Message(content="Role management not available.").send()
+        return
+    
+    # Clear current role
+    role_manager.clear_role()
+    
+    # Show role selection options
+    welcome_message = "Please select your new role:"
+    role_actions = role_manager.get_role_actions()
+    await cl.Message(content=welcome_message, actions=role_actions).send()
+
+
+async def handle_role_selection(role: UserRole):
+    """Handle role selection logic."""
+    global role_manager
+    
+    if not role_manager:
+        await cl.Message(content="Role management not available.").send()
+        return
+    
+    try:
+        # Validate role integrity before setting
+        if not role_manager.validate_role_integrity():
+            logger.warning("Role integrity validation failed during selection")
+            role_manager.clear_role()  # Clear potentially compromised data
+        
+        # Set the role
+        success = role_manager.set_user_role(role)
+        
+        if success:
+            confirmation_message = f"""Great! Your role has been set to **{role.get_display_name()}**.
+
+{role.get_description()}
+
+I'm ready to help you with CWE information tailored to your needs. What would you like to know about cybersecurity weaknesses?"""
+            
+            await cl.Message(content=confirmation_message).send()
+            logger.info(f"Role successfully set to {role.get_display_name()}")
+        else:
+            await cl.Message(content="Sorry, there was an error setting your role. Please try again.").send()
+            logger.error(f"Failed to set role to {role.get_display_name()}")
+            
+    except Exception as e:
+        logger.log_exception("Role selection failed", e, extra_context={'role': role.value})
+        await cl.Message(content="Sorry, there was an error with role selection. Please try again.").send()
 
 
 def main_cli():
