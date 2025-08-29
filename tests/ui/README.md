@@ -5,11 +5,11 @@ This directory contains the Playwright-based UI testing framework for the CWE Ch
 ## Overview
 
 The UI testing framework provides comprehensive browser automation testing for:
-- Role-based UI functionality testing
-- Progressive disclosure validation 
-- Security feature verification
-- Cross-browser compatibility testing
-- Performance and visual regression testing
+- **Role-based UI functionality testing** - All 5 user roles with context preservation and switching
+- **Progressive disclosure validation** - Action button interactions and dynamic content loading
+- **Security feature verification** - MED-006/MED-007 implementations in browser environment
+- **Cross-browser compatibility testing** - Chrome, Firefox, Safari with performance metrics
+- **Performance and visual regression testing** - Load times, memory usage, and UI consistency
 
 ## Directory Structure
 
@@ -21,6 +21,10 @@ tests/ui/
 ├── playwright.config.py        # Playwright configuration management
 ├── run_tests.py               # Test runner script
 ├── test_basic_navigation.py    # Basic navigation and loading tests
+├── test_role_selection.py      # Role-based UI testing (Story 2.6.2)
+├── test_progressive_disclosure.py # Progressive disclosure testing (Story 2.6.3)
+├── test_security_features.py   # Security feature UI validation (Story 2.6.4)
+├── test_cross_browser.py       # Cross-browser and performance testing (Story 2.6.6)
 ├── fixtures/                   # Test data and scenarios
 │   ├── __init__.py
 │   ├── test_users.py          # User role test data
@@ -74,8 +78,17 @@ python tests/ui/run_tests.py basic --headless
 # Run all UI tests
 python tests/ui/run_tests.py all
 
+# Test specific functionality areas
+python tests/ui/run_tests.py role-based          # Role selection and role-based UI
+python tests/ui/run_tests.py progressive         # Progressive disclosure features
+python tests/ui/run_tests.py security --headless # Security features (MED-006/007)
+python tests/ui/run_tests.py performance         # Performance benchmarking
+
 # Test across all browsers (headless)
 python tests/ui/run_tests.py cross-browser --headless
+
+# Complete regression test suite
+python tests/ui/run_tests.py regression
 
 # Interactive mode for debugging
 python tests/ui/run_tests.py interactive
@@ -142,28 +155,43 @@ export TEST_ENV="local"                             # Environment config
 
 ### Test Organization
 
-Tests are organized by functionality:
+Tests are organized by functionality as per Story 2.6 implementation plan:
 
 1. **Basic Navigation** (`test_basic_navigation.py`)
-   - Application loading
-   - Interface element presence
-   - Responsive design
-   - Performance validation
+   - Application loading and startup
+   - Interface element presence verification
+   - Responsive design across viewport sizes
+   - Performance validation and error handling
 
-2. **Role-Based Testing** (planned)
-   - Role selection functionality
-   - Role-specific UI adaptations
-   - Role context preservation
+2. **Role-Based Testing** (`test_role_selection.py`) - **Story 2.6.2 Implementation**
+   - Role selection interface testing for all 5 user roles (PSIRT, Developer, Academic, Bug Bounty, Product Manager)
+   - Role-specific response formatting validation
+   - Role context preservation across sessions and page refreshes
+   - Role switching functionality with UI feedback validation
+   - Performance testing of role operations
 
-3. **Progressive Disclosure** (planned)
-   - Action button interactions
-   - Dynamic content loading
-   - State management validation
+3. **Progressive Disclosure** (`test_progressive_disclosure.py`) - **Story 2.6.3 Implementation**
+   - Action button interactions ("Tell Me More", "Show Consequences", etc.)
+   - Dynamic content loading and state management
+   - Button state management (enabled/disabled after click)
+   - Loading indicators and content organization
+   - Role-specific progressive action integration
+   - Performance testing of progressive operations
 
-4. **Security Testing** (planned)
-   - Input sanitization verification
-   - CSRF protection testing
-   - Session encryption validation
+4. **Security Feature Validation** (`test_security_features.py`) - **Story 2.6.4 Implementation**
+   - Input sanitization testing (MED-007): XSS, SQL injection, prompt injection, path traversal
+   - Session encryption validation (MED-006): Browser storage inspection, session isolation
+   - CSRF protection testing for progressive disclosure actions
+   - Security event logging and monitoring integration
+   - Performance impact assessment of security features
+
+5. **Cross-Browser Compatibility** (`test_cross_browser.py`) - **Story 2.6.6 Implementation**
+   - Application loading across Chrome, Firefox, Safari
+   - JavaScript compatibility and WebSocket connectivity
+   - CSS feature support and accessibility testing
+   - Performance metrics across browsers (load times, memory usage)
+   - Mobile compatibility testing
+   - Network condition simulation (slow 3G, offline behavior)
 
 ### Test Fixtures and Utilities
 

@@ -92,6 +92,132 @@ def run_cross_browser_tests(headless: bool = True):
     return all(result == 0 for result in results.values())
 
 
+def run_role_based_tests(headless: bool = False, browser: str = "chromium"):
+    """Run role-based UI testing framework."""
+    cmd = [
+        "poetry", "run", "pytest", 
+        "tests/ui/test_role_selection.py",
+        "-v",
+        f"--browser={browser}"
+    ]
+    
+    if headless:
+        cmd.append("--headless")
+    else:
+        cmd.append("--headed")
+    
+    return run_command(cmd, f"Running role-based tests in {browser}")
+
+
+def run_progressive_disclosure_tests(headless: bool = False, browser: str = "chromium"):
+    """Run progressive disclosure testing."""
+    cmd = [
+        "poetry", "run", "pytest", 
+        "tests/ui/test_progressive_disclosure.py",
+        "-v",
+        f"--browser={browser}"
+    ]
+    
+    if headless:
+        cmd.append("--headless")
+    else:
+        cmd.append("--headed")
+    
+    return run_command(cmd, f"Running progressive disclosure tests in {browser}")
+
+
+def run_security_tests(headless: bool = False, browser: str = "chromium"):
+    """Run security feature UI validation tests."""
+    cmd = [
+        "poetry", "run", "pytest", 
+        "tests/ui/test_security_features.py",
+        "-v",
+        f"--browser={browser}"
+    ]
+    
+    if headless:
+        cmd.append("--headless")
+    else:
+        cmd.append("--headed")
+    
+    return run_command(cmd, f"Running security validation tests in {browser}")
+
+
+def run_cross_browser_full_tests(headless: bool = True):
+    """Run comprehensive cross-browser compatibility tests."""
+    cmd = [
+        "poetry", "run", "pytest",
+        "tests/ui/test_cross_browser.py",
+        "-v", 
+        "--tb=short"
+    ]
+    
+    if headless:
+        cmd.append("--headless")
+    else:
+        cmd.append("--headed")
+    
+    return run_command(cmd, "Running comprehensive cross-browser tests")
+
+
+def run_performance_tests(browser: str = "chromium"):
+    """Run performance and load testing."""
+    cmd = [
+        "poetry", "run", "pytest",
+        "tests/ui/test_cross_browser.py::TestPerformanceAcrossBrowsers",
+        "-v",
+        f"--browser={browser}",
+        "--headless"  # Always headless for consistent performance
+    ]
+    
+    return run_command(cmd, f"Running performance tests in {browser}")
+
+
+def run_regression_suite(headless: bool = False):
+    """Run complete regression test suite."""
+    print("Running comprehensive regression test suite...")
+    
+    test_suites = [
+        ("Basic Navigation", lambda: run_basic_tests(headless, "chromium")),
+        ("Role-Based Testing", lambda: run_role_based_tests(headless, "chromium")),
+        ("Progressive Disclosure", lambda: run_progressive_disclosure_tests(headless, "chromium")),
+        ("Security Validation", lambda: run_security_tests(headless, "chromium")),
+        ("Cross-Browser Compatibility", lambda: run_cross_browser_full_tests(True)),  # Always headless for CI
+        ("Performance Testing", lambda: run_performance_tests("chromium"))
+    ]
+    
+    results = {}
+    
+    for suite_name, test_function in test_suites:
+        print(f"\n{'='*60}")
+        print(f"Running {suite_name}")
+        print(f"{'='*60}")
+        
+        result = test_function()
+        results[suite_name] = result
+    
+    # Summary report
+    print(f"\n{'='*60}")
+    print("REGRESSION SUITE SUMMARY")
+    print(f"{'='*60}")
+    
+    total_suites = len(results)
+    passed_suites = sum(1 for result in results.values() if result == 0)
+    
+    for suite_name, result in results.items():
+        status = "✓ PASSED" if result == 0 else "❌ FAILED"
+        print(f"{suite_name:25}: {status}")
+    
+    print(f"\nOverall: {passed_suites}/{total_suites} test suites passed")
+    
+    if passed_suites == total_suites:
+        print("🎉 All regression tests PASSED!")
+        return 0
+    else:
+        print("⚠️  Some regression tests FAILED!")
+        return 1
+
+
 def run_interactive_test():
     """Run tests in interactive mode for debugging."""
     print("Starting interactive test mode...")
@@ -184,7 +310,8 @@ def main():
     parser = argparse.ArgumentParser(description="Playwright UI test runner")
     parser.add_argument("command", choices=[
         "check", "install-deps", "basic", "all", "cross-browser", 
-        "interactive", "config", "help"
+        "role-based", "progressive", "security", "performance",
+        "regression", "interactive", "config", "help"
     ], help="Command to run")
     
     parser.add_argument("--headless", action="store_true", 
@@ -211,6 +338,16 @@ def main():
         return run_all_ui_tests(args.headless, args.browser)
     elif args.command == "cross-browser":
         return 0 if run_cross_browser_tests(args.headless) else 1
+    elif args.command == "role-based":
+        return run_role_based_tests(args.headless, args.browser)
+    elif args.command == "progressive":
+        return run_progressive_disclosure_tests(args.headless, args.browser)
+    elif args.command == "security":
+        return run_security_tests(args.headless, args.browser)
+    elif args.command == "performance":
+        return run_performance_tests(args.browser)
+    elif args.command == "regression":
+        return run_regression_suite(args.headless)
     elif args.command == "interactive":
         return run_interactive_test()
     elif args.command == "config":
@@ -231,6 +368,11 @@ Commands:
   basic           Run basic navigation and smoke tests
   all             Run all UI tests
   cross-browser   Run tests across chromium, firefox, and webkit
+  role-based      Run role selection and role-based UI tests
+  progressive     Run progressive disclosure functionality tests
+  security        Run security feature UI validation (MED-006/MED-007)
+  performance     Run performance and load testing
+  regression      Run complete regression test suite
   interactive     Run test in interactive mode for debugging
   config          Create test environment configuration file
   help            Show this help message
@@ -246,6 +388,11 @@ Examples:
   python tests/ui/run_tests.py basic --headless         # Run basic tests headless
   python tests/ui/run_tests.py all --browser firefox    # Run all tests in Firefox
   python tests/ui/run_tests.py cross-browser --headless # Test all browsers headless
+  python tests/ui/run_tests.py role-based               # Test role selection and role-based UI
+  python tests/ui/run_tests.py progressive              # Test progressive disclosure features
+  python tests/ui/run_tests.py security --headless      # Test security features (MED-006/007)
+  python tests/ui/run_tests.py performance              # Run performance benchmarks
+  python tests/ui/run_tests.py regression               # Complete regression test suite
   python tests/ui/run_tests.py interactive              # Interactive debugging mode
   python tests/ui/run_tests.py config --env ci          # Create CI environment config
 
