@@ -47,8 +47,10 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Copy application files with secure permissions
-COPY --chown=appuser:appuser main.py .
+COPY --chown=appuser:appuser main_simple.py ./main.py
 COPY --chown=appuser:appuser healthcheck.py .
+COPY --chown=appuser:appuser .chainlit/ ./.chainlit/
+COPY --chown=appuser:appuser public/ ./public/
 
 # Create directories with proper permissions
 RUN mkdir -p /app/logs && \

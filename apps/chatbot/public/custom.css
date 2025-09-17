@@ -1,0 +1,64 @@
+/* Custom CSS to replace Chainlit logo with CWE logo */
+
+/* Replace ALL avatar elements with CWE logo - simplified approach */
+[class*="MuiAvatar-root"] {
+    background-image: url("/public/cwe-logo.png") !important;
+    background-size: 80% !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    background-color: white !important;
+    border: 2px solid #e0e0e0 !important;
+    width: 60px !important;
+    height: 60px !important;
+    min-width: 60px !important;
+    min-height: 60px !important;
+}
+
+/* Hide any text/initials inside avatars */
+[class*="MuiAvatar-root"] > * {
+    opacity: 0 !important;
+}
+
+/* Target assistant/bot message avatars specifically */
+div[data-testid*="assistant"] [class*="MuiAvatar-root"],
+div[data-testid*="bot"] [class*="MuiAvatar-root"],
+[data-testid*="message"] [class*="MuiAvatar-root"] {
+    background-image: url("/public/cwe-logo.png") !important;
+    background-size: contain !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    background-color: transparent !important;
+}
+
+/* Replace any img elements that might be logos */
+img[alt*="logo"],
+img[src*="logo"],
+img[alt*="avatar"],
+img[src*="avatar"],
+[data-testid*="logo"] img,
+[data-testid*="avatar"] img {
+    content: url("/public/cwe-logo.png") !important;
+    width: 60px !important;
+    height: 60px !important;
+    object-fit: contain !important;
+}
+
+/* Header logo replacement */
+header [class*="MuiToolbar-root"] [class*="MuiAvatar-root"] {
+    background-image: url("/public/cwe-logo.png") !important;
+    background-size: contain !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    background-color: transparent !important;
+}
+
+/* Chat message area logo replacement */
+[class*="message"] [class*="MuiAvatar-root"],
+[class*="Message"] [class*="MuiAvatar-root"],
+.cl-message [class*="MuiAvatar-root"] {
+    background-image: url("/public/cwe-logo.png") !important;
+    background-size: contain !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    background-color: transparent !important;
+}
