@@ -3,12 +3,17 @@
 """
 Command-line interface for CWE data ingestion pipeline.
 """
-import sys
 import logging
-from pathlib import Path
+import sys
+
 import click
 
-from .pipeline import CWEIngestionPipeline
+try:
+    # Try relative import (when run as part of package)
+    from .pipeline import CWEIngestionPipeline
+except ImportError:
+    # Fall back to absolute import (when run directly or in tests)
+    from pipeline import CWEIngestionPipeline
 
 # Set up logging
 logging.basicConfig(
@@ -29,7 +34,7 @@ def cli(ctx, debug):
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
         logging.getLogger('apps.cwe_ingestion').setLevel(logging.DEBUG)
-    
+
     click.echo("🔧 CWE Data Ingestion Pipeline")
 
 
@@ -41,20 +46,25 @@ def cli(ctx, debug):
 @click.option('--force-download', '-f', is_flag=True,
               help='Force re-download of CWE data')
 @click.option('--embedding-model', '-m', default='all-MiniLM-L6-v2',
-              help='Sentence transformer model name')
-def ingest(storage_path: str, target_cwes: tuple, force_download: bool, embedding_model: str):
+              help='Sentence transformer model name (used with --embedder-type local)')
+@click.option('--embedder-type', '-e', default='local',
+              type=click.Choice(['local', 'gemini'], case_sensitive=False),
+              help='Embedder type: local (default) or gemini')
+def ingest(storage_path: str, target_cwes: tuple, force_download: bool,
+           embedding_model: str, embedder_type: str):
     """Run the complete CWE ingestion pipeline."""
-    
+
     target_cwe_list = list(target_cwes) if target_cwes else None
-    
+
     pipeline = CWEIngestionPipeline(
         storage_path=storage_path,
         target_cwes=target_cwe_list,
-        embedding_model=embedding_model
+        embedding_model=embedding_model,
+        embedder_type=embedder_type
     )
-    
+
     success = pipeline.run_ingestion(force_download=force_download)
-    
+
     if success:
         click.echo("✅ CWE ingestion completed successfully!")
         sys.exit(0)
@@ -68,16 +78,16 @@ def ingest(storage_path: str, target_cwes: tuple, force_download: bool, embeddin
               help='Path to vector database storage directory')
 def status(storage_path: str):
     """Show CWE ingestion pipeline status."""
-    
+
     pipeline = CWEIngestionPipeline(storage_path=storage_path)
-    
+
     status_info = pipeline.get_pipeline_status()
-    
+
     click.echo("📋 CWE Ingestion Pipeline Status")
     click.echo(f"Target CWEs: {len(status_info['target_cwes'])}")
     click.echo(f"Storage Path: {status_info['storage_path']}")
     click.echo(f"Embedding Model: {status_info['embedding_model']}")
-    
+
     db_stats = status_info['vector_store_stats']
     if 'error' not in db_stats:
         click.echo(f"Vector DB Count: {db_stats['count']} CWEs stored")
@@ -94,26 +104,26 @@ def status(storage_path: str):
               help='Number of similar CWEs to return')
 def query(storage_path: str, query_text: str, n_results: int):
     """Query for similar CWEs based on text similarity."""
-    
+
     pipeline = CWEIngestionPipeline(storage_path=storage_path)
-    
+
     # Generate embedding for query
     query_embedding = pipeline.embedder.embed_text(query_text)
-    
+
     # Search for similar CWEs
     results = pipeline.vector_store.query_similar(query_embedding, n_results)
-    
+
     click.echo(f"🔍 Similar CWEs for: '{query_text}'")
     click.echo("-" * 50)
-    
+
     if not results:
         click.echo("No similar CWEs found.")
         return
-    
+
     for i, result in enumerate(results):
         metadata = result.get('metadata', {})
         distance = result.get('distance', 'N/A')
-        
+
         click.echo(f"{i+1}. CWE-{metadata.get('cwe_id', 'N/A')}: {metadata.get('name', 'N/A')}")
         click.echo(f"   Distance: {distance}")
         click.echo(f"   Description: {metadata.get('description', 'N/A')[:100]}...")
@@ -126,9 +136,9 @@ def query(storage_path: str, query_text: str, n_results: int):
 @click.confirmation_option(prompt='Are you sure you want to reset the vector database?')
 def reset(storage_path: str):
     """Reset the vector database (WARNING: This will delete all stored data!)."""
-    
+
     pipeline = CWEIngestionPipeline(storage_path=storage_path)
-    
+
     if pipeline.vector_store.reset_collection():
         click.echo("✅ Vector database has been reset.")
     else:
