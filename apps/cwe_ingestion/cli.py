@@ -1,133 +1,65 @@
-#!/usr/bin/env python3
-# apps/cwe_ingestion/cli.py
-"""
-Command-line interface for CWE data ingestion pipeline.
-"""
-import logging
-import sys
-
-import click
-
-try:
-    # Try relative import (when run as part of package)
-    from .pipeline import CWEIngestionPipeline
-except ImportError:
-    # Fall back to absolute import (when run directly or in tests)
-    from pipeline import CWEIngestionPipeline
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-
-@click.group()
-@click.option('--debug', is_flag=True, help='Enable debug logging')
-@click.pass_context
-def cli(ctx, debug):
-    """CWE Data Ingestion Pipeline - Download, parse, embed, and store CWE data."""
-    ctx.ensure_object(dict)
-    if debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logging.getLogger('apps.cwe_ingestion').setLevel(logging.DEBUG)
-
-    click.echo("🔧 CWE Data Ingestion Pipeline")
-
-
-@cli.command()
+# apps/cwe_ingestion/cli.py (only changed/new parts)
+import os
+...
+@click.command()
 @click.option('--storage-path', '-s', default='./cwe_vector_db',
-              help='Path to vector database storage directory')
-@click.option('--target-cwes', '-c', multiple=True,
-              help='Specific CWE IDs to ingest (e.g., CWE-79)')
-@click.option('--force-download', '-f', is_flag=True,
-              help='Force re-download of CWE data')
-@click.option('--embedding-model', '-m', default='all-MiniLM-L6-v2',
-              help='Sentence transformer model name (used with --embedder-type local)')
-@click.option('--embedder-type', '-e', default='local',
-              type=click.Choice(['local', 'gemini'], case_sensitive=False),
-              help='Embedder type: local (default) or gemini')
-def ingest(storage_path: str, target_cwes: tuple, force_download: bool,
-           embedding_model: str, embedder_type: str):
-    """Run the complete CWE ingestion pipeline."""
-
-    target_cwe_list = list(target_cwes) if target_cwes else None
-
-    pipeline = CWEIngestionPipeline(
-        storage_path=storage_path,
-        target_cwes=target_cwe_list,
-        embedding_model=embedding_model,
-        embedder_type=embedder_type
-    )
-
-    success = pipeline.run_ingestion(force_download=force_download)
-
-    if success:
-        click.echo("✅ CWE ingestion completed successfully!")
-        sys.exit(0)
-    else:
-        click.echo("❌ CWE ingestion failed!")
-        sys.exit(1)
-
-
-@cli.command()
-@click.option('--storage-path', '-s', default='./cwe_vector_db',
-              help='Path to vector database storage directory')
-def status(storage_path: str):
-    """Show CWE ingestion pipeline status."""
-
-    pipeline = CWEIngestionPipeline(storage_path=storage_path)
-
-    status_info = pipeline.get_pipeline_status()
-
-    click.echo("📋 CWE Ingestion Pipeline Status")
-    click.echo(f"Target CWEs: {len(status_info['target_cwes'])}")
-    click.echo(f"Storage Path: {status_info['storage_path']}")
-    click.echo(f"Embedding Model: {status_info['embedding_model']}")
-
-    db_stats = status_info['vector_store_stats']
-    if 'error' not in db_stats:
-        click.echo(f"Vector DB Count: {db_stats['count']} CWEs stored")
-    else:
-        click.echo(f"Vector DB Error: {db_stats['error']}")
-
-
-@cli.command()
-@click.option('--storage-path', '-s', default='./cwe_vector_db',
-              help='Path to vector database storage directory')
-@click.option('--query', '-q', required=True,
+              help='Path to vector database storage directory (for Chroma)')
+@click.option('--query', '-q', 'query_text', required=True,
               help='Text to search for similar CWEs')
-@click.option('--n-results', '-n', default=5,
-              help='Number of similar CWEs to return')
-def query(storage_path: str, query_text: str, n_results: int):
-    """Query for similar CWEs based on text similarity."""
+@click.option('--n-results', '-n', default=5, help='Number of results to return')
+@click.option('--hybrid', is_flag=True, help='Use hybrid retrieval (Postgres only)')
+@click.option('--w-vec', default=0.65, type=float, show_default=True, help='Weight for vector score')
+@click.option('--w-fts', default=0.25, type=float, show_default=True, help='Weight for full-text score')
+@click.option('--w-alias', default=0.10, type=float, show_default=True, help='Weight for alias similarity')
+def query(storage_path: str, query_text: str, n_results: int, hybrid: bool, w_vec: float, w_fts: float, w_alias: float):
+    """Query for similar CWEs (vector or hybrid)."""
 
+    # DB choice via env (simple)
+    vector_db_type = os.getenv("VECTOR_DB_TYPE", "chromadb").lower()
     pipeline = CWEIngestionPipeline(storage_path=storage_path)
 
-    # Generate embedding for query
+    # Generate embedding for query (works for both local & gemini)
     query_embedding = pipeline.embedder.embed_text(query_text)
 
-    # Search for similar CWEs
-    results = pipeline.vector_store.query_similar(query_embedding, n_results)
-
-    click.echo(f"🔍 Similar CWEs for: '{query_text}'")
+    click.echo(f"🔍 Query: '{query_text}'")
     click.echo("-" * 50)
 
-    if not results:
-        click.echo("No similar CWEs found.")
-        return
+    if vector_db_type == "postgresql" and hybrid:
+        # Use hybrid retrieval
+        if not hasattr(pipeline.vector_store, "query_hybrid"):
+            click.echo("Hybrid retrieval not available (vector store missing query_hybrid).")
+            ctx = click.get_current_context()
+            ctx.exit(2)
+        results = pipeline.vector_store.query_hybrid(
+            query_text=query_text,
+            query_embedding=query_embedding,
+            k_vec=max(n_results * 5, 25),
+            limit=n_results,
+            w_vec=w_vec, w_fts=w_fts, w_alias=w_alias
+        )
+        if not results:
+            click.echo("No results.")
+            return
+        for i, res in enumerate(results, 1):
+            md = res["metadata"]
+            scores = res.get("scores", {})
+            click.echo(f"{i}. {md.get('cwe_id')}: {md.get('name')}")
+            click.echo(f"   hybrid={scores.get('hybrid', 0):.3f} vec={scores.get('vec', 0):.3f} fts={scores.get('fts', 0):.3f} alias={scores.get('alias', 0):.3f}")
+            click.echo(f"   {res['document'][:140]}...")
+            click.echo()
+    else:
+        # Vector-only (Chroma or Postgres fallback)
+        results = pipeline.vector_store.query_similar(query_embedding, n_results)
+        if not results:
+            click.echo("No results.")
+            return
+        for i, res in enumerate(results, 1):
+            md = res.get("metadata", {})
+            click.echo(f"{i}. CWE-{md.get('cwe_id', 'N/A')}: {md.get('name', 'N/A')}")
+            click.echo(f"   Distance: {res.get('distance', 'N/A')}")
+            click.echo(f"   {res.get('document','')[:140]}...")
+            click.echo()
 
-    for i, result in enumerate(results):
-        metadata = result.get('metadata', {})
-        distance = result.get('distance', 'N/A')
-
-        click.echo(f"{i+1}. CWE-{metadata.get('cwe_id', 'N/A')}: {metadata.get('name', 'N/A')}")
-        click.echo(f"   Distance: {distance}")
-        click.echo(f"   Description: {metadata.get('description', 'N/A')[:100]}...")
-        click.echo()
 
 
 @cli.command()
