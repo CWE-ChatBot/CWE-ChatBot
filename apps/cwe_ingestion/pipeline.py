@@ -1,21 +1,20 @@
 # apps/cwe_ingestion/pipeline.py
 """
 Main CWE ingestion pipeline orchestrator.
-Combines all components into a unified workflow.
+Combines downloader, parser, embedder, and vector store into a unified workflow.
 """
 import logging
+import shutil
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 try:
-    # Try relative imports (when run as part of package)
     from .downloader import CWEDownloader
     from .embedder import CWEEmbedder, GeminiEmbedder
     from .parser import CWEParser
     from .vector_store import CWEVectorStore
 except ImportError:
-    # Fall back to absolute imports (when run directly or in tests)
     from downloader import CWEDownloader
     from embedder import CWEEmbedder, GeminiEmbedder
     from parser import CWEParser
@@ -23,148 +22,117 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class CWEIngestionPipeline:
-    """Main pipeline for CWE data ingestion."""
-
-    # Default target CWEs as specified in the story
-    DEFAULT_TARGET_CWES = ['CWE-79', 'CWE-89', 'CWE-20', 'CWE-78', 'CWE-22']
+    """Main pipeline for downloading, parsing, embedding, and storing CWE data."""
 
     def __init__(
         self,
         storage_path: str = "./vector_db",
-        target_cwes: Optional[List[str]] = None,
+        target_cwes: Optional[List[str]] = None, # Set to None to ingest all
         source_url: str = "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip",
+        embedder_type: str = "local",
         embedding_model: str = "all-MiniLM-L6-v2",
-        embedder_type: str = "local"
     ):
         self.storage_path = storage_path
-        self.target_cwes = target_cwes or self.DEFAULT_TARGET_CWES
+        self.target_cwes = target_cwes
         self.source_url = source_url
         self.embedding_model = embedding_model
-        self.embedder_type = embedder_type
 
-        # Validate embedder type
-        valid_embedder_types = ["local", "gemini"]
-        if embedder_type not in valid_embedder_types:
+        # Validate and initialize components
+        if embedder_type not in ["local", "gemini"]:
             raise ValueError(
                 f"Invalid embedder_type '{embedder_type}'. "
-                f"Must be one of: {valid_embedder_types}"
+                "Must be 'local' or 'gemini'."
             )
 
-        self.logger = logger
-
-        # Initialize components
-        self.downloader = CWEDownloader(source_url=source_url)
+        self.downloader = CWEDownloader(source_url=self.source_url)
         self.parser = CWEParser()
+        self.vector_store = CWEVectorStore(storage_path=self.storage_path)
 
-        # Initialize embedder based on type
         if embedder_type == "gemini":
             self.embedder = GeminiEmbedder()
-            logger.info("Initialized Gemini embedder (3072 dimensions)")
-        else:  # local
-            self.embedder = CWEEmbedder(model_name=embedding_model)
-            logger.info(f"Initialized local embedder: {embedding_model}")
+            logger.info("Initialized Gemini embedder.")
+        else:
+            self.embedder = CWEEmbedder(model_name=self.embedding_model)
+            logger.info(f"Initialized local embedder: {self.embedding_model}")
 
-        self.vector_store = CWEVectorStore(storage_path=storage_path)
+        ingestion_scope = (
+            f"{len(self.target_cwes)} target CWEs" if self.target_cwes else "all CWEs"
+        )
+        logger.info(f"Pipeline initialized to ingest {ingestion_scope}.")
 
-        logger.info(f"Pipeline initialized for {len(self.target_cwes)} target CWEs")
-
-    def run_ingestion(self, force_download: bool = False) -> bool:
+    def run(self) -> bool:
         """
-        Run the complete CWE ingestion pipeline.
-
-        Args:
-            force_download: Whether to force re-download of CWE data
+        Executes the complete CWE ingestion pipeline.
 
         Returns:
-            bool: True if ingestion completed successfully
+            True if ingestion completed successfully, False otherwise.
         """
+        temp_dir = tempfile.mkdtemp()
         try:
-            logger.info("Starting CWE data ingestion pipeline")
+            logger.info("--- Starting CWE Ingestion Pipeline ---")
 
-            # Step 1: Download CWE data
-            temp_file = self._download_cwe_data(force_download)
+            # 1. Download & Extract
+            xml_path = self._download_and_extract(temp_dir)
 
-            # Step 2: Parse and extract target CWEs
-            cwe_data = self._parse_cwe_data(temp_file)
-
-            if not cwe_data:
-                logger.error("No CWE data extracted")
+            # 2. Parse XML to Pydantic Models
+            cwe_entries = self.parser.parse_file(xml_path, self.target_cwes)
+            if not cwe_entries:
+                logger.warning(
+                    "Parsing completed, but no CWE entries were extracted. Aborting."
+                )
                 return False
 
-            # Step 3: Generate embeddings
-            self._generate_embeddings(cwe_data)
+            # 3. Generate Embeddings
+            logger.info(
+                f"Generating embeddings for {len(cwe_entries)} CWE entries..."
+            )
+            texts_to_embed = [
+                entry.to_searchable_text() for entry in cwe_entries
+            ]
+            embeddings = self.embedder.embed_batch(texts_to_embed)
 
-            # Step 4: Store in vector database
-            stored_count = self._store_embeddings(cwe_data)
+            # 4. Prepare data for storage
+            documents_to_store = []
+            for entry, embedding in zip(cwe_entries, embeddings):
+                doc = entry.to_embedding_data()
+                doc['embedding'] = embedding
+                documents_to_store.append(doc)
 
-            logger.info(f"Ingestion completed successfully. Stored {stored_count} CWEs.")
+            # 5. Store in Vector Database
+            logger.info("Storing documents in the vector database...")
+            stored_count = self.vector_store.store_batch(documents_to_store)
+            logger.info(f"Successfully stored {stored_count} CWE documents.")
 
-            # Step 5: Verification
+            # 6. Verification
             self._verify_ingestion()
-
+            logger.info("--- CWE Ingestion Pipeline Completed Successfully ---")
             return True
 
         except Exception as e:
-            logger.error(f"Pipeline failed: {e}")
+            logger.critical(
+                f"Pipeline failed with a critical error: {e}", exc_info=True
+            )
             return False
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.debug(f"Cleaned up temporary directory: {temp_dir}")
 
-    def _download_cwe_data(self, force_download: bool = False) -> str:
-        """Download CWE data and extract XML."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            zip_path = Path(temp_dir) / "cwe_data.zip"
-            xml_path = Path(temp_dir) / "cwe_data.xml"
+    def _download_and_extract(self, temp_dir: str) -> str:
+        """Downloads and extracts the CWE XML file."""
+        logger.info(f"Downloading CWE data from {self.source_url}...")
+        zip_path = Path(temp_dir) / "cwe_data.zip"
+        xml_path = Path(temp_dir) / "cwec_latest.xml"
 
-            # Download ZIP file
-            self.downloader.download_file(str(zip_path))
+        self.downloader.download_file(str(zip_path))
+        self.downloader._extract_cwe_xml(str(zip_path), str(xml_path))
 
-            # Extract XML from ZIP
-            self.downloader._extract_cwe_xml(str(zip_path), str(xml_path))
-
-            return str(xml_path)
-
-    def _parse_cwe_data(self, xml_file: str) -> List[Dict]:
-        """Parse CWE XML and extract target CWEs."""
-        logger.info(f"Parsing CWE data for {len(self.target_cwes)} target CWEs")
-
-        cwe_data = self.parser.parse_file(xml_file, self.target_cwes)
-
-        logger.info(f"Extracted {len(cwe_data)} CWEs from XML")
-        return cwe_data
-
-    def _generate_embeddings(self, cwe_data: List[Dict]) -> None:
-        """Generate embeddings for all CWE texts."""
-        logger.info("Generating embeddings for CWE descriptions")
-
-        texts = [cwe['full_text'] for cwe in cwe_data]
-        embeddings = self.embedder.embed_batch(texts)
-
-        # Add embeddings back to CWE data
-        for cwe, embedding in zip(cwe_data, embeddings):
-            cwe['embedding'] = embedding
-
-        logger.info(f"Generated {len(embeddings)} embeddings")
-
-    def _store_embeddings(self, cwe_data: List[Dict]) -> int:
-        """Store CWE data and embeddings in vector database."""
-        logger.info("Storing CWE embeddings in vector database")
-
-        stored_count = self.vector_store.store_batch(cwe_data)
-
-        logger.info(f"Stored {stored_count} CWE embeddings")
-        return stored_count
+        return str(xml_path)
 
     def _verify_ingestion(self) -> None:
-        """Verify that ingestion was successful."""
-        stats = self.vector_store.get_collection_stats()
-        logger.info(f"Verification: {stats}")
-
-    def get_pipeline_status(self) -> Dict:
-        """Get current pipeline status and configuration."""
-        return {
-            'target_cwes': self.target_cwes,
-            'storage_path': self.storage_path,
-            'embedding_model': self.embedding_model,
-            'vector_store_stats': self.vector_store.get_collection_stats()
-        }
+        """Verifies ingestion by checking collection stats."""
+        try:
+            stats = self.vector_store.get_collection_stats()
+            logger.info(f"Verification successful. Vector store stats: {stats}")
+        except Exception as e:
+            logger.error(f"Verification step failed: {e}")

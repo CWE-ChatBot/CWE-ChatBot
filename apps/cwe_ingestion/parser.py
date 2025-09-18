@@ -1,200 +1,207 @@
 # apps/cwe_ingestion/parser.py
 """
 Secure CWE XML parser module.
-Implements secure XML parsing with XXE protection.
+Extracts comprehensive data and maps it to Pydantic models.
 """
 import logging
-from typing import Dict, List, Optional
+from typing import List, Optional
+from xml.etree.ElementTree import (
+    Element,  # Import Element specifically for type hinting
+)
 
 import defusedxml.ElementTree as ET
+
+try:
+    from .models import CWEEntry
+except ImportError:
+    from models import CWEEntry
 
 logger = logging.getLogger(__name__)
 
 
+def _get_text(element: Optional[Element], path: str = '.') -> Optional[str]:
+    """Safely gets stripped text from an element or its child."""
+    if element is None:
+        return None
+
+    target = element if path == '.' else element.find(path)
+
+    if target is None:
+        return None
+
+    # Handle complex elements with mixed text and children by iterating
+    full_text = "".join(target.itertext()).strip()
+    return full_text if full_text else None
+
+
 class CWEParser:
-    """Secure XML parser for CWE data with XXE protection."""
+    """Secure XML parser that extracts CWE data into Pydantic models."""
 
     def __init__(self):
-        self.xxe_protection_enabled = True
-        self._configure_secure_parser()
+        logger.info("CWEParser initialized with XXE protection via defusedxml.")
 
-        logger.info("CWEParser initialized with XXE protection enabled")
-
-    def _configure_secure_parser(self):
-        """Configure parser with security protections."""
-        # defusedxml is already secure by default
-        # Additional security configuration can be added here if needed
-        pass
-
-    def parse_file(self, xml_file: str, target_cwes: List[str]) -> List[Dict]:
+    def parse_file(
+        self, xml_file: str, target_cwes: Optional[List[str]] = None
+    ) -> List[CWEEntry]:
         """
-        Parse CWE XML file and extract specified CWEs.
-
-        Args:
-            xml_file: Path to CWE XML file
-            target_cwes: List of CWE IDs to extract (e.g., ['CWE-79', 'CWE-89'])
-
-        Returns:
-            List of extracted CWE data dictionaries
+        Parses a CWE XML file and returns a list of CWEEntry models.
         """
         try:
             logger.info(f"Parsing CWE file: {xml_file}")
-            logger.info(f"Target CWEs: {target_cwes}")
 
-            # Normalize target CWEs (remove CWE- prefix if present)
-            normalized_targets = []
-            for cwe_id in target_cwes:
-                if cwe_id.startswith('CWE-'):
-                    normalized_targets.append(cwe_id[4:])  # Remove 'CWE-' prefix
-                else:
-                    normalized_targets.append(cwe_id)
+            normalized_targets = (
+                {cwe_id.replace('CWE-', '') for cwe_id in target_cwes}
+                if target_cwes
+                else set()
+            )
+            if normalized_targets:
+                logger.info(
+                    f"Targeting {len(normalized_targets)} specific CWEs: "
+                    f"{normalized_targets}"
+                )
+            else:
+                logger.info("No specific targets provided, extracting all CWEs.")
 
-            # Parse XML using defusedxml for security
             tree = ET.parse(xml_file)
             root = tree.getroot()
 
+            if root is None:
+                logger.error(
+                    f"XML file {xml_file} is empty or malformed; "
+                    "could not find root element."
+                )
+                return []
+
+            namespace = (
+                root.tag.split('}')[0] + '}' if '}' in root.tag else ''
+            )
+
             cwe_data = []
-            weaknesses_element = root.find('Weaknesses')
+            weaknesses_element = root.find(f'{namespace}Weaknesses')
+            if weaknesses_element is None:
+                logger.warning("Could not find <Weaknesses> tag in the XML file.")
+                return []
 
-            if weaknesses_element is not None:
-                for weakness in weaknesses_element.findall('Weakness'):
-                    weakness_data = self._extract_weakness_data(weakness)
+            for weakness_element in weaknesses_element.findall(
+                f'{namespace}Weakness'
+            ):
+                weakness_id = weakness_element.get('ID')
+                if not weakness_id:
+                    continue
 
-                    if weakness_data and weakness_data['id'] in normalized_targets:
-                        cwe_data.append(weakness_data)
+                if normalized_targets and weakness_id not in normalized_targets:
+                    continue
 
-            logger.info(f"Extracted {len(cwe_data)} CWEs from XML")
+                try:
+                    entry_data = self._extract_weakness_data(
+                        weakness_element, namespace
+                    )
+                    cwe_data.append(CWEEntry(**entry_data))
+                except Exception as e:
+                    logger.error(
+                        f"Failed to model data for CWE-{weakness_id}: {e}",
+                        exc_info=True,
+                    )
+
+            logger.info(
+                f"Successfully parsed and modeled {len(cwe_data)} CWE entries."
+            )
             return cwe_data
 
+        except ET.ParseError as e:
+            logger.error(f"XML Parse Error in {xml_file}: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Failed to parse CWE file: {e}")
+            logger.error(f"Failed to parse CWE file {xml_file}: {e}")
             raise
 
-    def _extract_weakness_data(self, weakness_element) -> Optional[Dict]:
-        """Extract specific CWE fields from weakness XML element."""
-        try:
-            weakness_id = weakness_element.get('ID')
-            weakness_name = weakness_element.get('Name', '')
-            weakness_abstraction = weakness_element.get('Abstraction', '')
-            weakness_status = weakness_element.get('Status', '')
+    def _extract_weakness_data(self, weak_elem: Element, ns: str) -> dict:
+        """Extracts all relevant fields for a single <Weakness> element."""
+        return {
+            'ID': weak_elem.get('ID'),
+            'Name': weak_elem.get('Name'),
+            'Abstraction': weak_elem.get('Abstraction'),
+            'Status': weak_elem.get('Status'),
+            'Description': _get_text(weak_elem.find(f'{ns}Description')),
+            'ExtendedDescription': _get_text(
+                weak_elem.find(f'{ns}Extended_Description')
+            ),
+            'AlternateTerms': self._extract_alternate_terms(weak_elem, ns),
+            'ObservedExamples': self._extract_observed_examples(weak_elem, ns),
+            'Notes': self._extract_notes(weak_elem, ns),
+            'RelatedWeaknesses': self._extract_related_weaknesses(weak_elem, ns),
+            'PotentialMitigations': self._extract_mitigations(weak_elem, ns),
+            'MappingNotes': self._extract_mapping_notes(weak_elem, ns),
+        }
 
-            # Extract description
-            description = ""
-            desc_element = weakness_element.find('Description')
-            if desc_element is not None:
-                desc_summary = desc_element.find('Description_Summary')
-                if desc_summary is not None and desc_summary.text:
-                    description = desc_summary.text.strip()
+    def _extract_alternate_terms(self, elem: Element, ns: str) -> List[dict]:
+        terms = []
+        container = elem.find(f'{ns}Alternate_Terms')
+        if container is not None:
+            for term_elem in container.findall(f'{ns}Alternate_Term'):
+                terms.append({
+                    'Term': _get_text(term_elem, f'{ns}Term') or '',
+                    'Description': _get_text(term_elem, f'{ns}Description')
+                })
+        return terms
 
-            # Extract extended description
-            extended_description = ""
-            extended_desc_element = weakness_element.find('Extended_Description')
-            if extended_desc_element is not None and extended_desc_element.text:
-                extended_description = extended_desc_element.text.strip()
+    def _extract_observed_examples(self, elem: Element, ns: str) -> List[dict]:
+        examples = []
+        container = elem.find(f'{ns}Observed_Examples')
+        if container is not None:
+            for ex_elem in container.findall(f'{ns}Observed_Example'):
+                examples.append({
+                    'Reference': _get_text(ex_elem, f'{ns}Reference') or '',
+                    'Description': _get_text(ex_elem, f'{ns}Description') or '',
+                    'Link': _get_text(ex_elem, f'{ns}Link')
+                })
+        return examples
 
-            # Extract alternate terms
-            alternate_terms = []
-            alternate_terms_element = weakness_element.find('Alternate_Terms')
-            if alternate_terms_element is not None:
-                for term in alternate_terms_element.findall('Alternate_Term'):
-                    term_data = {
-                        'term': term.find('Term').text.strip() if term.find('Term') is not None else '',
-                        'description': term.find('Description').text.strip() if term.find('Description') is not None else ''
-                    }
-                    alternate_terms.append(term_data)
+    def _extract_notes(self, elem: Element, ns: str) -> List[dict]:
+        notes = []
+        container = elem.find(f'{ns}Notes')
+        if container is not None:
+            for note_elem in container.findall(f'{ns}Note'):
+                notes.append({
+                    'Type': note_elem.get('Type', 'General'),
+                    'Text': _get_text(note_elem) or ''
+                })
+        return notes
 
-            # Extract observed examples
-            observed_examples = []
-            observed_examples_element = weakness_element.find('Observed_Examples')
-            if observed_examples_element is not None:
-                for example in observed_examples_element.findall('Observed_Example'):
-                    example_data = {
-                        'reference': example.find('Reference').text.strip() if example.find('Reference') is not None else '',
-                        'description': example.find('Description').text.strip() if example.find('Description') is not None else ''
-                    }
-                    observed_examples.append(example_data)
+    def _extract_related_weaknesses(self, elem: Element, ns: str) -> List[dict]:
+        weaknesses = []
+        container = elem.find(f'{ns}Related_Weaknesses')
+        if container is not None:
+            for rel_elem in container.findall(f'{ns}Related_Weakness'):
+                weaknesses.append({
+                    'Nature': rel_elem.get('Nature'),
+                    'CweID': rel_elem.get('CWE_ID'),
+                    'ViewID': rel_elem.get('View_ID'),
+                    'Ordinal': rel_elem.get('Ordinal')
+                })
+        return weaknesses
 
-            # Extract related weaknesses
-            related_weaknesses = []
-            related_weaknesses_element = weakness_element.find('Related_Weaknesses')
-            if related_weaknesses_element is not None:
-                for related in related_weaknesses_element.findall('Related_Weakness'):
-                    relationship = {
-                        'nature': related.get('Nature'),
-                        'cwe_id': related.get('CWE_ID'),
-                        'view_id': related.get('View_ID', '')
-                    }
-                    related_weaknesses.append(relationship)
+    def _extract_mitigations(self, elem: Element, ns: str) -> List[dict]:
+        mitigations = []
+        container = elem.find(f'{ns}Potential_Mitigations')
+        if container is not None:
+            for mit_elem in container.findall(f'{ns}Mitigation'):
+                mitigations.append({
+                    'Phase': mit_elem.findtext(f'{ns}Phase'),
+                    'Strategy': mit_elem.findtext(f'{ns}Strategy'),
+                    'Description': _get_text(mit_elem.find(f'{ns}Description')) or ''
+                })
+        return mitigations
 
-            # Build full searchable text using pattern from reference code
-            full_text = self._build_searchable_text({
-                'id': weakness_id,
-                'name': weakness_name,
-                'abstraction': weakness_abstraction,
-                'status': weakness_status,
-                'description': description,
-                'extended_description': extended_description,
-                'alternate_terms': alternate_terms,
-                'observed_examples': observed_examples,
-                'related_weaknesses': related_weaknesses
-            })
-
+    def _extract_mapping_notes(self, elem: Element, ns: str) -> Optional[dict]:
+        """
+        Extracts mapping notes. The return type hint is corrected to Optional[dict].
+        """
+        container = elem.find(f'{ns}Mapping_Notes')
+        if container is not None:
             return {
-                'id': weakness_id,
-                'name': weakness_name,
-                'abstraction': weakness_abstraction,
-                'status': weakness_status,
-                'description': description,
-                'extended_description': extended_description,
-                'alternate_terms': alternate_terms,
-                'observed_examples': observed_examples,
-                'related_weaknesses': related_weaknesses,
-                'full_text': full_text
+                'Usage': _get_text(container, f'{ns}Usage'),
+                'Rationale': _get_text(container, f'{ns}Rationale'),
+                'Comments': _get_text(container, f'{ns}Comments'),
             }
-
-        except Exception as e:
-            logger.error(f"Failed to extract weakness data: {e}")
-            return None
-
-    def _build_searchable_text(self, cwe_data: Dict) -> str:
-        """Build searchable text using pattern from reference CWEEntry.to_searchable_text()."""
-        sections = []
-
-        # Core Information
-        sections.append(f"CWE-{cwe_data['id']}: {cwe_data['name']}")
-        sections.append(f"Type: {cwe_data['abstraction']}")
-        sections.append(f"Status: {cwe_data['status']}")
-
-        # Primary Content
-        sections.append("Description:")
-        sections.append(cwe_data['description'])
-
-        if cwe_data.get('extended_description'):
-            sections.append("Extended Details:")
-            sections.append(cwe_data['extended_description'])
-
-        # Alternate Terms
-        if cwe_data.get('alternate_terms'):
-            terms = []
-            for term in cwe_data['alternate_terms']:
-                if term.get('description'):
-                    terms.append(f"{term['term']} - {term['description']}")
-                else:
-                    terms.append(term['term'])
-            if terms:
-                sections.append("Alternative Terms:")
-                sections.append("\n".join(terms))
-
-        # Observed Examples
-        if cwe_data.get('observed_examples'):
-            sections.append("Real-World Examples:")
-            for example in cwe_data['observed_examples']:
-                sections.append(f"- {example['reference']}: {example['description']}")
-
-        # Related Weaknesses
-        if cwe_data.get('related_weaknesses'):
-            sections.append("Related Weaknesses:")
-            for weakness in cwe_data['related_weaknesses']:
-                sections.append(f"- CWE-{weakness['cwe_id']} ({weakness['nature']})")
-
-        return "\n\n".join(sections)
+        return None
