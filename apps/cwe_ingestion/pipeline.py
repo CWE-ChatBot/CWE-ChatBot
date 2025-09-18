@@ -1,69 +1,180 @@
-# apps/cwe_ingestion/pipeline.py (only the parts shown are new/changed)
-import os
-...
+# apps/cwe_ingestion/pipeline.py
+"""
+PostgreSQL-only CWE ingestion pipeline (single-row or chunked) with optional Gemini embeddings.
+"""
+import logging
+import shutil
+import tempfile
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+
 try:
-    from .pg_vector_store import PostgresVectorStore  # NEW
+    # Relative imports (when used as module)
+    from .downloader import CWEDownloader
+    from .embedder import CWEEmbedder, GeminiEmbedder
+    from .parser import CWEParser
+    from .pg_vector_store import PostgresVectorStore
+    from .pg_chunk_store import PostgresChunkStore
+    from .models import entry_to_sections
 except ImportError:
-    # allow running without Postgres deps in some envs
-    PostgresVectorStore = None
+    # Absolute imports (when run directly)
+    from downloader import CWEDownloader
+    from embedder import CWEEmbedder, GeminiEmbedder
+    from parser import CWEParser
+    from pg_vector_store import PostgresVectorStore
+    from pg_chunk_store import PostgresChunkStore
+    from models import entry_to_sections
+
+logger = logging.getLogger(__name__)
+
 
 class CWEIngestionPipeline:
-    def __init__(..., embedder_type: str = "local", embedding_model: str = "all-MiniLM-L6-v2"):
-        ...
-        # Choose vector store
-        vector_db_type = os.getenv("VECTOR_DB_TYPE", "chromadb").lower()
-        if vector_db_type == "postgresql":
-            if not PostgresVectorStore:
-                raise ImportError("PostgresVectorStore not available; install psycopg.")
-            dims = 3072 if embedder_type == "gemini" else 384
-            self.vector_store = PostgresVectorStore(table="cwe_embeddings", dims=dims)
-            logger.info("Using PostgresVectorStore (hybrid-ready)")
-        else:
-            self.vector_store = CWEVectorStore(storage_path=self.storage_path)
-            logger.info("Using ChromaDB vector store")
+    """Main pipeline for downloading, parsing, embedding, and storing CWE data (Postgres only)."""
 
-        # Embedders unchanged
+    def __init__(
+        self,
+        target_cwes: Optional[List[str]] = None,  # None -> ingest all
+        source_url: str = "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip",
+        embedder_type: str = "local",             # "local" | "gemini"
+        embedding_model: str = "all-MiniLM-L6-v2",
+        use_chunked: bool = True,                 # True -> use PostgresChunkStore
+    ):
+        self.target_cwes = target_cwes
+        self.source_url = source_url
+
+        if embedder_type not in ("local", "gemini"):
+            raise ValueError("embedder_type must be 'local' or 'gemini'")
+
+        # Embedder
         if embedder_type == "gemini":
             self.embedder = GeminiEmbedder()
+            self.embedding_dim = 3072
+            logger.info("Initialized Gemini embedder (3072-D).")
         else:
-            self.embedder = CWEEmbedder(model_name=self.embedding_model)
-        ...
+            self.embedder = CWEEmbedder(model_name=embedding_model)
+            self.embedding_dim = self.embedder.get_embedding_dimension()
+            logger.info(f"Initialized local embedder '{embedding_model}' ({self.embedding_dim}-D).")
+
+        # Core components
+        self.use_chunked = bool(use_chunked)
+        self.downloader = CWEDownloader(source_url=self.source_url)
+        self.parser = CWEParser()
+        if self.use_chunked:
+            self.vector_store = PostgresChunkStore(dims=self.embedding_dim)
+            logger.info("Using PostgresChunkStore (chunked).")
+        else:
+            self.vector_store = PostgresVectorStore(table="cwe_embeddings", dims=self.embedding_dim)
+            logger.info("Using PostgresVectorStore (single-row).")
 
     def run(self) -> bool:
-        ...
-        # 2) Parse XML -> CWEEntry models
-        cwe_entries = self.parser.parse_file(xml_path, self.target_cwes)
-        if not cwe_entries:
-            ...
-        # 3) Build text for embedding, include Aliases line (tiny boost, once)
-        texts_to_embed = []
-        aliases_by_id = {}
+        """Execute the pipeline end-to-end."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            logger.info("--- Starting CWE Ingestion Pipeline (Postgres-only) ---")
+            xml_path = self._download_and_extract(temp_dir)
+
+            # Parse XML to models
+            cwe_entries = self.parser.parse_file(xml_path, self.target_cwes)
+            if not cwe_entries:
+                logger.warning("No CWE entries parsed. Aborting.")
+                return False
+
+            if self.use_chunked and isinstance(self.vector_store, PostgresChunkStore):
+                ok = self._run_chunked(cwe_entries)
+            else:
+                ok = self._run_single(cwe_entries)
+
+            if ok:
+                logger.info("--- CWE Ingestion Pipeline Completed Successfully ---")
+            return ok
+
+        except Exception as e:
+            logger.critical(f"Pipeline failed: {e}", exc_info=True)
+            return False
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.debug(f"Cleaned up temporary directory: {temp_dir}")
+
+    def _run_single(self, cwe_entries) -> bool:
+        """Single-row mode: build full_text (with one Aliases line), embed, store."""
+        texts_to_embed: List[str] = []
+        aliases_by_id: Dict[str, str] = {}
+
         for entry in cwe_entries:
-            # collect alternate terms for Postgres FTS/boosts
             aliases = []
-            if entry.AlternateTerms:
-                aliases = [t.Term for t in entry.AlternateTerms if t and getattr(t, "Term", None)]
-            aliases_by_id[entry.ID] = "; ".join(sorted({a for a in aliases if a}))
+            if getattr(entry, "AlternateTerms", None):
+                aliases = [t.Term for t in entry.AlternateTerms if getattr(t, "Term", None)]
+            alias_line = "; ".join(sorted(set(a for a in aliases if a)))
+            aliases_by_id[entry.ID] = alias_line
 
             ft = entry.to_searchable_text()
-            if aliases_by_id[entry.ID]:
-                ft = f"Aliases: {aliases_by_id[entry.ID]}\n\n" + ft  # light duplication near top
+            if alias_line:
+                ft = f"Aliases: {alias_line}\n\n{ft}"
             texts_to_embed.append(ft)
 
-        # 4) Embeddings
         embeddings = self.embedder.embed_batch(texts_to_embed)
 
-        # 5) Prepare docs for storage (Postgres or Chroma)
-        documents_to_store = []
+        documents_to_store: List[Dict[str, Any]] = []
         for entry, embedding, full_text in zip(cwe_entries, embeddings, texts_to_embed):
             doc = entry.to_embedding_data()
             doc["full_text"] = full_text
             doc["embedding"] = embedding
-            # Extra fields that Postgres uses (safe to include for Chroma; it will ignore)
             doc["alternate_terms_text"] = aliases_by_id.get(entry.ID, "")
             documents_to_store.append(doc)
 
-        # 6) Store
-        stored_count = self.vector_store.store_batch(documents_to_store)
-        logger.info(f"Successfully stored {stored_count} CWE documents.")
-        ...
+        stored = self.vector_store.store_batch(documents_to_store)
+        logger.info(f"Stored {stored} single-row docs.")
+        self._verify_ingestion()
+        return stored > 0
+
+    def _run_chunked(self, cwe_entries) -> bool:
+        """Chunked mode: split each entry into semantic sections, embed, store."""
+        chunk_payloads: List[Dict[str, Any]] = []
+
+        for entry in cwe_entries:
+            sections = entry_to_sections(entry)  # [{section, section_rank, text}, ...]
+            if not sections:
+                continue
+
+            texts = [s["text"] for s in sections]
+            embs = self.embedder.embed_batch(texts)
+
+            alias_line = ""
+            if getattr(entry, "AlternateTerms", None):
+                alias_line = "; ".join(sorted({t.Term for t in entry.AlternateTerms if getattr(t, "Term", None)}))
+
+            for s, emb in zip(sections, embs):
+                chunk_payloads.append({
+                    "cwe_id": f"CWE-{entry.ID}",
+                    "section": s["section"],
+                    "section_rank": s["section_rank"],
+                    "name": entry.Name,
+                    "full_text": s["text"],
+                    "alternate_terms_text": s["text"] if s["section"] == "Aliases" else alias_line,
+                    "embedding": emb,
+                })
+
+        if not chunk_payloads:
+            logger.warning("No chunk payloads to store.")
+            return False
+
+        stored = self.vector_store.store_batch(chunk_payloads)
+        logger.info(f"Stored {stored} chunks.")
+        self._verify_ingestion()
+        return stored > 0
+
+    def _download_and_extract(self, temp_dir: str) -> str:
+        """Download the MITRE CWE ZIP and extract the XML."""
+        zip_path = Path(temp_dir) / "cwe_data.zip"
+        xml_path = Path(temp_dir) / "cwec_latest.xml"
+        self.downloader.download_file(str(zip_path))
+        self.downloader._extract_cwe_xml(str(zip_path), str(xml_path))
+        return str(xml_path)
+
+    def _verify_ingestion(self) -> None:
+        """Log collection stats from the vector store."""
+        try:
+            stats = self.vector_store.get_collection_stats()
+            logger.info(f"Vector store stats: {stats}")
+        except Exception as e:
+            logger.error(f"Verification failed: {e}")

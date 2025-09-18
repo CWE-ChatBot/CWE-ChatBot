@@ -7,6 +7,7 @@ Story 1.4: Added Gemini API integration for state-of-the-art embeddings.
 import logging
 import os
 from typing import List, Optional
+import asyncio
 
 import numpy as np
 
@@ -112,39 +113,41 @@ class CWEEmbedder:
             logger.error(f"Failed to generate embedding: {e}")
             raise
 
+    # Replace the existing embed_batch with this
     def embed_batch(self, texts: List[str]) -> List[np.ndarray]:
-        """
-        Generate embeddings for multiple texts efficiently.
+        """Generate embeddings for multiple texts efficiently using asyncio."""
+        if not texts:
+            return []
 
-        Args:
-            texts: List of texts to embed
+        # This can be run from a sync context like the pipeline
+        return asyncio.run(self._embed_batch_async(texts))
 
-        Returns:
-            List of numpy arrays containing embedding vectors
-        """
-        try:
-            if not texts:
-                return []
+    async def _embed_batch_async(self, texts: List[str]) -> List[np.ndarray]:
+        """Helper to run embedding tasks concurrently."""
+        # A semaphore can be used to limit concurrency to avoid rate limiting
+        # e.g., semaphore = asyncio.Semaphore(10)
+        
+        tasks = [self._embed_single_with_retry(text) for text in texts]
+        embeddings = await asyncio.gather(*tasks)
+        return embeddings
 
-            # Filter valid texts
-            valid_texts = [text.strip() for text in texts if text and text.strip()]
-
-            if not valid_texts:
-                logger.warning("No valid texts provided for batch embedding")
-                return [np.zeros(self.embedding_dimension, dtype=np.float32) for _ in texts]
-
-            if self.model is not None:
-                # Use real sentence transformer
-                logger.info(f"Generating embeddings for {len(valid_texts)} texts")
-                embeddings = self.model.encode(valid_texts, convert_to_numpy=True, show_progress_bar=True)
-                return [emb for emb in embeddings]
-            else:
-                # Use mock embedder
-                return [self._generate_mock_embedding(text) for text in valid_texts]
-
-        except Exception as e:
-            logger.error(f"Failed to generate batch embeddings: {e}")
-            raise
+    async def _embed_single_with_retry(self, text: str, retries: int = 3) -> np.ndarray:
+        """Async embedder for a single text with simple retry logic."""
+        for attempt in range(retries):
+            try:
+                # Assuming the genai library will support async or can be wrapped
+                # For now, we wrap the sync call in an executor
+                loop = asyncio.get_running_loop()
+                embedding = await loop.run_in_executor(None, self.embed_text, text)
+                return embedding
+            except Exception as e:
+                logger.warning(f"Embedding failed for text (attempt {attempt+1}): {e}")
+                if attempt == retries - 1:
+                    # Return zero vector on final failure
+                    return np.zeros(self.embedding_dimension, dtype=np.float32)
+                await asyncio.sleep(2**attempt) # Exponential backoff
+        # Should not be reached, but for type safety
+        return np.zeros(self.embedding_dimension, dtype=np.float32)
 
     def _generate_mock_embedding(self, text: str) -> np.ndarray:
         """Generate deterministic mock embedding for testing."""

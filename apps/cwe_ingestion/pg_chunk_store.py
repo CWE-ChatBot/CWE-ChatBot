@@ -1,54 +1,56 @@
-# apps/cwe_ingestion/pg_vector_store.py
+# apps/cwe_ingestion/pg_chunk_store.py
 import os
 import logging
 from typing import Any, Dict, List, Optional, Sequence
-
 import numpy as np
 
 try:
     import psycopg
 except ImportError as e:
-    raise ImportError("psycopg (v3) is required for Postgres vector store. Install with: pip install psycopg[binary]") from e
+    raise ImportError(
+        "psycopg (v3) is required for Postgres chunked store. Install with: pip install psycopg[binary]"
+    ) from e
 
 logger = logging.getLogger(__name__)
 
-
-DDL_SINGLE = """
+DDL_CHUNKED = """
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- for gen_random_uuid on PG < 13 (on some installs)
 
-CREATE TABLE IF NOT EXISTS cwe_embeddings (
-  id                  TEXT PRIMARY KEY,           -- 'CWE-79'
-  cwe_id              TEXT NOT NULL,              -- duplicate of id for clarity
-  name                TEXT NOT NULL,
-  abstraction         TEXT,
-  status              TEXT,
-  full_text           TEXT NOT NULL,
+-- Table with multiple rows per CWE (one per semantic section)
+CREATE TABLE IF NOT EXISTS cwe_chunks (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cwe_id              TEXT NOT NULL,             -- 'CWE-79'
+  section             TEXT NOT NULL,             -- 'Title','Abstract','Extended','Mitigations','Examples','Related','Aliases'
+  section_rank        INT  NOT NULL,             -- 0..N order for aggregation
+  name                TEXT NOT NULL,             -- CWE Name (duplicated per chunk for convenience)
   alternate_terms_text TEXT DEFAULT '',
+  full_text           TEXT NOT NULL,
   tsv                 tsvector GENERATED ALWAYS AS (
     setweight(to_tsvector('english', COALESCE(alternate_terms_text,'')), 'A') ||
     setweight(to_tsvector('english', COALESCE(name,'')), 'B') ||
     setweight(to_tsvector('english', COALESCE(full_text,'')), 'C')
   ) STORED,
   embedding           vector(%(dims)s) NOT NULL,
-  created_at          TIMESTAMPTZ DEFAULT now(),
-  updated_at          TIMESTAMPTZ DEFAULT now()
+  created_at          TIMESTAMPTZ DEFAULT now()
 );
 
--- Indexes
-CREATE INDEX IF NOT EXISTS cwe_fulltext_gin ON cwe_embeddings USING GIN (tsv);
--- Choose ONE ANN index type your pgvector supports:
+CREATE INDEX IF NOT EXISTS cwe_chunks_cwe_id_idx   ON cwe_chunks(cwe_id);
+CREATE INDEX IF NOT EXISTS cwe_chunks_section_idx  ON cwe_chunks(section, section_rank);
+CREATE INDEX IF NOT EXISTS cwe_chunks_tsv_gin      ON cwe_chunks USING GIN (tsv);
+
 DO $$
 BEGIN
-  -- Try HNSW (pgvector >= 0.7.0, PG16+). If not available, fall back to IVFFlat.
+  -- Try HNSW first; if unavailable, fall back to IVFFlat
   BEGIN
-    EXECUTE 'CREATE INDEX cwe_embed_hnsw_cos ON cwe_embeddings USING hnsw (embedding vector_cosine_ops)';
+    EXECUTE 'CREATE INDEX cwe_chunks_hnsw_cos ON cwe_chunks USING hnsw (embedding vector_cosine_ops)';
   EXCEPTION WHEN others THEN
     PERFORM 1;
   END;
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'cwe_embed_hnsw_cos') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'cwe_chunks_hnsw_cos') THEN
     BEGIN
-      EXECUTE 'CREATE INDEX IF NOT EXISTS cwe_embed_ivf_cos ON cwe_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)';
+      EXECUTE 'CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)';
     EXCEPTION WHEN others THEN
       PERFORM 1;
     END;
@@ -56,18 +58,17 @@ BEGIN
 END $$;
 """
 
-class PostgresVectorStore:
+class PostgresChunkStore:
     """
-    Postgres + pgvector store with hybrid retrieval (vector + FTS + alias boost).
-    Table: cwe_embeddings (single row per CWE).
+    Postgres + pgvector store with HYBRID retrieval over chunked sections.
+    Table: cwe_chunks
     """
 
-    def __init__(self, table: str = "cwe_embeddings", dims: int = 3072, database_url: Optional[str] = None):
-        self.table = table
+    def __init__(self, dims: int = 3072, database_url: Optional[str] = None):
         self.dims = int(dims)
         self.database_url = database_url or os.environ.get("DATABASE_URL")
         if not self.database_url:
-            raise ValueError("DATABASE_URL is required for PostgresVectorStore")
+            raise ValueError("DATABASE_URL is required for PostgresChunkStore")
 
         # Configure connection for Google Cloud SQL IAM if needed
         conn_params = self._prepare_connection_params(self.database_url)
@@ -105,60 +106,51 @@ class PostgresVectorStore:
             return {"conninfo": database_url}
 
     def _ensure_schema(self):
-        logger.info("Ensuring Postgres schema exists for hybrid retrieval...")
+        logger.info("Ensuring Postgres chunked schema exists...")
         with self.conn.cursor() as cur:
-            cur.execute(DDL_SINGLE, {"dims": self.dims})
+            cur.execute(DDL_CHUNKED, {"dims": self.dims})
         self.conn.commit()
 
-    # ---- Write ----
-    def store_batch(self, docs: List[Dict[str, Any]]) -> int:
+    # ---------- Writes ----------
+    def store_batch(self, chunks: List[Dict[str, Any]]) -> int:
         """
-        Docs must include: id ('CWE-79'), name, abstraction, status,
-        full_text, alternate_terms_text, embedding (np.ndarray or list)
+        chunks: list of dicts with keys:
+          cwe_id, section, section_rank, name, full_text, alternate_terms_text, embedding
         """
-        if not docs:
+        if not chunks:
             return 0
         rows: Sequence[tuple] = []
-        for d in docs:
-            emb = d["embedding"]
+        for ch in chunks:
+            emb = ch["embedding"]
             if isinstance(emb, np.ndarray):
                 emb = emb.tolist()
             rows.append((
-                d["id"],
-                d.get("cwe_id", d["id"]),
-                d["name"],
-                d.get("abstraction", ""),
-                d.get("status", ""),
-                d["full_text"],
-                d.get("alternate_terms_text", "") or "",
-                emb,
+                ch["cwe_id"],
+                ch["section"],
+                int(ch["section_rank"]),
+                ch["name"],
+                ch.get("alternate_terms_text", "") or "",
+                ch["full_text"],
+                emb
             ))
-        sql = f"""
-        INSERT INTO {self.table}
-            (id, cwe_id, name, abstraction, status, full_text, alternate_terms_text, embedding)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            abstraction = EXCLUDED.abstraction,
-            status = EXCLUDED.status,
-            full_text = EXCLUDED.full_text,
-            alternate_terms_text = EXCLUDED.alternate_terms_text,
-            embedding = EXCLUDED.embedding,
-            updated_at = now();
+        sql = """
+        INSERT INTO cwe_chunks
+          (cwe_id, section, section_rank, name, alternate_terms_text, full_text, embedding)
+        VALUES (%s,%s,%s,%s,%s,%s,%s);
         """
         with self.conn.transaction():
             with self.conn.cursor() as cur:
                 cur.executemany(sql, rows)
         return len(rows)
 
-    # ---- Read: vector-only (compat) ----
+    # ---------- Vector-only (compat) ----------
     def query_similar(self, query_embedding: np.ndarray, n_results: int = 5) -> List[Dict]:
         if isinstance(query_embedding, np.ndarray):
             query_embedding = query_embedding.tolist()
-        sql = f"""
-        SELECT id, cwe_id, name, abstraction, status, full_text,
+        sql = """
+        SELECT cwe_id, section, section_rank, name, full_text,
                embedding <=> %s::vector AS cos_dist
-          FROM {self.table}
+          FROM cwe_chunks
       ORDER BY embedding <=> %s::vector
          LIMIT %s;
         """
@@ -169,42 +161,48 @@ class PostgresVectorStore:
         for r in rows:
             out.append({
                 "metadata": {
-                    "cwe_id": r[1],
-                    "name": r[2],
-                    "abstraction": r[3],
-                    "status": r[4],
+                    "cwe_id": r[0],
+                    "section": r[1],
+                    "section_rank": r[2],
+                    "name": r[3],
                 },
-                "document": r[5],
-                "distance": float(r[6]),
+                "document": r[4],
+                "distance": float(r[5]),
             })
         return out
 
-    # ---- Read: hybrid retrieval ----
+    # ---------- Hybrid query over chunks ----------
     def query_hybrid(
         self,
         query_text: str,
         query_embedding: np.ndarray,
-        k_vec: int = 50,
-        limit: int = 10,
-        w_vec: float = 0.65,
+        k_vec: int = 100,
+        limit_chunks: int = 20,
+        w_vec: float = 0.6,
         w_fts: float = 0.25,
         w_alias: float = 0.10,
+        section_intent_boost: Optional[str] = None,  # e.g., 'Mitigations'
+        section_boost_value: float = 0.15,
     ) -> List[Dict]:
+        """
+        Returns top chunk rows scored by hybrid. Caller can group by cwe_id to present.
+        section_intent_boost: if provided, applies a bonus to that section.
+        """
         if isinstance(query_embedding, np.ndarray):
             query_embedding = query_embedding.tolist()
 
-        # Hybrid CTE: vector KNN + FTS + trigram alias boost (normalized)
+        section = (section_intent_boost or "").strip()
         sql = f"""
         WITH vec AS (
-          SELECT id, cwe_id, name, abstraction, status, full_text, alternate_terms_text,
+          SELECT id, cwe_id, section, section_rank, name, full_text, alternate_terms_text,
                  embedding <=> %s::vector AS cos_dist
-            FROM {self.table}
+            FROM cwe_chunks
         ORDER BY embedding <=> %s::vector
            LIMIT %s
         ),
         fts AS (
           SELECT id, ts_rank(tsv, websearch_to_tsquery('english', %s)) AS fts_rank
-            FROM {self.table}
+            FROM cwe_chunks
            WHERE tsv @@ websearch_to_tsquery('english', %s)
         ),
         joined AS (
@@ -216,28 +214,35 @@ class PostgresVectorStore:
             FROM vec v
        LEFT JOIN fts f USING (id)
         ),
-        agg AS (
+        scored AS (
           SELECT *,
-                 -- Normalize distances/ranks to [0,1] with simple max scaling
                  1 - (cos_dist / NULLIF((SELECT MAX(cos_dist) FROM joined), 0)) AS vec_sim_norm,
-                 fts_rank / NULLIF(GREATEST((SELECT MAX(fts_rank) FROM joined), 1e-9), 0) AS fts_norm,
-                 alias_sim / NULLIF((SELECT MAX(alias_sim) FROM joined), 0)      AS alias_norm
+                 fts_rank / NULLIF((SELECT MAX(fts_rank) FROM joined), 0)        AS fts_norm,
+                 alias_sim / NULLIF((SELECT MAX(alias_sim) FROM joined), 0)      AS alias_norm,
+                 CASE
+                   WHEN %s <> '' AND section = %s THEN %s
+                   ELSE 0
+                 END AS section_boost
             FROM joined
         )
-        SELECT id, cwe_id, name, abstraction, status, full_text,
-               vec_sim_norm, fts_norm, alias_norm,
+        SELECT id, cwe_id, section, section_rank, name, full_text,
+               vec_sim_norm, fts_norm, alias_norm, section_boost,
                (%s * COALESCE(vec_sim_norm,0)) +
                (%s * COALESCE(fts_norm,0)) +
-               (%s * COALESCE(alias_norm,0)) AS hybrid_score
-          FROM agg
-      ORDER BY hybrid_score DESC NULLS LAST
+               (%s * COALESCE(alias_norm,0)) +
+               section_boost
+               AS hybrid_score
+          FROM scored
+      ORDER BY hybrid_score DESC NULLS LAST, section_rank ASC
          LIMIT %s;
         """
         params = (
             query_embedding, query_embedding, k_vec,
             query_text, query_text,
             query_text, query_text,
-            w_vec, w_fts, w_alias, limit
+            section, section, section_boost_value,
+            w_vec, w_fts, w_alias,
+            limit_chunks
         )
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
@@ -246,24 +251,26 @@ class PostgresVectorStore:
         results: List[Dict] = []
         for r in rows:
             results.append({
+                "chunk_id": str(r[0]),
                 "metadata": {
                     "cwe_id": r[1],
-                    "name": r[2],
-                    "abstraction": r[3],
-                    "status": r[4],
+                    "section": r[2],
+                    "section_rank": r[3],
+                    "name": r[4],
                 },
                 "document": r[5],
                 "scores": {
                     "vec": float(r[6]) if r[6] is not None else 0.0,
                     "fts": float(r[7]) if r[7] is not None else 0.0,
                     "alias": float(r[8]) if r[8] is not None else 0.0,
-                    "hybrid": float(r[9]),
+                    "section_boost": float(r[9]) if r[9] is not None else 0.0,
+                    "hybrid": float(r[10]),
                 }
             })
         return results
 
     def get_collection_stats(self) -> Dict[str, Any]:
         with self.conn.cursor() as cur:
-            cur.execute(f"SELECT COUNT(*) FROM {self.table};")
+            cur.execute("SELECT COUNT(*) FROM cwe_chunks;")
             (cnt,) = cur.fetchone()
-        return {"collection_name": self.table, "count": cnt}
+        return {"collection_name": "cwe_chunks", "count": cnt}
