@@ -107,8 +107,49 @@ class PostgresChunkStore:
 
     def _ensure_schema(self):
         logger.info("Ensuring Postgres chunked schema exists...")
+
+        # Split DDL into individual statements for psycopg3 compatibility
+        ddl_statements = [
+            "CREATE EXTENSION IF NOT EXISTS vector;",
+            "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+            "CREATE EXTENSION IF NOT EXISTS pgcrypto;",
+            f"""CREATE TABLE IF NOT EXISTS cwe_chunks (
+                id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                cwe_id              TEXT NOT NULL,
+                section             TEXT NOT NULL,
+                section_rank        INT  NOT NULL,
+                name                TEXT NOT NULL,
+                alternate_terms_text TEXT DEFAULT '',
+                full_text           TEXT NOT NULL,
+                tsv                 tsvector GENERATED ALWAYS AS (
+                    setweight(to_tsvector('english', COALESCE(alternate_terms_text,'')), 'A') ||
+                    setweight(to_tsvector('english', COALESCE(name,'')), 'B') ||
+                    setweight(to_tsvector('english', COALESCE(full_text,'')), 'C')
+                ) STORED,
+                embedding           vector({self.dims}) NOT NULL,
+                created_at          TIMESTAMPTZ DEFAULT now()
+            );""",
+            "CREATE INDEX IF NOT EXISTS cwe_chunks_cwe_id_idx   ON cwe_chunks(cwe_id);",
+            "CREATE INDEX IF NOT EXISTS cwe_chunks_section_idx  ON cwe_chunks(section, section_rank);",
+            "CREATE INDEX IF NOT EXISTS cwe_chunks_tsv_gin      ON cwe_chunks USING GIN (tsv);",
+        ]
+
         with self.conn.cursor() as cur:
-            cur.execute(DDL_CHUNKED, {"dims": self.dims})
+            for statement in ddl_statements:
+                cur.execute(statement)
+
+            # Try to create HNSW index first, fallback to IVFFlat
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_hnsw_cos ON cwe_chunks USING hnsw (embedding vector_cosine_ops);")
+                logger.info("Created HNSW vector index for chunks")
+            except Exception as e:
+                logger.info(f"HNSW index not available for chunks, falling back to IVFFlat: {e}")
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);")
+                    logger.info("Created IVFFlat vector index for chunks")
+                except Exception as e2:
+                    logger.warning(f"Could not create vector index for chunks: {e2}")
+
         self.conn.commit()
 
     # ---------- Writes ----------

@@ -106,8 +106,47 @@ class PostgresVectorStore:
 
     def _ensure_schema(self):
         logger.info("Ensuring Postgres schema exists for hybrid retrieval...")
+
+        # Split DDL into individual statements for psycopg3 compatibility
+        ddl_statements = [
+            "CREATE EXTENSION IF NOT EXISTS vector;",
+            "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+            f"""CREATE TABLE IF NOT EXISTS cwe_embeddings (
+                id                  TEXT PRIMARY KEY,
+                cwe_id              TEXT NOT NULL,
+                name                TEXT NOT NULL,
+                abstraction         TEXT,
+                status              TEXT,
+                full_text           TEXT NOT NULL,
+                alternate_terms_text TEXT DEFAULT '',
+                tsv                 tsvector GENERATED ALWAYS AS (
+                    setweight(to_tsvector('english', COALESCE(alternate_terms_text,'')), 'A') ||
+                    setweight(to_tsvector('english', COALESCE(name,'')), 'B') ||
+                    setweight(to_tsvector('english', COALESCE(full_text,'')), 'C')
+                ) STORED,
+                embedding           vector({self.dims}) NOT NULL,
+                created_at          TIMESTAMPTZ DEFAULT now(),
+                updated_at          TIMESTAMPTZ DEFAULT now()
+            );""",
+            "CREATE INDEX IF NOT EXISTS cwe_fulltext_gin ON cwe_embeddings USING GIN (tsv);",
+        ]
+
         with self.conn.cursor() as cur:
-            cur.execute(DDL_SINGLE, {"dims": self.dims})
+            for statement in ddl_statements:
+                cur.execute(statement)
+
+            # Try to create HNSW index first, fallback to IVFFlat
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS cwe_embed_hnsw_cos ON cwe_embeddings USING hnsw (embedding vector_cosine_ops);")
+                logger.info("Created HNSW vector index")
+            except Exception as e:
+                logger.info(f"HNSW index not available, falling back to IVFFlat: {e}")
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS cwe_embed_ivf_cos ON cwe_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);")
+                    logger.info("Created IVFFlat vector index")
+                except Exception as e2:
+                    logger.warning(f"Could not create vector index: {e2}")
+
         self.conn.commit()
 
     # ---- Write ----

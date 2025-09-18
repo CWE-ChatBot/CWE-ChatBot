@@ -21,7 +21,7 @@ class RelatedWeakness(BaseModel):
 
 class Mitigation(BaseModel):
     Phase: str
-    Strategy: str
+    Strategy: Optional[str] = None  # Some CWE entries have None strategy
     Description: str
 
 class MappingNote(BaseModel):
