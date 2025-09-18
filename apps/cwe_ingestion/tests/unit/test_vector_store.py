@@ -1,143 +1,158 @@
 # apps/cwe_ingestion/tests/unit/test_vector_store.py
-import tempfile
-from pathlib import Path
-
+import os
+import pytest
 import numpy as np
 
 
-def test_cwe_vector_store_class_exists():
-    """Test CWEVectorStore class can be imported and instantiated."""
-    from apps.cwe_ingestion.vector_store import CWEVectorStore
+@pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
+def test_postgres_vector_store_class_exists():
+    """Test PostgresVectorStore class can be imported and instantiated."""
+    from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        store = CWEVectorStore(storage_path=temp_dir)
-        assert store is not None
-    # This test MUST fail first - CWEVectorStore doesn't exist yet
+    store = PostgresVectorStore(dims=384)
+    assert store is not None
+    assert store.dims == 384
 
-def test_vector_store_initializes_with_storage_path():
-    """Test vector store initializes with correct storage path."""
-    from apps.cwe_ingestion.vector_store import CWEVectorStore
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        store = CWEVectorStore(storage_path=temp_dir)
-        assert store.storage_path == temp_dir
-        assert store.collection_name == "cwe_embeddings"
+@pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
+def test_postgres_vector_store_configuration():
+    """Test PostgresVectorStore initializes with correct configuration."""
+    from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-def test_vector_store_creates_collection():
-    """Test that vector store creates or connects to collection."""
-    from apps.cwe_ingestion.vector_store import CWEVectorStore
+    store = PostgresVectorStore(table="cwe_embeddings", dims=384)
+    assert store.table == "cwe_embeddings"
+    assert store.dims == 384
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        store = CWEVectorStore(storage_path=temp_dir)
 
-        # Check that collection is accessible
-        assert hasattr(store, 'collection')
-        assert store.collection is not None
+@pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
+def test_store_and_query_cwe_data():
+    """Test that PostgresVectorStore can store and query CWE data."""
+    from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-def test_store_cwe_data_method():
-    """Test that vector store can store CWE data with embeddings."""
-    from apps.cwe_ingestion.vector_store import CWEVectorStore
+    store = PostgresVectorStore(dims=384)
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        store = CWEVectorStore(storage_path=temp_dir)
+    # Sample CWE data
+    cwe_doc = {
+        'id': 'CWE-79',
+        'cwe_id': 'CWE-79',
+        'name': 'Cross-site Scripting',
+        'abstraction': 'Base',
+        'status': 'Stable',
+        'full_text': 'CWE-79: Cross-site Scripting. XSS vulnerability description...',
+        'alternate_terms_text': 'XSS; Cross Site Scripting',
+        'embedding': np.random.rand(384).astype(np.float32)
+    }
 
-        # Sample CWE data with embedding
-        cwe_data = {
-            'id': '79',
-            'name': 'Cross-site Scripting',
-            'description': 'XSS vulnerability description...',
-            'embedding': np.array([0.1, 0.2, 0.3, 0.4, 0.5] * 76, dtype=np.float32),  # 384-dimensional vector
-            'full_text': 'CWE-79: Cross-site Scripting. XSS vulnerability description...'
-        }
+    # Store the document
+    result = store.store_batch([cwe_doc])
+    assert result == 1
 
-        # Should not raise exceptions
-        result = store.store_cwe(cwe_data)
-        assert result is True
+    # Query with similar embedding
+    query_embedding = np.random.rand(384).astype(np.float32)
+    results = store.query_similar(query_embedding, n_results=5)
 
+    assert isinstance(results, list)
+    if len(results) > 0:
+        result = results[0]
+        assert 'metadata' in result
+        assert 'document' in result
+        assert 'distance' in result
+        # Check metadata structure
+        metadata = result['metadata']
+        assert 'cwe_id' in metadata
+        assert 'name' in metadata
+
+
+@pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
 def test_store_batch_cwe_data():
     """Test batch storage of multiple CWE entries."""
-    from apps.cwe_ingestion.vector_store import CWEVectorStore
+    from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        store = CWEVectorStore(storage_path=temp_dir)
+    store = PostgresVectorStore(dims=384)
 
-        # Sample CWE batch data
-        cwe_batch = [
-            {
-                'id': '79',
-                'name': 'Cross-site Scripting',
-                'embedding': np.array([0.1] * 384, dtype=np.float32),
-                'full_text': 'CWE-79: Cross-site Scripting...'
-            },
-            {
-                'id': '89',
-                'name': 'SQL Injection',
-                'embedding': np.array([0.2] * 384, dtype=np.float32),
-                'full_text': 'CWE-89: SQL Injection...'
-            }
-        ]
-
-        result = store.store_batch(cwe_batch)
-        assert result == 2  # Should return count of stored items
-
-def test_query_similar_cwes():
-    """Test querying for similar CWEs based on embedding similarity."""
-    from apps.cwe_ingestion.vector_store import CWEVectorStore
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        store = CWEVectorStore(storage_path=temp_dir)
-
-        # Store some test data first
-        cwe_data = {
-            'id': '79',
-            'name': 'Cross-site Scripting',
-            'embedding': np.array([0.1] * 384, dtype=np.float32),
-            'full_text': 'CWE-79: Cross-site Scripting...'
+    # Sample CWE batch data
+    cwe_batch = [
+        {
+            'id': 'CWE-89',
+            'cwe_id': 'CWE-89',
+            'name': 'SQL Injection',
+            'abstraction': 'Base',
+            'status': 'Stable',
+            'full_text': 'CWE-89: SQL Injection...',
+            'alternate_terms_text': 'SQLi; SQL Injection Attack',
+            'embedding': np.random.rand(384).astype(np.float32)
+        },
+        {
+            'id': 'CWE-22',
+            'cwe_id': 'CWE-22',
+            'name': 'Path Traversal',
+            'abstraction': 'Base',
+            'status': 'Stable',
+            'full_text': 'CWE-22: Path Traversal...',
+            'alternate_terms_text': 'Directory Traversal; Dot Dot Slash',
+            'embedding': np.random.rand(384).astype(np.float32)
         }
-        store.store_cwe(cwe_data)
+    ]
 
-        # Query with similar embedding
-        query_embedding = np.array([0.1] * 384, dtype=np.float32)
-        results = store.query_similar(query_embedding, n_results=5)
+    result = store.store_batch(cwe_batch)
+    assert result == 2
 
-        assert isinstance(results, list)
-        if len(results) > 0:  # ChromaDB might return empty if no similarity threshold met
-            assert 'metadata' in results[0]
 
-def test_vector_store_handles_errors_gracefully():
-    """Test that vector store handles storage errors gracefully."""
-    from apps.cwe_ingestion.vector_store import CWEVectorStore
+@pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
+def test_hybrid_query():
+    """Test hybrid querying with vector and FTS."""
+    from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        store = CWEVectorStore(storage_path=temp_dir)
+    store = PostgresVectorStore(dims=384)
 
-        # Test with invalid data - should return False instead of raising
-        invalid_data = {'invalid': 'data'}
+    # Store test data
+    cwe_doc = {
+        'id': 'CWE-78',
+        'cwe_id': 'CWE-78',
+        'name': 'OS Command Injection',
+        'abstraction': 'Base',
+        'status': 'Stable',
+        'full_text': 'The software constructs system commands using external input',
+        'alternate_terms_text': 'Command Injection; Shell Injection',
+        'embedding': np.random.rand(384).astype(np.float32)
+    }
 
-        result = store.store_cwe(invalid_data)
-        assert result is False
+    store.store_batch([cwe_doc])
 
+    # Test hybrid query
+    query_embedding = np.random.rand(384).astype(np.float32)
+    results = store.query_hybrid(
+        query_text="command injection",
+        query_embedding=query_embedding,
+        k_vec=10,
+        limit=5
+    )
+
+    assert isinstance(results, list)
+    if len(results) > 0:
+        result = results[0]
+        assert 'metadata' in result
+        assert 'document' in result
+        assert 'scores' in result
+        # Check scores structure
+        scores = result['scores']
+        assert 'vec' in scores
+        assert 'fts' in scores
+        assert 'alias' in scores
+        assert 'hybrid' in scores
+
+
+@pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
 def test_vector_store_collection_stats():
-    """Test that vector store can provide collection statistics."""
-    from apps.cwe_ingestion.vector_store import CWEVectorStore
+    """Test that PostgresVectorStore can provide collection statistics."""
+    from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        store = CWEVectorStore(storage_path=temp_dir)
+    store = PostgresVectorStore(dims=384)
 
-        # Should be able to get stats
-        stats = store.get_collection_stats()
-        assert isinstance(stats, dict)
-        assert 'count' in stats or 'error' in stats  # Either count or error message
-
-def test_vector_store_security_configuration():
-    """Test that vector store has proper security configuration."""
-    from apps.cwe_ingestion.vector_store import CWEVectorStore
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        store = CWEVectorStore(storage_path=temp_dir)
-
-        # Check that storage path is properly validated
-        assert Path(store.storage_path).exists() or Path(store.storage_path).parent.exists()
-
-        # Check collection name is safe
-        assert store.collection_name.isalnum() or '_' in store.collection_name
+    # Should be able to get stats
+    stats = store.get_collection_stats()
+    assert isinstance(stats, dict)
+    assert 'collection_name' in stats
+    assert 'count' in stats
+    assert stats['collection_name'] == 'cwe_embeddings'
+    assert isinstance(stats['count'], int)

@@ -73,6 +73,7 @@ class PostgresVectorStore:
         conn_params = self._prepare_connection_params(self.database_url)
         self.conn = psycopg.connect(**conn_params)
         self.conn.execute("SET statement_timeout = '30s';")
+        self.conn.execute("SET ivfflat.probes = 10;")  # Improve IVFFlat recall (harmless if HNSW is used)
         self._ensure_schema()
 
     def _prepare_connection_params(self, database_url: str) -> Dict[str, Any]:
@@ -84,9 +85,15 @@ class PostgresVectorStore:
         parsed = urllib.parse.urlparse(database_url)
 
         # Check if this looks like Google Cloud SQL IAM format
+        # Format: postgresql://username@project:region:instance/dbname
+        # The netloc will be "username@project:region:instance"
+        netloc = (parsed.netloc or "")
+        has_at_symbol = "@" in netloc
+        has_colon_after_at = "@" in netloc and ":" in netloc.split("@", 1)[-1]
+
         is_gcp_iam = (
-            "@" in database_url and
-            ":" in parsed.hostname and
+            has_at_symbol and
+            has_colon_after_at and
             parsed.password is None
         )
 
@@ -107,47 +114,52 @@ class PostgresVectorStore:
     def _ensure_schema(self):
         logger.info("Ensuring Postgres schema exists for hybrid retrieval...")
 
-        # Split DDL into individual statements for psycopg3 compatibility
-        ddl_statements = [
-            "CREATE EXTENSION IF NOT EXISTS vector;",
-            "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
-            f"""CREATE TABLE IF NOT EXISTS cwe_embeddings (
-                id                  TEXT PRIMARY KEY,
-                cwe_id              TEXT NOT NULL,
-                name                TEXT NOT NULL,
-                abstraction         TEXT,
-                status              TEXT,
-                full_text           TEXT NOT NULL,
+        # Atomic DDL block for robust schema management
+        atomic_ddl = f"""
+        DO $$
+        BEGIN
+            CREATE EXTENSION IF NOT EXISTS vector;
+            CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+            CREATE TABLE IF NOT EXISTS {self.table} (
+                id TEXT PRIMARY KEY,
+                cwe_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                abstraction TEXT,
+                status TEXT,
+                full_text TEXT NOT NULL,
                 alternate_terms_text TEXT DEFAULT '',
-                tsv                 tsvector GENERATED ALWAYS AS (
+                tsv tsvector GENERATED ALWAYS AS (
                     setweight(to_tsvector('english', COALESCE(alternate_terms_text,'')), 'A') ||
                     setweight(to_tsvector('english', COALESCE(name,'')), 'B') ||
                     setweight(to_tsvector('english', COALESCE(full_text,'')), 'C')
                 ) STORED,
-                embedding           vector({self.dims}) NOT NULL,
-                created_at          TIMESTAMPTZ DEFAULT now(),
-                updated_at          TIMESTAMPTZ DEFAULT now()
-            );""",
-            "CREATE INDEX IF NOT EXISTS cwe_fulltext_gin ON cwe_embeddings USING GIN (tsv);",
-        ]
+                embedding vector({self.dims}) NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now()
+            );
+
+            CREATE INDEX IF NOT EXISTS cwe_fulltext_gin ON {self.table} USING GIN (tsv);
+            CREATE INDEX IF NOT EXISTS cwe_embeddings_cwe_id_idx ON {self.table}(cwe_id);
+
+            -- Try HNSW first; if unavailable, fall back to IVFFlat
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'cwe_embed_hnsw_cos' AND tablename = '{self.table}') THEN
+                BEGIN
+                    EXECUTE 'CREATE INDEX cwe_embed_hnsw_cos ON {self.table} USING hnsw (embedding vector_cosine_ops)';
+                    RAISE NOTICE 'Created HNSW vector index on {self.table}';
+                EXCEPTION WHEN OTHERS THEN
+                    RAISE NOTICE 'HNSW not available, falling back to IVFFlat for {self.table}';
+                    EXECUTE 'CREATE INDEX IF NOT EXISTS cwe_embed_ivf_cos ON {self.table} USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)';
+                    RAISE NOTICE 'Created IVFFlat vector index on {self.table}';
+                END;
+            END IF;
+        END $$;
+        """
 
         with self.conn.cursor() as cur:
-            for statement in ddl_statements:
-                cur.execute(statement)
-
-            # Try to create HNSW index first, fallback to IVFFlat
-            try:
-                cur.execute("CREATE INDEX IF NOT EXISTS cwe_embed_hnsw_cos ON cwe_embeddings USING hnsw (embedding vector_cosine_ops);")
-                logger.info("Created HNSW vector index")
-            except Exception as e:
-                logger.info(f"HNSW index not available, falling back to IVFFlat: {e}")
-                try:
-                    cur.execute("CREATE INDEX IF NOT EXISTS cwe_embed_ivf_cos ON cwe_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);")
-                    logger.info("Created IVFFlat vector index")
-                except Exception as e2:
-                    logger.warning(f"Could not create vector index: {e2}")
-
+            cur.execute(atomic_ddl)
         self.conn.commit()
+        logger.info(f"Schema setup completed for table: {self.table}")
 
     # ---- Write ----
     def store_batch(self, docs: List[Dict[str, Any]]) -> int:
@@ -188,6 +200,14 @@ class PostgresVectorStore:
         with self.conn.transaction():
             with self.conn.cursor() as cur:
                 cur.executemany(sql, rows)
+
+        # Refresh statistics after significant batch inserts for optimal query planning
+        if len(rows) >= 10:  # Only for meaningful batch sizes
+            with self.conn.cursor() as cur:
+                cur.execute("ANALYZE cwe_embeddings;")
+            self.conn.commit()
+            logger.debug(f"Refreshed table statistics after inserting {len(rows)} embeddings")
+
         return len(rows)
 
     # ---- Read: vector-only (compat) ----
@@ -249,8 +269,8 @@ class PostgresVectorStore:
         joined AS (
           SELECT v.*, COALESCE(f.fts_rank, 0) AS fts_rank,
                  GREATEST(
-                   similarity(v.alternate_terms_text, %s),
-                   similarity(regexp_replace(v.alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi'), %s)
+                   similarity(lower(v.alternate_terms_text), lower(%s)),
+                   similarity(lower(regexp_replace(v.alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
                  ) AS alias_sim
             FROM vec v
        LEFT JOIN fts f USING (id)

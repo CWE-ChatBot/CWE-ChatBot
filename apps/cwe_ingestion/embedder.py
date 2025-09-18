@@ -261,12 +261,13 @@ class GeminiEmbedder:
             # Use masked API key in error messages - no raw key exposure
             raise Exception(f"Gemini API error (key: {self.api_key_masked}): {str(e)}")
 
-    def embed_batch(self, texts: List[str]) -> List[np.ndarray]:
+    def embed_batch(self, texts: List[str], max_workers: int = 5) -> List[np.ndarray]:
         """
-        Generate embeddings for multiple texts efficiently.
+        Generate embeddings for multiple texts efficiently with smart rate limiting.
 
         Args:
             texts: List of texts to embed
+            max_workers: Maximum concurrent threads (default: 5)
 
         Returns:
             List of numpy arrays containing embedding vectors
@@ -285,30 +286,103 @@ class GeminiEmbedder:
                 logger.warning("No valid texts provided for batch embedding")
                 return [np.zeros(self.embedding_dimension, dtype=np.float32) for _ in texts]
 
-            embeddings = []
-            logger.info(f"Generating Gemini embeddings for {len(valid_texts)} texts")
+            logger.info(f"Generating Gemini embeddings for {len(valid_texts)} texts (max_workers={max_workers})")
 
-            # Process each text individually (Gemini doesn't support batch requests)
-            for i, text in enumerate(valid_texts):
-                try:
-                    # Add small delay to avoid rate limiting
-                    if i > 0:
-                        import time
-                        time.sleep(0.1)
-
-                    embedding = self.embed_text(text)
-                    embeddings.append(embedding)
-
-                    if (i + 1) % 10 == 0:
-                        logger.info(f"Processed {i + 1}/{len(valid_texts)} texts")
-
-                except Exception as e:
-                    logger.error(f"Failed to embed text {i}: {e}")
-                    # Add zero vector for failed embeddings to maintain indexing
-                    embeddings.append(np.zeros(self.embedding_dimension, dtype=np.float32))
-
-            return embeddings
+            # Choose strategy based on batch size
+            if len(valid_texts) <= 10:
+                # Small batch: use sequential with minimal delay
+                return self._embed_batch_sequential(valid_texts, smart_delay=True)
+            else:
+                # Large batch: use thread pool for better throughput
+                return self._embed_batch_parallel(valid_texts, max_workers)
 
         except Exception as e:
             logger.error(f"Failed to generate batch embeddings: {e}")
             raise
+
+    def _embed_batch_sequential(self, texts: List[str], smart_delay: bool = True) -> List[np.ndarray]:
+        """Sequential embedding with smart delay strategy."""
+        import time
+
+        embeddings = []
+        consecutive_failures = 0
+
+        for i, text in enumerate(texts):
+            try:
+                # Smart delay strategy
+                if smart_delay and i > 0:
+                    if consecutive_failures > 0:
+                        # Exponential backoff after failures
+                        delay = min(0.5 * (2 ** consecutive_failures), 5.0)
+                        time.sleep(delay)
+                    elif i % 20 == 0:
+                        # Small delay every 20 requests to be respectful
+                        time.sleep(0.05)
+                    # Otherwise, no delay for good throughput
+
+                embedding = self.embed_text(text)
+                embeddings.append(embedding)
+                consecutive_failures = 0  # Reset failure counter
+
+                if (i + 1) % 10 == 0:
+                    logger.info(f"Processed {i + 1}/{len(texts)} texts")
+
+            except Exception as e:
+                logger.error(f"Failed to embed text {i}: {e}")
+                consecutive_failures += 1
+                embeddings.append(np.zeros(self.embedding_dimension, dtype=np.float32))
+
+        return embeddings
+
+    def _embed_batch_parallel(self, texts: List[str], max_workers: int) -> List[np.ndarray]:
+        """Parallel embedding using thread pool with rate limiting."""
+        import concurrent.futures
+        import time
+
+        embeddings = [None] * len(texts)
+
+        def embed_with_retry(args):
+            index, text = args
+            max_retries = 3
+            base_delay = 0.1
+
+            for attempt in range(max_retries):
+                try:
+                    # Add jitter to prevent thundering herd
+                    if attempt > 0:
+                        jitter = 0.1 * (hash(text) % 10) / 10
+                        time.sleep(base_delay * (2 ** attempt) + jitter)
+
+                    embedding = self.embed_text(text)
+                    return (index, embedding, None)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        logger.error(f"Failed to embed text {index} after {max_retries} attempts: {e}")
+                        return (index, np.zeros(self.embedding_dimension, dtype=np.float32), e)
+                    else:
+                        logger.warning(f"Embedding attempt {attempt + 1} failed for text {index}: {e}")
+
+        # Process in parallel with controlled concurrency
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_index = {
+                executor.submit(embed_with_retry, (i, text)): i
+                for i, text in enumerate(texts)
+            }
+
+            completed = 0
+            for future in concurrent.futures.as_completed(future_to_index):
+                try:
+                    index, embedding, error = future.result()
+                    embeddings[index] = embedding
+                    completed += 1
+
+                    if completed % 10 == 0:
+                        logger.info(f"Completed {completed}/{len(texts)} embeddings")
+
+                except Exception as e:
+                    index = future_to_index[future]
+                    logger.error(f"Unexpected error processing text {index}: {e}")
+                    embeddings[index] = np.zeros(self.embedding_dimension, dtype=np.float32)
+
+        return embeddings

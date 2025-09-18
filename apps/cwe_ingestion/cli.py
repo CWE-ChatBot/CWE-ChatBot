@@ -51,7 +51,7 @@ def ingest(target_cwes, embedding_model, embedder_type, chunked):
 @click.option('--n-results', '-n', default=5, help='Number of CWEs to return')
 @click.option('--hybrid', is_flag=True, help='Use hybrid retrieval (recommended)')
 @click.option('--chunked/--single', default=True, help='Search chunked store or single-row store')
-@click.option('--w-vec', default=0.6, type=float, show_default=True)
+@click.option('--w-vec', default=0.65, type=float, show_default=True)
 @click.option('--w-fts', default=0.25, type=float, show_default=True)
 @click.option('--w-alias', default=0.10, type=float, show_default=True)
 @click.option('--boost-section', type=click.Choice(
@@ -140,6 +140,52 @@ def _infer_section_intent(q: str):
     if any(k in ql for k in ["prevent","mitigat","remediat","fix"]):
         return "Mitigations"
     return None
+
+@cli.command()
+@click.option('--chunked/--single', default=True, help='Check chunked store or single-row store')
+def stats(chunked):
+    """Show database health and collection statistics."""
+    import os
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        click.echo("❌ DATABASE_URL environment variable is required")
+        sys.exit(1)
+
+    try:
+        # Create the appropriate store type
+        if chunked:
+            click.echo("📊 PostgreSQL Chunked Store Health Check")
+            click.echo("-" * 40)
+            store = PostgresChunkStore()
+            store_type = "chunked (cwe_chunks table)"
+        else:
+            click.echo("📊 PostgreSQL Single Store Health Check")
+            click.echo("-" * 40)
+            store = PostgresVectorStore()
+            store_type = "single-row (cwe_embeddings table)"
+
+        # Test database connection
+        try:
+            stats = store.get_collection_stats()
+            click.echo(f"✅ Database connection: OK")
+            click.echo(f"📦 Storage type: {store_type}")
+            click.echo(f"🎯 Collection: {stats['collection_name']}")
+            click.echo(f"📈 Record count: {stats['count']:,}")
+
+            if stats['count'] > 0:
+                click.echo(f"💡 Vector dimensions: {store.dims}")
+                click.echo("✅ Database is healthy and contains data")
+            else:
+                click.echo("⚠️  Database is healthy but empty - run 'ingest' command first")
+
+        except Exception as db_error:
+            click.echo(f"❌ Database connection failed: {db_error}")
+            sys.exit(1)
+
+    except Exception as e:
+        click.echo(f"❌ Health check failed: {e}")
+        sys.exit(1)
 
 @cli.command()
 @click.option('--target-cwes', '-c', multiple=True, help='Specific CWE IDs to ingest (e.g., CWE-79)')

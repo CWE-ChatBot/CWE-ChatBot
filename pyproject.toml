@@ -18,8 +18,7 @@ python = "^3.10"
 requests = "^2.31.0"
 lxml = "^4.9.3"
 defusedxml = "^0.7.1" 
-sentence-transformers = "^2.2.2"
-chromadb = "^0.4.15"
+#chromadb = "^0.4.15"
 click = "^8.1.7"
 numpy = "^1.24.3"
 
@@ -33,6 +32,13 @@ cryptography = "^45.0.6"
 
 # Story 1.4 Dependencies - Gemini API Integration
 google-generativeai = "^0.8.0"  # For Gemini embedding model
+psycopg = {extras = ["binary"], version = "^3.2.10"}
+
+# Optional dependencies
+sentence-transformers = {version = "^2.2.2", optional = true}
+
+[tool.poetry.extras]
+local-embeddings = ["sentence-transformers"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

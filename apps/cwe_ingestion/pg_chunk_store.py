@@ -40,6 +40,9 @@ CREATE INDEX IF NOT EXISTS cwe_chunks_cwe_id_idx   ON cwe_chunks(cwe_id);
 CREATE INDEX IF NOT EXISTS cwe_chunks_section_idx  ON cwe_chunks(section, section_rank);
 CREATE INDEX IF NOT EXISTS cwe_chunks_tsv_gin      ON cwe_chunks USING GIN (tsv);
 
+-- Natural unique key for preventing duplicates on re-ingest
+CREATE UNIQUE INDEX IF NOT EXISTS cwe_chunks_unique ON cwe_chunks (cwe_id, section, section_rank);
+
 DO $$
 BEGIN
   -- Try HNSW first; if unavailable, fall back to IVFFlat
@@ -74,6 +77,7 @@ class PostgresChunkStore:
         conn_params = self._prepare_connection_params(self.database_url)
         self.conn = psycopg.connect(**conn_params)
         self.conn.execute("SET statement_timeout = '30s';")
+        self.conn.execute("SET ivfflat.probes = 10;")  # Improve IVFFlat recall (harmless if HNSW is used)
         self._ensure_schema()
 
     def _prepare_connection_params(self, database_url: str) -> Dict[str, Any]:
@@ -85,9 +89,15 @@ class PostgresChunkStore:
         parsed = urllib.parse.urlparse(database_url)
 
         # Check if this looks like Google Cloud SQL IAM format
+        # Format: postgresql://username@project:region:instance/dbname
+        # The netloc will be "username@project:region:instance"
+        netloc = (parsed.netloc or "")
+        has_at_symbol = "@" in netloc
+        has_colon_after_at = "@" in netloc and ":" in netloc.split("@", 1)[-1]
+
         is_gcp_iam = (
-            "@" in database_url and
-            ":" in parsed.hostname and
+            has_at_symbol and
+            has_colon_after_at and
             parsed.password is None
         )
 
@@ -108,12 +118,15 @@ class PostgresChunkStore:
     def _ensure_schema(self):
         logger.info("Ensuring Postgres chunked schema exists...")
 
-        # Split DDL into individual statements for psycopg3 compatibility
-        ddl_statements = [
-            "CREATE EXTENSION IF NOT EXISTS vector;",
-            "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
-            "CREATE EXTENSION IF NOT EXISTS pgcrypto;",
-            f"""CREATE TABLE IF NOT EXISTS cwe_chunks (
+        # Atomic DDL block for robust schema management
+        atomic_ddl = f"""
+        DO $$
+        BEGIN
+            CREATE EXTENSION IF NOT EXISTS vector;
+            CREATE EXTENSION IF NOT EXISTS pg_trgm;
+            CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+            CREATE TABLE IF NOT EXISTS cwe_chunks (
                 id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 cwe_id              TEXT NOT NULL,
                 section             TEXT NOT NULL,
@@ -128,29 +141,33 @@ class PostgresChunkStore:
                 ) STORED,
                 embedding           vector({self.dims}) NOT NULL,
                 created_at          TIMESTAMPTZ DEFAULT now()
-            );""",
-            "CREATE INDEX IF NOT EXISTS cwe_chunks_cwe_id_idx   ON cwe_chunks(cwe_id);",
-            "CREATE INDEX IF NOT EXISTS cwe_chunks_section_idx  ON cwe_chunks(section, section_rank);",
-            "CREATE INDEX IF NOT EXISTS cwe_chunks_tsv_gin      ON cwe_chunks USING GIN (tsv);",
-        ]
+            );
+
+            CREATE INDEX IF NOT EXISTS cwe_chunks_cwe_id_idx   ON cwe_chunks(cwe_id);
+            CREATE INDEX IF NOT EXISTS cwe_chunks_section_idx  ON cwe_chunks(section, section_rank);
+            CREATE INDEX IF NOT EXISTS cwe_chunks_tsv_gin      ON cwe_chunks USING GIN (tsv);
+
+            -- Natural unique key for preventing duplicates on re-ingest
+            CREATE UNIQUE INDEX IF NOT EXISTS cwe_chunks_unique ON cwe_chunks (cwe_id, section, section_rank);
+
+            -- Try HNSW first; if unavailable, fall back to IVFFlat
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'cwe_chunks_hnsw_cos' AND tablename = 'cwe_chunks') THEN
+                BEGIN
+                    EXECUTE 'CREATE INDEX cwe_chunks_hnsw_cos ON cwe_chunks USING hnsw (embedding vector_cosine_ops)';
+                    RAISE NOTICE 'Created HNSW vector index on cwe_chunks';
+                EXCEPTION WHEN OTHERS THEN
+                    RAISE NOTICE 'HNSW not available, falling back to IVFFlat for cwe_chunks';
+                    EXECUTE 'CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)';
+                    RAISE NOTICE 'Created IVFFlat vector index on cwe_chunks';
+                END;
+            END IF;
+        END $$;
+        """
 
         with self.conn.cursor() as cur:
-            for statement in ddl_statements:
-                cur.execute(statement)
-
-            # Try to create HNSW index first, fallback to IVFFlat
-            try:
-                cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_hnsw_cos ON cwe_chunks USING hnsw (embedding vector_cosine_ops);")
-                logger.info("Created HNSW vector index for chunks")
-            except Exception as e:
-                logger.info(f"HNSW index not available for chunks, falling back to IVFFlat: {e}")
-                try:
-                    cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);")
-                    logger.info("Created IVFFlat vector index for chunks")
-                except Exception as e2:
-                    logger.warning(f"Could not create vector index for chunks: {e2}")
-
+            cur.execute(atomic_ddl)
         self.conn.commit()
+        logger.info("Schema setup completed for chunked table: cwe_chunks")
 
     # ---------- Writes ----------
     def store_batch(self, chunks: List[Dict[str, Any]]) -> int:
@@ -177,11 +194,25 @@ class PostgresChunkStore:
         sql = """
         INSERT INTO cwe_chunks
           (cwe_id, section, section_rank, name, alternate_terms_text, full_text, embedding)
-        VALUES (%s,%s,%s,%s,%s,%s,%s);
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (cwe_id, section, section_rank) DO UPDATE SET
+          name = EXCLUDED.name,
+          alternate_terms_text = EXCLUDED.alternate_terms_text,
+          full_text = EXCLUDED.full_text,
+          embedding = EXCLUDED.embedding,
+          created_at = LEAST(cwe_chunks.created_at, now());
         """
         with self.conn.transaction():
             with self.conn.cursor() as cur:
                 cur.executemany(sql, rows)
+
+        # Refresh statistics after significant batch inserts for optimal query planning
+        if len(rows) >= 10:  # Only for meaningful batch sizes
+            with self.conn.cursor() as cur:
+                cur.execute("ANALYZE cwe_chunks;")
+            self.conn.commit()
+            logger.debug(f"Refreshed table statistics after inserting {len(rows)} chunks")
+
         return len(rows)
 
     # ---------- Vector-only (compat) ----------
@@ -249,8 +280,8 @@ class PostgresChunkStore:
         joined AS (
           SELECT v.*, COALESCE(f.fts_rank, 0) AS fts_rank,
                  GREATEST(
-                   similarity(v.alternate_terms_text, %s),
-                   similarity(regexp_replace(v.alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi'), %s)
+                   similarity(lower(v.alternate_terms_text), lower(%s)),
+                   similarity(lower(regexp_replace(v.alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
                  ) AS alias_sim
             FROM vec v
        LEFT JOIN fts f USING (id)

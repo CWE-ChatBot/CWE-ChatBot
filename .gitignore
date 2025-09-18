@@ -1,3 +1,6 @@
+apps/cwe_ingestion/cwe_vector_db_local/
+apps/cwe_ingestion/cwe_vector_db_local/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -105,3 +108,5 @@ dmypy.json
 web-bundles
 tmp
 tmp2
+apps/cwe_ingestion/cwe_vector_db/chroma.sqlite3
+digest.txt
