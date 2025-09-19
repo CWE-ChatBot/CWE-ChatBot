@@ -20,7 +20,7 @@ class RelatedWeakness(BaseModel):
     Ordinal: Optional[str] = None
 
 class Mitigation(BaseModel):
-    Phase: str
+    Phase: Optional[str] = None  # Some CWE entries have None phase values
     Strategy: Optional[str] = None  # Some CWE entries have None strategy
     Description: str
 

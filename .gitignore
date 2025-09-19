@@ -1,3 +1,4 @@
+apps/cwe_ingestion/cwe_embeddings_cache_shared
 apps/cwe_ingestion/cwe_vector_db_local/
 apps/cwe_ingestion/cwe_vector_db_local/
 
