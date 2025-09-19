@@ -172,15 +172,17 @@ class PostgresChunkStore:
         """
 
         with self.conn.cursor() as cur:
-            cur.execute(atomic_ddl)
+            cur.execute(atomic_ddl)  # type: ignore[arg-type]
         self.conn.commit()
         logger.info("Schema setup completed for chunked table: cwe_chunks")
 
     def _recommended_ivf_lists(self, table_name: str) -> int:
         """Calculate IVF lists from current table count (sqrt(N), clamped)."""
+        from psycopg import sql
         with self.conn.cursor() as cur:
-            cur.execute(f"SELECT GREATEST(1, COUNT(*)) FROM {table_name};")
-            (n,) = cur.fetchone()
+            cur.execute(sql.SQL("SELECT GREATEST(1, COUNT(*)) FROM {}").format(sql.Identifier(table_name)))
+            result = cur.fetchone()
+            (n,) = result if result else (1,)
         import math
         return max(64, min(8192, int(math.sqrt(n))))
 
@@ -359,6 +361,7 @@ class PostgresChunkStore:
 
     def get_collection_stats(self) -> Dict[str, Any]:
         with self.conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM cwe_chunks;")
-            (cnt,) = cur.fetchone()
+            cur.execute("SELECT COUNT(*) FROM cwe_chunks;")  # type: ignore[arg-type]
+            result = cur.fetchone()
+            (cnt,) = result if result else (0,)
         return {"collection_name": "cwe_chunks", "count": cnt}
