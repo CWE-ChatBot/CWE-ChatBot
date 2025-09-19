@@ -24,6 +24,25 @@ class Mitigation(BaseModel):
     Strategy: Optional[str] = None  # Some CWE entries have None strategy
     Description: str
 
+class Consequence(BaseModel):
+    Scope: Optional[str] = None
+    Impact: Optional[str] = None
+    Note: Optional[str] = None
+
+class DetectionMethod(BaseModel):
+    Method: Optional[str] = None
+    Description: Optional[str] = None
+    Effectiveness: Optional[str] = None
+
+class ModeOfIntroduction(BaseModel):
+    Phase: Optional[str] = None
+    Description: Optional[str] = None
+    Note: Optional[str] = None
+
+class CapecReference(BaseModel):
+    CAPECID: Optional[str] = None
+    Name: Optional[str] = None
+
 class MappingNote(BaseModel):
     Usage: str
     Rationale: Optional[str] = None
@@ -38,8 +57,51 @@ class SectionDict(TypedDict):
     section_rank: int
     text: str
 
+def _split_text_into_chunks(text: str, target_tokens: int = 500, max_tokens: int = 700, overlap: int = 50) -> List[str]:
+    """
+    Lightweight, tokenizer-free sentence/word packer for adaptive chunking.
+    Counts tokens by words; keeps ~target_tokens per chunk with small overlap.
+    """
+    if not text or len(text) <= 2000:  # ~ quick escape for short text
+        return [text] if text else []
+    # Normalize newlines and split by sentences-ish boundaries
+    import re
+    sentences = re.split(r'(?<=[.!?])\s+|\n{2,}', text.strip())
+    chunks: List[str] = []
+    buf: List[str] = []
+    count = 0
+    def words(s: str) -> int:
+        return max(1, len(s.split()))
+    for s in sentences:
+        w = words(s)
+        if count + w > max_tokens and buf:
+            chunk = " ".join(buf).strip()
+            chunks.append(chunk)
+            # build overlap from tail
+            if overlap > 0:
+                tail_words = " ".join(chunk.split()[-overlap:])
+                buf = [tail_words]
+                count = words(tail_words)
+            else:
+                buf, count = [], 0
+        buf.append(s)
+        count += w
+        if count >= target_tokens:
+            chunk = " ".join(buf).strip()
+            chunks.append(chunk)
+            buf, count = [], 0
+    if buf:
+        chunks.append(" ".join(buf).strip())
+    # Deduplicate tiny last chunk into previous if it's too small
+    if len(chunks) >= 2 and words(chunks[-1]) < max(50, int(0.15 * target_tokens)):
+        last = chunks.pop()
+        chunks[-1] = (chunks[-1] + " " + last).strip()
+    return [c for c in chunks if c]
+
 def entry_to_sections(entry: "CWEEntry") -> List[SectionDict]:
-    """Converts a CWEEntry into a list of dictionaries for chunking."""
+    """Converts a CWEEntry into a list of dictionaries for chunking.
+    Includes adaptive sub-chunking for long sections and additional CWE fields.
+    """
     sections: List[SectionDict] = []
     rank = 0
 
@@ -60,43 +122,144 @@ def entry_to_sections(entry: "CWEEntry") -> List[SectionDict]:
 
     # 3. Extended Description
     if entry.ExtendedDescription:
-        sections.append({
-            "section": "Extended", "section_rank": rank,
-            "text": entry.ExtendedDescription
-        })
-        rank += 1
+        ext_chunks = _split_text_into_chunks(entry.ExtendedDescription, target_tokens=500, max_tokens=750, overlap=50)
+        for ch in ext_chunks:
+            sections.append({
+                "section": "Extended", "section_rank": rank,
+                "text": ch
+            })
+            rank += 1
 
     # 4. Mitigations
     if entry.PotentialMitigations:
-        mitigation_texts = [
-            f"- Phase: {m.Phase}\n  Strategy: {m.Description}" 
-            for m in entry.PotentialMitigations
-        ]
-        sections.append({
-            "section": "Mitigations", "section_rank": rank,
-            "text": "Mitigation Strategies:\n" + "\n".join(mitigation_texts)
-        })
-        rank += 1
+        # Group by Phase to improve intent routing
+        by_phase: Dict[str, List[Mitigation]] = {}
+        for m in entry.PotentialMitigations:
+            phase = (m.Phase or "General").strip()
+            by_phase.setdefault(phase, []).append(m)
+        for phase, items in by_phase.items():
+            text = "Mitigation Strategies (" + phase + "):\n" + "\n".join(
+                f"- {mi.Strategy or ''}: {mi.Description}".strip()
+                for mi in items if (mi.Description or mi.Strategy)
+            )
+            for ch in _split_text_into_chunks(text, target_tokens=450, max_tokens=700, overlap=40):
+                sections.append({
+                    "section": "Mitigations", "section_rank": rank,
+                    "text": ch
+                })
+                rank += 1
         
     # 5. Examples
     if entry.ObservedExamples:
         example_texts = [f"- {ex.Reference}: {ex.Description}" for ex in entry.ObservedExamples]
-        sections.append({
-            "section": "Examples", "section_rank": rank,
-            "text": "Real-World Examples (CVEs):\n" + "\n".join(example_texts)
-        })
-        rank += 1
+        examples_blob = "Real-World Examples (CVEs):\n" + "\n".join(example_texts)
+        for ch in _split_text_into_chunks(examples_blob, target_tokens=450, max_tokens=700, overlap=25):
+            sections.append({
+                "section": "Examples", "section_rank": rank,
+                "text": ch
+            })
+            rank += 1
         
-    # 6. Related Weaknesses
-    if entry.RelatedWeaknesses:
-        weakness_texts = [f"- {w.Nature} of CWE-{w.CweID}" for w in entry.RelatedWeaknesses]
-        sections.append({
-            "section": "Related", "section_rank": rank,
-            "text": "Related Weaknesses:\n" + "\n".join(weakness_texts)
-        })
-        rank += 1
+    # 6. Prerequisites (from Notes/Prerequisites if available)
+    prerequisites = getattr(entry, "Prerequisites", None)
+    if prerequisites:
+        prereq_lines = [f"- {p}" for p in prerequisites if p]
+        if prereq_lines:
+            sections.append({
+                "section": "Prerequisites", "section_rank": rank,
+                "text": "Prerequisites:\n" + "\n".join(prereq_lines)
+            })
+            rank += 1
 
-    # 7. Alternate Terms
+    # 7. Modes of Introduction
+    modes_of_introduction = getattr(entry, "ModesOfIntroduction", None)
+    if modes_of_introduction:
+        mode_lines = []
+        for m in modes_of_introduction:
+            line = f"- {m.Phase or 'Unspecified'}: {m.Description or ''}".strip()
+            if m.Note:
+                line += f" ({m.Note})"
+            mode_lines.append(line)
+        if mode_lines:
+            sections.append({
+                "section": "Modes", "section_rank": rank,
+                "text": "Modes of Introduction:\n" + "\n".join(mode_lines)
+            })
+            rank += 1
+
+    # 8. Common Consequences
+    common_consequences = getattr(entry, "CommonConsequences", None)
+    if common_consequences:
+        cons_lines = []
+        for c in common_consequences:
+            parts = [c.Scope or "", c.Impact or ""]
+            core = " → ".join([p for p in parts if p]).strip(" →")
+            if c.Note:
+                core += f" ({c.Note})"
+            if core:
+                cons_lines.append(f"- {core}")
+        if cons_lines:
+            sections.append({
+                "section": "Common_Consequences", "section_rank": rank,
+                "text": "Common Consequences:\n" + "\n".join(cons_lines)
+            })
+            rank += 1
+
+    # 9. Detection Methods
+    detection_methods = getattr(entry, "DetectionMethods", None)
+    if detection_methods:
+        det_lines = []
+        for d in detection_methods:
+            core = (d.Method or "Detection").strip()
+            if d.Effectiveness:
+                core += f" [{d.Effectiveness}]"
+            if d.Description:
+                core += f": {d.Description}"
+            det_lines.append(f"- {core}")
+        if det_lines:
+            sections.append({
+                "section": "Detection", "section_rank": rank,
+                "text": "Detection Methods:\n" + "\n".join(det_lines)
+            })
+            rank += 1
+
+    # 10–12. Related Weaknesses split into Parents/Children and SeeAlso/MappedTo
+    if entry.RelatedWeaknesses:
+        parents_children = []
+        seealso_mapped = []
+        for w in entry.RelatedWeaknesses:
+            nature = (w.Nature or "").lower()
+            line = f"- {w.Nature or 'Related'}: CWE-{w.CweID}"
+            if "parent" in nature or "child" in nature:
+                parents_children.append(line)
+            else:
+                seealso_mapped.append(line)
+        if parents_children:
+            sections.append({
+                "section": "Parents_Children", "section_rank": rank,
+                "text": "Parent/Child Relationships:\n" + "\n".join(parents_children)
+            }); rank += 1
+        if seealso_mapped:
+            sections.append({
+                "section": "SeeAlso_MappedTo", "section_rank": rank,
+                "text": "See Also / Mapped To:\n" + "\n".join(seealso_mapped)
+            }); rank += 1
+
+    # 13. CAPEC (if available)
+    related_attack_patterns = getattr(entry, "RelatedAttackPatterns", None)
+    if related_attack_patterns:
+        cap_lines = []
+        for c in related_attack_patterns:
+            if c.CAPECID or c.Name:
+                cap_lines.append(f"- CAPEC-{c.CAPECID}: {c.Name}".strip(": "))
+        if cap_lines:
+            sections.append({
+                "section": "CAPEC", "section_rank": rank,
+                "text": "Related CAPEC Attack Patterns:\n" + "\n".join(cap_lines)
+            })
+            rank += 1
+
+    # 14. Alternate Terms
     if entry.AlternateTerms:
         term_texts = [term.Term for term in entry.AlternateTerms if term.Term]
         if term_texts:
@@ -105,7 +268,7 @@ def entry_to_sections(entry: "CWEEntry") -> List[SectionDict]:
                 "text": "; ".join(sorted(set(term_texts)))
             })
             rank += 1
-            
+
     return sections
 
 class CWEEntry(BaseModel):
@@ -122,6 +285,12 @@ class CWEEntry(BaseModel):
     PotentialMitigations: Optional[List[Mitigation]] = None
     MappingNotes: Optional[MappingNote] = None
     Notes: Optional[List[Note]] = None
+    # Newly modeled fields (optional; populated by parser when present)
+    CommonConsequences: Optional[List[Consequence]] = None
+    DetectionMethods: Optional[List[DetectionMethod]] = None
+    ModesOfIntroduction: Optional[List[ModeOfIntroduction]] = None
+    Prerequisites: Optional[List[str]] = None
+    RelatedAttackPatterns: Optional[List[CapecReference]] = None
 
     def to_searchable_text(self) -> str:
         """Converts the CWE entry into an optimized text block for high-quality embeddings."""
@@ -179,8 +348,13 @@ __all__ = [
     "ObservedExample",
     "RelatedWeakness",
     "Mitigation",
+    "Consequence",
+    "DetectionMethod",
+    "ModeOfIntroduction",
+    "CapecReference",
     "MappingNote",
     "Note",
     "CWEEntry",
-    "entry_to_sections",   # make discoverable to Pylance
+    "entry_to_sections",
+    "_split_text_into_chunks",
 ]

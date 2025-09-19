@@ -132,6 +132,11 @@ class CWEParser:
             'RelatedWeaknesses': self._extract_related_weaknesses(weak_elem, ns),
             'PotentialMitigations': self._extract_mitigations(weak_elem, ns),
             'MappingNotes': self._extract_mapping_notes(weak_elem, ns),
+            'CommonConsequences': self._extract_common_consequences(weak_elem, ns),
+            'DetectionMethods': self._extract_detection_methods(weak_elem, ns),
+            'ModesOfIntroduction': self._extract_modes_of_introduction(weak_elem, ns),
+            'Prerequisites': self._extract_prerequisites(weak_elem, ns),
+            'RelatedAttackPatterns': self._extract_capec(weak_elem, ns),
         }
 
     def _extract_alternate_terms(self, elem: Element, ns: str) -> List[dict]:
@@ -205,3 +210,63 @@ class CWEParser:
                 'Comments': _get_text(container, f'{ns}Comments'),
             }
         return None
+
+    def _extract_common_consequences(self, elem: Element, ns: str) -> List[dict]:
+        out = []
+        container = elem.find(f'{ns}Common_Consequences')
+        if container is not None:
+            for cc in container.findall(f'{ns}Consequence'):
+                out.append({
+                    'Scope': _get_text(cc, f'{ns}Scope'),
+                    'Impact': _get_text(cc, f'{ns}Impact'),
+                    'Note': _get_text(cc, f'{ns}Note')
+                })
+        return out
+
+    def _extract_detection_methods(self, elem: Element, ns: str) -> List[dict]:
+        out = []
+        container = elem.find(f'{ns}Detection_Methods')
+        if container is not None:
+            for dm in container.findall(f'{ns}Detection_Method'):
+                out.append({
+                    'Method': _get_text(dm, f'{ns}Method'),
+                    'Description': _get_text(dm, f'{ns}Description'),
+                    'Effectiveness': _get_text(dm, f'{ns}Effectiveness')
+                })
+        return out
+
+    def _extract_modes_of_introduction(self, elem: Element, ns: str) -> List[dict]:
+        out = []
+        container = elem.find(f'{ns}Modes_Of_Introduction')
+        if container is not None:
+            for mi in container.findall(f'{ns}Introduction'):
+                out.append({
+                    'Phase': _get_text(mi, f'{ns}Phase'),
+                    'Description': _get_text(mi, f'{ns}Description'),
+                    'Note': _get_text(mi, f'{ns}Note')
+                })
+        return out
+
+    def _extract_prerequisites(self, elem: Element, ns: str) -> List[str]:
+        out: List[str] = []
+        container = elem.find(f'{ns}Prerequisites')
+        if container is not None:
+            for p in container.findall(f'{ns}Prerequisite'):
+                t = _get_text(p)
+                if t:
+                    out.append(t)
+        return out
+
+    def _extract_capec(self, elem: Element, ns: str) -> List[dict]:
+        """
+        CAPEC references often appear under <Related_Attack_Patterns>.
+        """
+        out = []
+        container = elem.find(f'{ns}Related_Attack_Patterns')
+        if container is not None:
+            for ap in container.findall(f'{ns}Related_Attack_Pattern'):
+                out.append({
+                    'CAPECID': ap.get('CAPEC_ID'),
+                    'Name': ap.get('Name') or _get_text(ap)
+                })
+        return out

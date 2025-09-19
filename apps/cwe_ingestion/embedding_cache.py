@@ -48,9 +48,14 @@ class EmbeddingCache:
         with open(self.metadata_file, 'w') as f:
             json.dump(self.metadata, f, indent=2)
 
-    def _get_cache_key(self, cwe_id: str, embedder_type: str, model_name: str) -> str:
-        """Generate unique cache key for CWE embedding."""
-        key_data = f"{cwe_id}_{embedder_type}_{model_name}"
+    def _get_cache_key(self, cwe_id: str, embedder_type: str, model_name: str, section: str = "", section_rank: int = 0) -> str:
+        """Generate unique cache key for CWE embedding, optionally section-specific for chunked mode."""
+        if section:
+            # For chunked embeddings: include section and rank in key
+            key_data = f"{cwe_id}_{section}_{section_rank}_{embedder_type}_{model_name}"
+        else:
+            # For single embeddings: original format
+            key_data = f"{cwe_id}_{embedder_type}_{model_name}"
         return hashlib.md5(key_data.encode()).hexdigest()
 
     def _get_cache_filename(self, cache_key: str, cwe_id: str = None) -> Path:
@@ -62,9 +67,9 @@ class EmbeddingCache:
             # Fallback to original format
             return self.cache_dir / f"embedding_{cache_key}.pkl"
 
-    def has_embedding(self, cwe_id: str, embedder_type: str, model_name: str) -> bool:
+    def has_embedding(self, cwe_id: str, embedder_type: str, model_name: str, section: str = "", section_rank: int = 0) -> bool:
         """Check if embedding exists in cache."""
-        cache_key = self._get_cache_key(cwe_id, embedder_type, model_name)
+        cache_key = self._get_cache_key(cwe_id, embedder_type, model_name, section, section_rank)
         cache_file = self._get_cache_filename(cache_key, cwe_id)
 
         # Check both metadata and file existence
@@ -76,7 +81,9 @@ class EmbeddingCache:
     def save_embedding(self, cwe_data: Dict[str, Any], embedder_type: str, model_name: str) -> str:
         """Save CWE embedding to persistent cache."""
         cwe_id = cwe_data.get("cwe_id", "unknown")
-        cache_key = self._get_cache_key(cwe_id, embedder_type, model_name)
+        section = cwe_data.get("section", "")
+        section_rank = cwe_data.get("section_rank", 0)
+        cache_key = self._get_cache_key(cwe_id, embedder_type, model_name, section, section_rank)
         cache_file = self._get_cache_filename(cache_key, cwe_id)
 
         # Prepare data for serialization
@@ -114,9 +121,9 @@ class EmbeddingCache:
         logger.debug(f"Cached embedding for {cwe_id} ({embedder_type}/{model_name})")
         return cache_key
 
-    def load_embedding(self, cwe_id: str, embedder_type: str, model_name: str) -> Optional[Dict[str, Any]]:
+    def load_embedding(self, cwe_id: str, embedder_type: str, model_name: str, section: str = "", section_rank: int = 0) -> Optional[Dict[str, Any]]:
         """Load CWE embedding from persistent cache."""
-        cache_key = self._get_cache_key(cwe_id, embedder_type, model_name)
+        cache_key = self._get_cache_key(cwe_id, embedder_type, model_name, section, section_rank)
         cache_file = self._get_cache_filename(cache_key, cwe_id)
 
         if not cache_file.exists():

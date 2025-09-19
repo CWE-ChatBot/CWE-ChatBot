@@ -85,7 +85,11 @@ def ingest(target_cwes, only_cwes_file, embedding_model, embedder_type, chunked)
 @click.option('--w-fts', default=0.25, type=float, show_default=True)
 @click.option('--w-alias', default=0.10, type=float, show_default=True)
 @click.option('--boost-section', type=click.Choice(
-    ['Mitigations','Abstract','Extended','Examples','Related','Title','Aliases'], case_sensitive=False),
+    [
+        'Mitigations','Abstract','Extended','Examples','Title','Aliases',
+        'Prerequisites','Modes','Common_Consequences','Detection',
+        'Parents_Children','SeeAlso_MappedTo','CAPEC'
+    ], case_sensitive=False),
     default=None
 )
 def query(query_text, n_results, hybrid, chunked, w_vec, w_fts, w_alias, boost_section):
@@ -167,8 +171,16 @@ def query(query_text, n_results, hybrid, chunked, w_vec, w_fts, w_alias, boost_s
 
 def _infer_section_intent(q: str):
     ql = q.lower()
-    if any(k in ql for k in ["prevent","mitigat","remediat","fix"]):
+    if any(k in ql for k in ["prevent","mitigat","remediat","fix","defend","protect","sanitize","encode","parameterize","prepared statement"]):
         return "Mitigations"
+    if any(k in ql for k in ["detect","detection","identify","scan","rule","sast","dast","taint","find"]):
+        return "Detection"
+    if any(k in ql for k in ["impact","consequence","effect","result","damage"]):
+        return "Common_Consequences"
+    if any(k in ql for k in ["prereq","prerequisite","precondition","when possible","requires","needed"]):
+        return "Prerequisites"
+    if any(k in ql for k in ["introduced during","mode of introduction","requirements phase","design phase","implementation phase"]):
+        return "Modes"
     return None
 
 @cli.command()
