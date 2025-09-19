@@ -9,9 +9,9 @@ def test_postgres_vector_store_class_exists():
     """Test PostgresVectorStore class can be imported and instantiated."""
     from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-    store = PostgresVectorStore(dims=384)
+    store = PostgresVectorStore(dims=3072)
     assert store is not None
-    assert store.dims == 384
+    assert store.dims == 3072
 
 
 @pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
@@ -19,9 +19,9 @@ def test_postgres_vector_store_configuration():
     """Test PostgresVectorStore initializes with correct configuration."""
     from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-    store = PostgresVectorStore(table="cwe_embeddings", dims=384)
+    store = PostgresVectorStore(table="cwe_embeddings", dims=3072)
     assert store.table == "cwe_embeddings"
-    assert store.dims == 384
+    assert store.dims == 3072
 
 
 @pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
@@ -29,7 +29,7 @@ def test_store_and_query_cwe_data():
     """Test that PostgresVectorStore can store and query CWE data."""
     from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-    store = PostgresVectorStore(dims=384)
+    store = PostgresVectorStore(dims=3072)
 
     # Sample CWE data
     cwe_doc = {
@@ -40,7 +40,7 @@ def test_store_and_query_cwe_data():
         'status': 'Stable',
         'full_text': 'CWE-79: Cross-site Scripting. XSS vulnerability description...',
         'alternate_terms_text': 'XSS; Cross Site Scripting',
-        'embedding': np.random.rand(384).astype(np.float32)
+        'embedding': np.random.rand(3072).astype(np.float32)
     }
 
     # Store the document
@@ -48,7 +48,7 @@ def test_store_and_query_cwe_data():
     assert result == 1
 
     # Query with similar embedding
-    query_embedding = np.random.rand(384).astype(np.float32)
+    query_embedding = np.random.rand(3072).astype(np.float32)
     results = store.query_similar(query_embedding, n_results=5)
 
     assert isinstance(results, list)
@@ -68,7 +68,7 @@ def test_store_batch_cwe_data():
     """Test batch storage of multiple CWE entries."""
     from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-    store = PostgresVectorStore(dims=384)
+    store = PostgresVectorStore(dims=3072)
 
     # Sample CWE batch data
     cwe_batch = [
@@ -80,7 +80,7 @@ def test_store_batch_cwe_data():
             'status': 'Stable',
             'full_text': 'CWE-89: SQL Injection...',
             'alternate_terms_text': 'SQLi; SQL Injection Attack',
-            'embedding': np.random.rand(384).astype(np.float32)
+            'embedding': np.random.rand(3072).astype(np.float32)
         },
         {
             'id': 'CWE-22',
@@ -90,7 +90,7 @@ def test_store_batch_cwe_data():
             'status': 'Stable',
             'full_text': 'CWE-22: Path Traversal...',
             'alternate_terms_text': 'Directory Traversal; Dot Dot Slash',
-            'embedding': np.random.rand(384).astype(np.float32)
+            'embedding': np.random.rand(3072).astype(np.float32)
         }
     ]
 
@@ -103,7 +103,7 @@ def test_hybrid_query():
     """Test hybrid querying with vector and FTS."""
     from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-    store = PostgresVectorStore(dims=384)
+    store = PostgresVectorStore(dims=3072)
 
     # Store test data
     cwe_doc = {
@@ -114,13 +114,13 @@ def test_hybrid_query():
         'status': 'Stable',
         'full_text': 'The software constructs system commands using external input',
         'alternate_terms_text': 'Command Injection; Shell Injection',
-        'embedding': np.random.rand(384).astype(np.float32)
+        'embedding': np.random.rand(3072).astype(np.float32)
     }
 
     store.store_batch([cwe_doc])
 
     # Test hybrid query
-    query_embedding = np.random.rand(384).astype(np.float32)
+    query_embedding = np.random.rand(3072).astype(np.float32)
     results = store.query_hybrid(
         query_text="command injection",
         query_embedding=query_embedding,
@@ -147,7 +147,7 @@ def test_vector_store_collection_stats():
     """Test that PostgresVectorStore can provide collection statistics."""
     from apps.cwe_ingestion.pg_vector_store import PostgresVectorStore
 
-    store = PostgresVectorStore(dims=384)
+    store = PostgresVectorStore(dims=3072)
 
     # Should be able to get stats
     stats = store.get_collection_stats()

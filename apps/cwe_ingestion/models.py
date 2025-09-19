@@ -98,6 +98,75 @@ def _split_text_into_chunks(text: str, target_tokens: int = 500, max_tokens: int
         chunks[-1] = (chunks[-1] + " " + last).strip()
     return [c for c in chunks if c]
 
+def _split_text_into_chunks_tiktoken(
+    text: str,
+    model_name: str = "cl100k_base",
+    target_tokens: int = 400,
+    max_tokens: int = 512,
+    overlap: int = 50,
+) -> List[str]:
+    """Tokenizer-aware chunker using tiktoken if available.
+
+    Falls back to the regex/word-based chunker when tiktoken is unavailable
+    or an error occurs.
+    """
+    if not text:
+        return []
+
+    try:
+        import tiktoken  # type: ignore[reportMissingImports]
+
+        try:
+            encoding = tiktoken.get_encoding(model_name)
+        except Exception:
+            encoding = tiktoken.get_encoding("cl100k_base")
+
+        tokens = encoding.encode(text)
+        if len(tokens) <= max_tokens:
+            return [text]
+
+        chunks: List[str] = []
+        step = max(1, target_tokens - overlap)
+        for i in range(0, len(tokens), step):
+            chunk_tokens = tokens[i : i + target_tokens]
+            if not chunk_tokens:
+                break
+            chunk_text = encoding.decode(chunk_tokens).strip()
+            if chunk_text:
+                chunks.append(chunk_text)
+
+        # Merge small trailing chunk into previous
+        if len(chunks) > 1:
+            last = chunks[-1]
+            if len(encoding.encode(last)) < int(target_tokens * 0.2):
+                chunks[-2] = (chunks[-2] + " " + last).strip()
+                chunks.pop()
+
+        return [c for c in chunks if c]
+
+    except Exception:
+        # Graceful fallback
+        return _split_text_into_chunks(
+            text, target_tokens=target_tokens, max_tokens=max_tokens, overlap=overlap
+        )
+
+def _split_text_chunks_adaptive(
+    text: str,
+    *,
+    target_tokens: int,
+    max_tokens: int,
+    overlap: int,
+    tokenizer_model: str = "cl100k_base",
+) -> List[str]:
+    """Try tokenizer-aware chunking; fallback to regex/word-based splitter."""
+    return _split_text_into_chunks_tiktoken(
+        text,
+        model_name=tokenizer_model,
+        target_tokens=target_tokens,
+        max_tokens=max_tokens,
+        overlap=overlap,
+    )
+
 def entry_to_sections(entry: "CWEEntry") -> List[SectionDict]:
     """Converts a CWEEntry into a list of dictionaries for chunking.
     Includes adaptive sub-chunking for long sections and additional CWE fields.
@@ -122,7 +191,12 @@ def entry_to_sections(entry: "CWEEntry") -> List[SectionDict]:
 
     # 3. Extended Description
     if entry.ExtendedDescription:
-        ext_chunks = _split_text_into_chunks(entry.ExtendedDescription, target_tokens=500, max_tokens=750, overlap=50)
+        ext_chunks = _split_text_chunks_adaptive(
+            entry.ExtendedDescription,
+            target_tokens=500,
+            max_tokens=750,
+            overlap=50,
+        )
         for ch in ext_chunks:
             sections.append({
                 "section": "Extended", "section_rank": rank,
@@ -142,7 +216,9 @@ def entry_to_sections(entry: "CWEEntry") -> List[SectionDict]:
                 f"- {mi.Strategy or ''}: {mi.Description}".strip()
                 for mi in items if (mi.Description or mi.Strategy)
             )
-            for ch in _split_text_into_chunks(text, target_tokens=450, max_tokens=700, overlap=40):
+            for ch in _split_text_chunks_adaptive(
+                text, target_tokens=450, max_tokens=700, overlap=40
+            ):
                 sections.append({
                     "section": "Mitigations", "section_rank": rank,
                     "text": ch
@@ -153,7 +229,9 @@ def entry_to_sections(entry: "CWEEntry") -> List[SectionDict]:
     if entry.ObservedExamples:
         example_texts = [f"- {ex.Reference}: {ex.Description}" for ex in entry.ObservedExamples]
         examples_blob = "Real-World Examples (CVEs):\n" + "\n".join(example_texts)
-        for ch in _split_text_into_chunks(examples_blob, target_tokens=450, max_tokens=700, overlap=25):
+        for ch in _split_text_chunks_adaptive(
+            examples_blob, target_tokens=450, max_tokens=700, overlap=25
+        ):
             sections.append({
                 "section": "Examples", "section_rank": rank,
                 "text": ch
@@ -357,4 +435,6 @@ __all__ = [
     "CWEEntry",
     "entry_to_sections",
     "_split_text_into_chunks",
+    "_split_text_into_chunks_tiktoken",
+    "_split_text_chunks_adaptive",
 ]

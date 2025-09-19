@@ -105,9 +105,13 @@ class PostgresChunkStore:
         if is_gcp_iam:
             logger.info("Detected Google Cloud SQL IAM authentication format.")
             # For Google Cloud SQL with IAM, add specific connection parameters
+            # Check if sslmode is explicitly set in URL parameters
+            query_params = urllib.parse.parse_qs(parsed.query)
+            sslmode = query_params.get('sslmode', ['require'])[0]  # Default to require, but allow override
+
             return {
                 "conninfo": database_url,
-                "sslmode": "require",  # Google Cloud SQL requires SSL
+                "sslmode": sslmode,  # Respect URL parameter for sslmode
                 "connect_timeout": 10,
                 # IAM authentication is handled by the psycopg driver
                 # when no password is provided and IAM credentials are available
@@ -157,6 +161,11 @@ class PostgresChunkStore:
             cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_section_idx ON cwe_chunks(section, section_rank);")
             cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_tsv_gin ON cwe_chunks USING GIN (tsv);")
             cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS cwe_chunks_unique ON cwe_chunks (cwe_id, section, section_rank);")
+            # Trigram index for alias similarity matching
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_alias_trgm ON cwe_chunks USING GIN (lower(alternate_terms_text) gin_trgm_ops);")
+            except Exception:
+                logger.warning("Could not create trigram index for alternate_terms_text; continuing")
 
             # Create vector index - try HNSW first, fall back to IVFFlat
             try:
@@ -272,11 +281,14 @@ class PostgresChunkStore:
         query_embedding: np.ndarray,
         k_vec: int = 100,
         limit_chunks: int = 20,
-        w_vec: float = 0.6,
-        w_fts: float = 0.25,
-        w_alias: float = 0.10,
+        w_vec: float = 0.6,  # unused in RRF fusion (kept for API compat)
+        w_fts: float = 0.25,  # unused in RRF fusion (kept for API compat)
+        w_alias: float = 0.10,  # unused in RRF fusion (kept for API compat)
         section_intent_boost: Optional[str] = None,  # e.g., 'Mitigations'
         section_boost_value: float = 0.15,
+        fts_k: Optional[int] = None,
+        k_rrf: int = 60,
+        alias_k: Optional[int] = None,
     ) -> List[Dict]:
         """
         Returns top chunk rows scored by hybrid. Caller can group by cwe_id to present.
@@ -286,57 +298,95 @@ class PostgresChunkStore:
             query_embedding = query_embedding.tolist()
 
         section = (section_intent_boost or "").strip()
-        sql = f"""
-        WITH vec AS (
-          SELECT id, cwe_id, section, section_rank, name, full_text, alternate_terms_text,
-                 embedding <=> %s::vector AS cos_dist
-            FROM cwe_chunks
-        ORDER BY embedding <=> %s::vector
-           LIMIT %s
+        vec_k = int(k_vec)
+        fts_k_eff = int(fts_k if fts_k is not None else vec_k)
+
+        # Reciprocal Rank Fusion (RRF) over vector KNN and FTS candidate pools.
+        # Keeps both pools via UNION ALL and aggregates per chunk id.
+        sql = """
+        WITH MATERIALIZED vec_search AS (
+          SELECT id,
+                 ROW_NUMBER() OVER (ORDER BY embedding <=> %s::vector) AS rnk_v
+          FROM   cwe_chunks
+          ORDER  BY embedding <=> %s::vector
+          LIMIT  %s
         ),
-        fts AS (
-          SELECT id, ts_rank(tsv, websearch_to_tsquery('english', %s)) AS fts_rank
-            FROM cwe_chunks
-           WHERE tsv @@ websearch_to_tsquery('english', %s)
+        MATERIALIZED fts_search AS (
+          SELECT id,
+                 ROW_NUMBER() OVER (
+                   ORDER BY ts_rank(tsv, websearch_to_tsquery('english', %s)) DESC
+                 ) AS rnk_f
+          FROM   cwe_chunks
+          WHERE  tsv @@ websearch_to_tsquery('english', %s)
+          LIMIT  %s
         ),
-        joined AS (
-          SELECT v.*, COALESCE(f.fts_rank, 0) AS fts_rank,
-                 GREATEST(
-                   similarity(lower(v.alternate_terms_text), lower(%s)),
-                   similarity(lower(regexp_replace(v.alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
-                 ) AS alias_sim
-            FROM vec v
-       LEFT JOIN fts f USING (id)
+        MATERIALIZED alias_search AS (
+          SELECT id,
+                 ROW_NUMBER() OVER (
+                   ORDER BY GREATEST(
+                     similarity(lower(alternate_terms_text), lower(%s)),
+                     similarity(lower(regexp_replace(alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
+                   ) DESC
+                 ) AS rnk_a
+          FROM   cwe_chunks
+          WHERE  alternate_terms_text <> ''
+          ORDER  BY GREATEST(
+                     similarity(lower(alternate_terms_text), lower(%s)),
+                     similarity(lower(regexp_replace(alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
+                   ) DESC
+          LIMIT  %s
         ),
-        scored AS (
-          SELECT *,
-                 COALESCE(1 - (cos_dist / NULLIF((SELECT MAX(cos_dist) FROM joined), 0)), 0) AS vec_sim_norm,
-                 COALESCE(fts_rank / NULLIF((SELECT MAX(fts_rank) FROM joined), 0), 0) AS fts_norm,
-                 COALESCE(alias_sim / NULLIF((SELECT MAX(alias_sim) FROM joined), 0), 0) AS alias_norm,
-                 CASE
-                   WHEN %s <> '' AND section = %s THEN %s
-                   ELSE 0
-                 END AS section_boost
-            FROM joined
+        unioned AS (
+          SELECT id, rnk_v AS rnk FROM vec_search
+          UNION ALL
+          SELECT id, rnk_f AS rnk FROM fts_search
+          UNION ALL
+          SELECT id, rnk_a AS rnk FROM alias_search
+        ),
+        rrf AS (
+          SELECT id,
+                 SUM(1.0 / (%s + rnk)) AS rrf_score
+          FROM   unioned
+          GROUP  BY id
         )
-        SELECT id, cwe_id, section, section_rank, name, full_text,
-               vec_sim_norm, fts_norm, alias_norm, section_boost,
-               (%s * COALESCE(vec_sim_norm,0)) +
-               (%s * COALESCE(fts_norm,0)) +
-               (%s * COALESCE(alias_norm,0)) +
-               section_boost
-               AS hybrid_score
-          FROM scored
-      ORDER BY hybrid_score DESC NULLS LAST, section_rank ASC
-         LIMIT %s;
+        SELECT c.id,
+               c.cwe_id,
+               c.section,
+               c.section_rank,
+               c.name,
+               c.full_text,
+               (rrf.rrf_score +
+                CASE WHEN %s <> '' AND c.section = %s THEN %s ELSE 0 END
+               ) AS score,
+               v.rnk_v,
+               f.rnk_f,
+               a.rnk_a
+        FROM   rrf
+        JOIN   cwe_chunks c USING (id)
+        LEFT JOIN vec_search v USING (id)
+        LEFT JOIN fts_search f USING (id)
+        LEFT JOIN alias_search a USING (id)
+        ORDER  BY score DESC NULLS LAST, c.section_rank ASC
+        LIMIT  %s;
         """
+        alias_k_eff = int(alias_k if alias_k is not None else vec_k)
         params = (
-            query_embedding, query_embedding, k_vec,
-            query_text, query_text,
-            query_text, query_text,
-            section, section, section_boost_value,
-            w_vec, w_fts, w_alias,
-            limit_chunks
+            query_embedding,
+            query_embedding,
+            vec_k,
+            query_text,
+            query_text,
+            fts_k_eff,
+            query_text,
+            query_text,
+            query_text,
+            query_text,
+            alias_k_eff,
+            k_rrf,
+            section,
+            section,
+            section_boost_value,
+            limit_chunks,
         )
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
@@ -344,22 +394,27 @@ class PostgresChunkStore:
 
         results: List[Dict] = []
         for r in rows:
+            chunk_id, cwe_id, section_name, section_rank, name, full_text, score, rnk_v, rnk_f, rnk_a = r
+            # Approximate per-source contributions using RRF components
+            vec_contrib = (1.0 / (k_rrf + rnk_v)) if rnk_v is not None else 0.0
+            fts_contrib = (1.0 / (k_rrf + rnk_f)) if rnk_f is not None else 0.0
+            alias_contrib = (1.0 / (k_rrf + rnk_a)) if rnk_a is not None else 0.0
+
             results.append({
-                "chunk_id": str(r[0]),
+                "chunk_id": str(chunk_id),
                 "metadata": {
-                    "cwe_id": r[1],
-                    "section": r[2],
-                    "section_rank": r[3],
-                    "name": r[4],
+                    "cwe_id": cwe_id,
+                    "section": section_name,
+                    "section_rank": section_rank,
+                    "name": name,
                 },
-                "document": r[5],
+                "document": full_text,
                 "scores": {
-                    "vec": float(r[6]) if r[6] is not None else 0.0,
-                    "fts": float(r[7]) if r[7] is not None else 0.0,
-                    "alias": float(r[8]) if r[8] is not None else 0.0,
-                    "section_boost": float(r[9]) if r[9] is not None else 0.0,
-                    "hybrid": float(r[10]),
-                }
+                    "vec": float(vec_contrib),
+                    "fts": float(fts_contrib),
+                    "alias": float(alias_contrib),
+                    "hybrid": float(score),
+                },
             })
         return results
 

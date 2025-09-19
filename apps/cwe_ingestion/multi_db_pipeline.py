@@ -17,6 +17,7 @@ try:
     from .pg_vector_store import PostgresVectorStore
     from .pg_chunk_store import PostgresChunkStore
     from .models import entry_to_sections
+    from .embedding_cache import EmbeddingCache
 except ImportError:
     # Absolute imports (when run directly)
     from downloader import CWEDownloader
@@ -25,6 +26,7 @@ except ImportError:
     from pg_vector_store import PostgresVectorStore
     from pg_chunk_store import PostgresChunkStore
     from models import entry_to_sections
+    from embedding_cache import EmbeddingCache
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,7 @@ class MultiDatabaseCWEPipeline:
         source_url: str = "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip",
         embedder_type: str = "local",
         embedding_model: str = "all-MiniLM-L6-v2",
+        cache_dir: str = "cwe_embeddings_cache_shared",
     ):
         self.database_targets = database_targets
         self.target_cwes = target_cwes
@@ -78,6 +81,11 @@ class MultiDatabaseCWEPipeline:
             self.embedder = CWEEmbedder(model_name=embedding_model)
             self.embedding_dim = self.embedder.get_embedding_dimension()
             logger.info(f"Initialized local embedder '{embedding_model}' ({self.embedding_dim}-D) for multi-database ingestion.")
+
+        # Initialize embedding cache
+        self.cache = EmbeddingCache(cache_dir)
+        self.embedder_type_str = embedder_type
+        self.model_name = "gemini-embedding-001" if embedder_type == "gemini" else embedding_model
 
         # Core components
         self.downloader = CWEDownloader(source_url=self.source_url)
@@ -197,31 +205,78 @@ class MultiDatabaseCWEPipeline:
         return documents_to_store
 
     def _generate_chunked_embeddings(self, cwe_entries) -> List[Dict[str, Any]]:
-        """Generate embeddings for chunked storage mode."""
+        """Generate embeddings for chunked storage mode using cache-first strategy."""
         chunk_payloads: List[Dict[str, Any]] = []
+        cache_hits = 0
+        cache_misses = 0
+        new_embeddings_generated = 0
 
         for entry in cwe_entries:
             sections = entry_to_sections(entry)
             if not sections:
                 continue
 
-            texts = [s["text"] for s in sections]
-            embs = self.embedder.embed_batch(texts)
-
             alias_line = ""
             if getattr(entry, "AlternateTerms", None):
                 alias_line = "; ".join(sorted({t.Term for t in entry.AlternateTerms if getattr(t, "Term", None)}))
 
-            for s, emb in zip(sections, embs):
-                chunk_payloads.append({
-                    "cwe_id": f"CWE-{entry.ID}",
+            # Process each section with cache-first strategy
+            for s in sections:
+                cwe_id = f"CWE-{entry.ID}"
+                section_data = {
+                    "cwe_id": cwe_id,
                     "section": s["section"],
                     "section_rank": s["section_rank"],
                     "name": entry.Name,
                     "full_text": s["text"],
                     "alternate_terms_text": s["text"] if s["section"] == "Aliases" else alias_line,
-                    "embedding": emb,
-                })
+                }
+
+                # Check cache first for this specific section
+                if self.cache.has_embedding(cwe_id, self.embedder_type_str, self.model_name, s["section"], s["section_rank"]):
+                    # Load section-specific embedding from cache
+                    try:
+                        cached_data = self.cache.load_embedding(cwe_id, self.embedder_type_str, self.model_name, s["section"], s["section_rank"])
+                        if cached_data and 'embedding' in cached_data:
+                            section_data["embedding"] = cached_data['embedding']
+                            cache_hits += 1
+                        else:
+                            # Cache lookup failed, generate new embedding
+                            embedding = self.embedder.embed_text(s["text"])
+                            section_data["embedding"] = embedding
+                            cache_misses += 1
+                            new_embeddings_generated += 1
+
+                            # Save to cache immediately
+                            cache_data = section_data.copy()
+                            self.cache.save_embedding(cache_data, self.embedder_type_str, self.model_name)
+
+                    except Exception as e:
+                        logger.warning(f"Cache load failed for {cwe_id}/{s['section']}: {e}, generating new embedding")
+                        # Generate new embedding
+                        embedding = self.embedder.embed_text(s["text"])
+                        section_data["embedding"] = embedding
+                        cache_misses += 1
+                        new_embeddings_generated += 1
+
+                        # Save to cache immediately
+                        cache_data = section_data.copy()
+                        self.cache.save_embedding(cache_data, self.embedder_type_str, self.model_name)
+                else:
+                    # Not in cache, generate new embedding
+                    embedding = self.embedder.embed_text(s["text"])
+                    section_data["embedding"] = embedding
+                    cache_misses += 1
+                    new_embeddings_generated += 1
+
+                    # Save to cache immediately
+                    cache_data = section_data.copy()
+                    self.cache.save_embedding(cache_data, self.embedder_type_str, self.model_name)
+
+                chunk_payloads.append(section_data)
+
+        logger.info(f"✅ Cache performance: {cache_hits} hits, {cache_misses} misses")
+        logger.info(f"💰 Cost savings: Generated only {new_embeddings_generated} new embeddings")
 
         return chunk_payloads
 

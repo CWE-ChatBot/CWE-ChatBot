@@ -55,10 +55,10 @@ def test_multi_database_setup():
             # Import appropriate store class
             if target.use_chunked:
                 from pg_chunk_store import PostgresChunkStore
-                store = PostgresChunkStore(dims=384, database_url=target.database_url)
+                store = PostgresChunkStore(dims=3072, database_url=target.database_url)
             else:
                 from pg_vector_store import PostgresVectorStore
-                store = PostgresVectorStore(table="cwe_embeddings", dims=384, database_url=target.database_url)
+                store = PostgresVectorStore(table="cwe_embeddings", dims=3072, database_url=target.database_url)
 
             # Test connection
             stats = store.get_collection_stats()

@@ -18,7 +18,7 @@ def test_postgres_connection():
         from pg_vector_store import PostgresVectorStore
 
         print("🔍 Testing PostgreSQL connection...")
-        store = PostgresVectorStore(dims=384)
+        store = PostgresVectorStore(dims=3072)
 
         stats = store.get_collection_stats()
         print(f"✅ PostgreSQL connection successful!")
@@ -40,10 +40,10 @@ def test_pgvector_extension():
         from pg_vector_store import PostgresVectorStore
 
         print("\n🔍 Testing pgvector extension...")
-        store = PostgresVectorStore(dims=384)
+        store = PostgresVectorStore(dims=3072)
 
         # Test with a dummy embedding
-        dummy_embedding = np.random.rand(384).astype(np.float32)
+        dummy_embedding = np.random.rand(3072).astype(np.float32)
         test_doc = {
             "id": "CWE-TEST",
             "cwe_id": "CWE-TEST",
@@ -79,9 +79,9 @@ def test_hybrid_retrieval():
         from pg_vector_store import PostgresVectorStore
 
         print("\n🔍 Testing hybrid retrieval...")
-        store = PostgresVectorStore(dims=384)
+        store = PostgresVectorStore(dims=3072)
 
-        dummy_embedding = np.random.rand(384).astype(np.float32)
+        dummy_embedding = np.random.rand(3072).astype(np.float32)
 
         # Test hybrid query
         results = store.query_hybrid(

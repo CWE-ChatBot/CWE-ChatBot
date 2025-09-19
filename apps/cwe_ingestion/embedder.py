@@ -4,10 +4,10 @@ Local embedding model for CWE text using sentence transformers.
 Handles optional dependency gracefully.
 Story 1.4: Added Gemini API integration for state-of-the-art embeddings.
 """
+import asyncio
 import logging
 import os
-from typing import List, Optional
-import asyncio
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 
@@ -55,7 +55,7 @@ class CWEEmbedder:
         self.model_name = model_name
         self.is_local_model = True
         self.api_key = None  # No API key needed for local model
-        self.model = None
+        self.model: Optional[Any] = None
         self.embedding_dimension = 384  # Default for MiniLM
 
         try:
@@ -73,7 +73,7 @@ class CWEEmbedder:
 
     def _load_model(self):
         """Load the sentence transformer model."""
-        from sentence_transformers import SentenceTransformer
+        from sentence_transformers import SentenceTransformer  # type: ignore[reportMissingImports]
         self.model = SentenceTransformer(self.model_name)
         self.embedding_dimension = self.model.get_sentence_embedding_dimension()
 
@@ -126,7 +126,7 @@ class CWEEmbedder:
         """Helper to run embedding tasks concurrently."""
         # A semaphore can be used to limit concurrency to avoid rate limiting
         # e.g., semaphore = asyncio.Semaphore(10)
-        
+
         tasks = [self._embed_single_with_retry(text) for text in texts]
         embeddings = await asyncio.gather(*tasks)
         return embeddings
@@ -145,7 +145,7 @@ class CWEEmbedder:
                 if attempt == retries - 1:
                     # Return zero vector on final failure
                     return np.zeros(self.embedding_dimension, dtype=np.float32)
-                await asyncio.sleep(2**attempt) # Exponential backoff
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
         # Should not be reached, but for type safety
         return np.zeros(self.embedding_dimension, dtype=np.float32)
 
@@ -189,13 +189,21 @@ class GeminiEmbedder:
         # Store only masked version for error handling
         self.api_key_masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "[PROTECTED]"
         self.is_local_model = False
-        self.embedding_dimension = 3072  # gemini-embedding-001 default
+        self.embedding_dimension = 3072  # Requested 3072D for enhanced semantic precision
 
         # Configure the Gemini API
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)  # Use raw key for configuration
-            self.genai = genai
+            # Optional dependency; ignore Pylance missing import in environments
+            # where google-generativeai isn't installed.
+            import google.generativeai as genai  # type: ignore[reportMissingImports]
+            # Avoid private/exported attribute warnings by using getattr.
+            configure_fn = getattr(genai, "configure", None)
+            if callable(configure_fn):
+                configure_fn(api_key=api_key)
+            else:
+                # Fallback: library also reads GOOGLE_API_KEY from env
+                os.environ["GOOGLE_API_KEY"] = api_key
+            self.genai: Any = genai
             logger.info("Gemini API configured successfully")
         except ImportError as e:
             logger.error(f"Failed to import google.generativeai: {e}")
@@ -236,15 +244,20 @@ class GeminiEmbedder:
                 logger.warning("Text truncated to 100k characters")
                 sanitized_text = sanitized_text[:100000]
 
-            # Make API call with correct format for gemini-embedding-001
-            result = self.genai.embed_content(
-                model="models/embedding-001",
-                content=sanitized_text,
-                output_dimensionality=3072
+            # Make API call with gemini-embedding-001 (native 3072D support)
+            result: Any = self.genai.embed_content(
+                model="models/gemini-embedding-001",
+                content=sanitized_text
             )
 
             # Extract embedding from response
-            embedding_list = result['embedding']
+            # google-generativeai typically returns {'embedding': {'values': [...]}}
+            embedding_payload: Any = result.get('embedding') if hasattr(result, 'get') else result['embedding']
+            embedding_list = (
+                embedding_payload.get('values')
+                if isinstance(embedding_payload, dict) and 'values' in embedding_payload
+                else embedding_payload
+            )
             embedding = np.array(embedding_list, dtype=np.float32)
 
             # Validate dimension
@@ -339,9 +352,12 @@ class GeminiEmbedder:
         import concurrent.futures
         import time
 
-        embeddings = [None] * len(texts)
+        # Initialize with zero vectors to keep types consistent for Pylance
+        embeddings: List[np.ndarray] = [
+            np.zeros(self.embedding_dimension, dtype=np.float32) for _ in texts
+        ]
 
-        def embed_with_retry(args):
+        def embed_with_retry(args: Tuple[int, str]) -> Tuple[int, np.ndarray, Optional[Exception]]:
             index, text = args
             max_retries = 3
             base_delay = 0.1
@@ -358,9 +374,20 @@ class GeminiEmbedder:
                 except Exception as e:
                     if attempt == max_retries - 1:
                         logger.error(f"Failed to embed text {index} after {max_retries} attempts: {e}")
-                        return (index, np.zeros(self.embedding_dimension, dtype=np.float32), e)
+                        return (
+                            index,
+                            np.zeros(self.embedding_dimension, dtype=np.float32),
+                            e,
+                        )
                     else:
                         logger.warning(f"Embedding attempt {attempt + 1} failed for text {index}: {e}")
+
+            # Fallback to satisfy type checker; should be unreachable
+            return (
+                index,
+                np.zeros(self.embedding_dimension, dtype=np.float32),
+                None,
+            )
 
         # Process in parallel with controlled concurrency
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

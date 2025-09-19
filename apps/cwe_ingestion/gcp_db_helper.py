@@ -60,7 +60,7 @@ def test_iam_auth(database_url):
         from pg_vector_store import PostgresVectorStore
 
         click.echo("📡 Attempting connection...")
-        store = PostgresVectorStore(dims=384, database_url=database_url)
+        store = PostgresVectorStore(dims=3072, database_url=database_url)
 
         click.echo("📊 Getting database statistics...")
         stats = store.get_collection_stats()
