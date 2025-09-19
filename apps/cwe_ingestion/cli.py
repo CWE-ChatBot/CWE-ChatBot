@@ -31,13 +31,43 @@ def cli(debug):
 
 @cli.command()
 @click.option('--target-cwes', '-c', multiple=True, help='Specific CWE IDs to ingest (e.g., CWE-79)')
+@click.option('--only-cwes-file', type=click.Path(exists=True), help='Path to file with one CWE id per line')
 @click.option('--embedding-model', '-m', default='all-MiniLM-L6-v2', help='Local model name when --embedder-type=local')
 @click.option('--embedder-type', '-e', default='local', type=click.Choice(['local', 'gemini'], case_sensitive=False))
 @click.option('--chunked/--single', default=True, help='Store as chunked rows (recommended)')
-def ingest(target_cwes, embedding_model, embedder_type, chunked):
+def ingest(target_cwes, only_cwes_file, embedding_model, embedder_type, chunked):
     """Run the complete CWE ingestion pipeline (Postgres-only)."""
+
+    # ---- Merge inline -c with file-based list (optional) ----
+    targets_list = []
+
+    # First, normalize and add inline target_cwes
+    for tid in target_cwes:
+        tid = tid.strip()
+        if tid and not tid.upper().startswith("CWE-"):
+            tid = f"CWE-{tid}"
+        if tid:
+            targets_list.append(tid)
+
+    # Then, add from file
+    if only_cwes_file:
+        with open(only_cwes_file, "r", encoding="utf-8") as f:
+            for line in f:
+                tid = line.strip()
+                if not tid or tid.startswith('#'):  # Skip empty lines and comments
+                    continue
+                # accept "79" or "CWE-79"
+                if not tid.upper().startswith("CWE-"):
+                    tid = f"CWE-{tid}"
+                targets_list.append(tid)
+
+    # de-dupe while preserving order
+    seen = set()
+    targets_list = [x for x in targets_list if not (x in seen or seen.add(x))]
+    # ---------------------------------------------------------------
+
     pipeline = CWEIngestionPipeline(
-        target_cwes=list(target_cwes) if target_cwes else None,
+        target_cwes=targets_list if targets_list else None,
         embedding_model=embedding_model,
         embedder_type=embedder_type,
         use_chunked=chunked
@@ -189,11 +219,12 @@ def stats(chunked):
 
 @cli.command()
 @click.option('--target-cwes', '-c', multiple=True, help='Specific CWE IDs to ingest (e.g., CWE-79)')
+@click.option('--only-cwes-file', type=click.Path(exists=True), help='Path to file with one CWE id per line')
 @click.option('--embedding-model', '-m', default='all-MiniLM-L6-v2', help='Local model name when --embedder-type=local')
 @click.option('--embedder-type', '-e', default='local', type=click.Choice(['local', 'gemini'], case_sensitive=False))
 @click.option('--local-chunked/--local-single', default=True, help='Local database storage mode')
 @click.option('--prod-chunked/--prod-single', default=True, help='Production database storage mode')
-def ingest_multi(target_cwes, embedding_model, embedder_type, local_chunked, prod_chunked):
+def ingest_multi(target_cwes, only_cwes_file, embedding_model, embedder_type, local_chunked, prod_chunked):
     """
     Run CWE ingestion to multiple databases with embeddings generated once.
 
@@ -204,6 +235,18 @@ def ingest_multi(target_cwes, embedding_model, embedder_type, local_chunked, pro
     Examples:
     LOCAL_DATABASE_URL='postgresql://postgres:password@localhost:5432/cwe'
     PROD_DATABASE_URL='postgresql://username@project:region:instance/dbname'  # Google Cloud SQL IAM
+
+    File format (--only-cwes-file):
+    79
+    CWE-89
+    22
+
+    Usage examples:
+    # Process only changed CWEs from file
+    poetry run python cli.py ingest-multi --only-cwes-file changed.txt --embedder-type gemini
+
+    # Mix file + inline flags (deduped, order preserved)
+    poetry run python cli.py ingest-multi --only-cwes-file changed.txt -c CWE-352 -c 434
 
     This command generates embeddings once and stores them in both databases,
     significantly reducing costs when using Gemini embeddings.
@@ -228,10 +271,42 @@ def ingest_multi(target_cwes, embedding_model, embedder_type, local_chunked, pro
             elif target.name == "production":
                 target.use_chunked = prod_chunked
 
+        # ---- NEW: merge inline -c with file-based list (optional) ----
+        targets_list = []
+
+        # First, normalize and add inline target_cwes
+        for tid in target_cwes:
+            tid = tid.strip()
+            if tid and not tid.upper().startswith("CWE-"):
+                tid = f"CWE-{tid}"
+            if tid:
+                targets_list.append(tid)
+
+        # Then, add from file
+        if only_cwes_file:
+            with open(only_cwes_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    tid = line.strip()
+                    if not tid or tid.startswith('#'):  # Skip empty lines and comments
+                        continue
+                    # accept "79" or "CWE-79"
+                    if not tid.upper().startswith("CWE-"):
+                        tid = f"CWE-{tid}"
+                    targets_list.append(tid)
+
+        # de-dupe while preserving order
+        seen = set()
+        targets_list = [x for x in targets_list if not (x in seen or seen.add(x))]
+        # ---------------------------------------------------------------
+
         click.echo(f"🎯 Multi-database ingestion configured for {len(targets)} targets:")
         for target in targets:
             storage_mode = "chunked" if target.use_chunked else "single-row"
             click.echo(f"   • {target.name}: {target.description} ({storage_mode})")
+
+        if targets_list:
+            click.echo(f"📋 Processing {len(targets_list)} specific CWEs: {', '.join(targets_list[:5])}" +
+                      (f" (and {len(targets_list)-5} more)" if len(targets_list) > 5 else ""))
 
         if embedder_type == "gemini":
             click.echo("💰 Using Gemini embeddings - cost optimized with single generation!")
@@ -239,7 +314,7 @@ def ingest_multi(target_cwes, embedding_model, embedder_type, local_chunked, pro
         # Create and run pipeline
         pipeline = MultiDatabaseCWEPipeline(
             database_targets=targets,
-            target_cwes=list(target_cwes) if target_cwes else None,
+            target_cwes=targets_list if targets_list else None,  # <— pass merged list
             embedder_type=embedder_type,
             embedding_model=embedding_model
         )
