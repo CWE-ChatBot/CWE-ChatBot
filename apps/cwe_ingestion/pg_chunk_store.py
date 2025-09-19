@@ -119,70 +119,71 @@ class PostgresChunkStore:
     def _ensure_schema(self):
         logger.info("Ensuring Postgres chunked schema exists...")
 
-        # Atomic DDL block for robust schema management
-        ivf_lists = self._recommended_ivf_lists('cwe_chunks')
-        atomic_ddl = f"""
-        DO $$
-        BEGIN
-            CREATE EXTENSION IF NOT EXISTS vector;
-            CREATE EXTENSION IF NOT EXISTS pg_trgm;
-            CREATE EXTENSION IF NOT EXISTS pgcrypto;
-            -- Optional: unaccent for more robust full-text search (removes diacritics)
-            CREATE EXTENSION IF NOT EXISTS unaccent;
-
-            CREATE TABLE IF NOT EXISTS cwe_chunks (
-                id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                cwe_id              TEXT NOT NULL,
-                section             TEXT NOT NULL,
-                section_rank        INT  NOT NULL,
-                name                TEXT NOT NULL,
-                alternate_terms_text TEXT DEFAULT '',
-                full_text           TEXT NOT NULL,
-                tsv                 tsvector GENERATED ALWAYS AS (
-                    setweight(to_tsvector('english', COALESCE(alternate_terms_text,'')), 'A') ||
-                    setweight(to_tsvector('english', COALESCE(name,'')), 'B') ||
-                    setweight(to_tsvector('english', COALESCE(full_text,'')), 'C')
-                ) STORED,
-                embedding           vector({self.dims}) NOT NULL,
-                created_at          TIMESTAMPTZ DEFAULT now()
-            );
-
-            CREATE INDEX IF NOT EXISTS cwe_chunks_cwe_id_idx   ON cwe_chunks(cwe_id);
-            CREATE INDEX IF NOT EXISTS cwe_chunks_section_idx  ON cwe_chunks(section, section_rank);
-            CREATE INDEX IF NOT EXISTS cwe_chunks_tsv_gin      ON cwe_chunks USING GIN (tsv);
-
-            -- Natural unique key for preventing duplicates on re-ingest
-            CREATE UNIQUE INDEX IF NOT EXISTS cwe_chunks_unique ON cwe_chunks (cwe_id, section, section_rank);
-
-            -- Try HNSW first; if unavailable, fall back to IVFFlat with calculated lists
-            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'cwe_chunks_hnsw_cos' AND tablename = 'cwe_chunks') THEN
-                BEGIN
-                    EXECUTE 'CREATE INDEX cwe_chunks_hnsw_cos ON cwe_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 24, ef_construction = 200)';
-                    RAISE NOTICE 'Created HNSW vector index on cwe_chunks';
-                EXCEPTION WHEN OTHERS THEN
-                    RAISE NOTICE 'HNSW not available, falling back to IVFFlat for cwe_chunks';
-                    EXECUTE 'CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = {ivf_lists})';
-                END;
-            END IF;
-
-            -- Refresh statistics after schema setup
-            PERFORM pg_catalog.pg_stat_reset();
-            EXECUTE 'ANALYZE cwe_chunks';
-        END $$;
-        """
-
+        # Create schema step by step to avoid transaction issues
         with self.conn.cursor() as cur:
-            cur.execute(atomic_ddl)  # type: ignore[arg-type]
+            # Create extensions
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+            cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+            cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+            try:
+                cur.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
+            except Exception:
+                logger.warning("unaccent extension not available, continuing without it")
+
+            # Create table
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS cwe_chunks (
+                    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    cwe_id              TEXT NOT NULL,
+                    section             TEXT NOT NULL,
+                    section_rank        INT  NOT NULL,
+                    name                TEXT NOT NULL,
+                    alternate_terms_text TEXT DEFAULT '',
+                    full_text           TEXT NOT NULL,
+                    tsv                 tsvector GENERATED ALWAYS AS (
+                        setweight(to_tsvector('english', COALESCE(alternate_terms_text,'')), 'A') ||
+                        setweight(to_tsvector('english', COALESCE(name,'')), 'B') ||
+                        setweight(to_tsvector('english', COALESCE(full_text,'')), 'C')
+                    ) STORED,
+                    embedding           vector({self.dims}) NOT NULL,
+                    created_at          TIMESTAMPTZ DEFAULT now()
+                );
+            """)
+
+            # Create indexes
+            cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_cwe_id_idx ON cwe_chunks(cwe_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_section_idx ON cwe_chunks(section, section_rank);")
+            cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_tsv_gin ON cwe_chunks USING GIN (tsv);")
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS cwe_chunks_unique ON cwe_chunks (cwe_id, section, section_rank);")
+
+            # Create vector index - try HNSW first, fall back to IVFFlat
+            try:
+                cur.execute("SELECT 1 FROM pg_indexes WHERE indexname = 'cwe_chunks_hnsw_cos' AND tablename = 'cwe_chunks';")
+                if not cur.fetchone():
+                    try:
+                        cur.execute("CREATE INDEX cwe_chunks_hnsw_cos ON cwe_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 24, ef_construction = 200);")
+                        logger.info("Created HNSW vector index on cwe_chunks")
+                    except Exception:
+                        logger.info("HNSW not available, falling back to IVFFlat for cwe_chunks")
+                        ivf_lists = self._recommended_ivf_lists('cwe_chunks')
+                        cur.execute(f"CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = {ivf_lists});")
+            except Exception as e:
+                logger.warning(f"Vector index creation skipped: {e}")
+
         self.conn.commit()
         logger.info("Schema setup completed for chunked table: cwe_chunks")
 
     def _recommended_ivf_lists(self, table_name: str) -> int:
         """Calculate IVF lists from current table count (sqrt(N), clamped)."""
         from psycopg import sql
-        with self.conn.cursor() as cur:
-            cur.execute(sql.SQL("SELECT GREATEST(1, COUNT(*)) FROM {}").format(sql.Identifier(table_name)))
-            result = cur.fetchone()
-            (n,) = result if result else (1,)
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(sql.SQL("SELECT GREATEST(1, COUNT(*)) FROM {}").format(sql.Identifier(table_name)))
+                result = cur.fetchone()
+                (n,) = result if result else (1,)
+        except psycopg.errors.UndefinedTable:
+            # Table doesn't exist yet, use default
+            n = 1
         import math
         return max(64, min(8192, int(math.sqrt(n))))
 

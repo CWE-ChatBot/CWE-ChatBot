@@ -8,7 +8,7 @@ We need a persistent data store for the CWE Chatbot that can handle both structu
 
 The application requires a database solution that can efficiently store and query two distinct types of data:
 
-1. **Transactional Data:** User profiles, conversation logs, and application settings.  
+1. **Transactional Data:** User profiles, conversation logs, and application settings.
 2. **Vector Data:** Embeddings of the CWE corpus (\~1000 entries) for real-time similarity search.
 
 We considered using separate, specialized services (e.g., Firestore for transactional data and Vertex AI Vector Search for embeddings) versus a unified approach. The chosen solution must be a managed service, cost-effective for a low-traffic application, and performant enough for interactive use.
@@ -17,7 +17,7 @@ We considered using separate, specialized services (e.g., Firestore for transact
 
 We will use a single **Cloud SQL for PostgreSQL** instance as the sole database for the application.
 
-* **Structured Data:** Standard relational tables (users, conversations, messages) will be used for all application data.  
+* **Structured Data:** Standard relational tables (users, conversations, messages) will be used for all application data.
 * **Vector Data:** The pgvector extension will be enabled on the instance. A dedicated cwe\_embeddings table will store the vector embeddings and their associated metadata.
 
 This approach provides a single, unified data layer for the entire application, simplifying development, deployment, and maintenance. Additionally, PostgreSQL can be run locally for development and testing, which significantly improves the development experience and debugging capabilities.
@@ -25,52 +25,74 @@ This approach provides a single, unified data layer for the entire application, 
 ## **Status**
 
 **Decided** (2025-08-26). The implementation will proceed with a small, shared-core Cloud SQL for PostgreSQL instance.
+**Reviewed** (2025-09-19) against **AlloyDB pricing and features**. AlloyDB offers pgvector with advanced vector indexes (HNSW, IVF, ScaNN), but the smallest documented sizing (2 vCPU / 16 GiB) is roughly **\$227/month** before storage and HA, which exceeds the MVP’s budget. For now, Cloud SQL remains the better fit. Migration to AlloyDB or Vertex AI Vector Search can be revisited if usage scales.
 
 ## **Details**
 
 ### **Assumptions**
 
-* The CWE corpus is small and relatively static (\~1000 entries, \~2KB each). The performance of pgvector on a small, managed instance will be more than sufficient for this scale.  
-* Architectural simplicity and a low, predictable monthly cost are higher priorities than the massive scalability offered by separate, specialized vector databases for the initial version of this project.  
+* The CWE corpus is small and relatively static (\~1000 entries, \~2KB each). The performance of pgvector on a small, managed instance will be more than sufficient for this scale.
+* Architectural simplicity and a low, predictable monthly cost are higher priorities than the massive scalability offered by separate, specialized vector databases for the initial version of this project.
 * A single data store is an acceptable architectural choice for the MVP.
+* AlloyDB’s smallest documented instance size is **2 vCPU / 16 GiB RAM**, costing \~**\$227/month** for compute alone, not including storage or HA. This does not meet the cost-efficiency requirements for the MVP.
 
 ### **Constraints**
 
-* The solution must be a **managed service** to minimize operational overhead.  
-* The service must support both standard SQL for transactional operations and vector similarity search for the RAG functionality.  
+* The solution must be a **managed service** to minimize operational overhead.
+* The service must support both standard SQL for transactional operations and vector similarity search for the RAG functionality.
 * The monthly cost must be low and predictable for a project with minimal initial traffic.
+* **Shared-core or equivalent low idle-cost options** are preferred during the MVP phase.
+
+### **Cost Comparison**
+
+| Service & Tier                                      | vCPU / RAM              | Compute (approx) | Storage (20 GiB) | Total Monthly (no HA) | Notes                                               |
+| --------------------------------------------------- | ----------------------- | ---------------- | ---------------- | --------------------- | --------------------------------------------------- |
+| **Cloud SQL (PostgreSQL, shared-core db-f1-micro)** | Shared-core (burstable) | \~\$7.30         | \~\$0.50         | **\$8–10**            | Cheapest option; predictable baseline.              |
+| **Cloud SQL (PostgreSQL, db-g1-small)**             | Shared-core (burstable) | \~\$17           | \~\$0.50         | **\$17–20**           | More memory than f1-micro, still low idle cost.     |
+| **AlloyDB (minimum size)**                          | 2 vCPU / 16 GiB         | \~\$227          | \~\$6            | **\$233+**            | Strong pgvector/ScaNN support, but high entry cost. |
+
+*Numbers assume Iowa pricing, on-demand, single instance, no HA, no sustained/CUD discounts.*
 
 ### **Positions**
 
-* **Separate Services (e.g., Firestore \+ Vertex AI Vector Search):**  
-  * *Pros:* Highly scalable, fully serverless (scales to zero), and purpose-built for their respective tasks.  
-  * *Cons:* More complex architecture, requires managing two different data sources and SDKs, and the baseline cost for managed vector services can be higher than a small SQL instance.  
-* **Consolidated Service (Cloud SQL \+ pgvector):**  
-  * *Pros:* Drastically simpler architecture with a single connection point, mature and well-understood technology, and a low, predictable monthly cost for a small instance.  
-  * *Cons:* Not serverless (the instance runs 24/7), and could become a performance bottleneck if the vector dataset or query volume grows exponentially.  
-* **External Hosted Services (e.g., Qdrant Cloud, Pinecone, Neon):**  
-  * *Pros:* Fully managed, often purpose-built for vector search, and some offer serverless pricing models (Neon).  
-  * *Cons:* Dismissed primarily for simplicity and latency. Introducing an external, non-GCP service adds another network hop outside of Google's network, potentially increasing query latency. It also adds architectural complexity in terms of security (VPC peering/firewall rules), billing, and requiring a separate SDK.  
-* **In-Memory Vector DB (e.g., FAISS, ChromaDB in-memory):**  
-  * *Pros:* Extremely fast for vector lookups as the index is held in RAM.  
-  * *Cons:* Dismissed because it only solves half the problem. We still require a persistent, transactional database for user data. This would force us to manage two systems (one in-memory for vectors, one persistent for users), which contradicts the primary goal of architectural simplicity. It is more efficient to add vector capabilities to the already-required persistent store.  
-* **Data Warehouse (BigQuery):**  
-  * *Pros:* Massively scalable for analytics and has vector search capabilities.  
+* **Separate Services (e.g., Firestore + Vertex AI Vector Search):**
+
+  * *Pros:* Highly scalable, fully serverless (scales to zero), and purpose-built for their respective tasks.
+  * *Cons:* More complex architecture, requires managing two different data sources and SDKs, and the baseline cost for managed vector services can be higher than a small SQL instance.
+* **Consolidated Service (Cloud SQL + pgvector):**
+
+  * *Pros:* Drastically simpler architecture with a single connection point, mature and well-understood technology, and a low, predictable monthly cost for a small instance.
+  * *Cons:* Not serverless (the instance runs 24/7), and could become a performance bottleneck if the vector dataset or query volume grows exponentially.
+* **AlloyDB (pgvector + AlloyDB AI):**
+
+  * *Pros:* PostgreSQL-compatible, strong HTAP capabilities, and advanced vector indexes (HNSW, IVF, **ScaNN**) for high-performance vector search. Robust HA options.
+  * *Cons:* **Higher entry cost** (2 vCPU/16 GiB floor, \~\$227/month for compute only). Not suitable for tiny, always-on MVPs with \~1k vectors.
+* **External Hosted Services (e.g., Qdrant Cloud, Pinecone, Neon):**
+
+  * *Pros:* Fully managed, often purpose-built for vector search, and some offer serverless pricing models (Neon).
+  * *Cons:* Dismissed primarily for simplicity and latency. Introducing an external, non-GCP service adds another network hop outside of Google's network, potentially increasing query latency. It also adds architectural complexity in terms of security (VPC peering/firewall rules), billing, and requiring a separate SDK.
+* **In-Memory Vector DB (e.g., FAISS, ChromaDB in-memory):**
+
+  * *Pros:* Extremely fast for vector lookups as the index is held in RAM.
+  * *Cons:* Dismissed because it only solves half the problem. We still require a persistent, transactional database for user data. This would force us to manage two systems (one in-memory for vectors, one persistent for users), which contradicts the primary goal of architectural simplicity. It is more efficient to add vector capabilities to the already-required persistent store.
+* **Data Warehouse (BigQuery):**
+
+  * *Pros:* Massively scalable for analytics and has vector search capabilities.
   * *Cons:* Dismissed as it is an analytical database (OLAP), not a transactional one (OLTP). It is designed for large-scale analytical queries, not the fast, single-row read/write operations required by a real-time chatbot. Using it for this purpose would result in high latency and unpredictable costs.
 
 ### **Argument**
 
 For a dataset of only \~1000 vector embeddings, the performance of pgvector is excellent and does not require a dedicated, specialized service. The primary benefit of this decision is **simplicity**. By using a single database within the same cloud provider (GCP), we reduce the number of moving parts, simplify the application's data access layer, and avoid cross-cloud network latency.
 
-Furthermore, a small, shared-core Cloud SQL instance offers a very **low and predictable monthly cost** (estimated at \~$15-25), which is ideal for a new project. This avoids the potentially variable costs and architectural complexity of integrating third-party services.
+Furthermore, a small, shared-core Cloud SQL instance offers a very **low and predictable monthly cost** (estimated at \~\$15-25), which is ideal for a new project. AlloyDB’s entry-level cost (\~\$227/month) is significantly higher, making it unsuitable for the MVP’s scale and budget. This avoids the potentially variable costs and architectural complexity of integrating third-party services.
 
 ### **Implications**
 
-* The application's entire data access layer will be built around a single PostgreSQL client/SDK.  
-* The data ingestion pipeline will be simplified, as it only needs to write to a table within the existing Cloud SQL database.  
-* This decision can be revisited in the future. If the application's usage scales significantly, the vector data can be migrated to a dedicated service like Vertex AI Vector Search with minimal changes to the core application logic, as the data access layer will already be abstracted.
+* The application's entire data access layer will be built around a single PostgreSQL client/SDK.
+* The data ingestion pipeline will be simplified, as it only needs to write to a table within the existing Cloud SQL database.
+* This decision can be revisited in the future. If the application's usage scales significantly (e.g., ≥100k embeddings or strict low-latency requirements), the vector data can be migrated to **AlloyDB (ScaNN)** or **Vertex AI Vector Search** with minimal changes to the core application logic, as the data access layer will already be abstracted.
 
 ### **Related**
 
-* **Requirements:** NFR5 (Codebase Adherence), NFR6 (Hallucination Mitigation).  
+* **Requirements:** NFR5 (Codebase Adherence), NFR6 (Hallucination Mitigation).
 * **Principles:** Serverless First (for compute), Cost-Efficiency, Simplicity.
