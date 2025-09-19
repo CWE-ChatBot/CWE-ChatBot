@@ -78,6 +78,7 @@ class PostgresChunkStore:
         self.conn = psycopg.connect(**conn_params)
         self.conn.execute("SET statement_timeout = '30s';")
         self.conn.execute("SET ivfflat.probes = 10;")  # Improve IVFFlat recall (harmless if HNSW is used)
+        self.conn.execute("SET hnsw.ef_search = 80;")  # Improve HNSW recall (harmless if IVFFlat is used)
         self._ensure_schema()
 
     def _prepare_connection_params(self, database_url: str) -> Dict[str, Any]:
@@ -119,12 +120,15 @@ class PostgresChunkStore:
         logger.info("Ensuring Postgres chunked schema exists...")
 
         # Atomic DDL block for robust schema management
+        ivf_lists = self._recommended_ivf_lists('cwe_chunks')
         atomic_ddl = f"""
         DO $$
         BEGIN
             CREATE EXTENSION IF NOT EXISTS vector;
             CREATE EXTENSION IF NOT EXISTS pg_trgm;
             CREATE EXTENSION IF NOT EXISTS pgcrypto;
+            -- Optional: unaccent for more robust full-text search (removes diacritics)
+            CREATE EXTENSION IF NOT EXISTS unaccent;
 
             CREATE TABLE IF NOT EXISTS cwe_chunks (
                 id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -150,17 +154,20 @@ class PostgresChunkStore:
             -- Natural unique key for preventing duplicates on re-ingest
             CREATE UNIQUE INDEX IF NOT EXISTS cwe_chunks_unique ON cwe_chunks (cwe_id, section, section_rank);
 
-            -- Try HNSW first; if unavailable, fall back to IVFFlat
+            -- Try HNSW first; if unavailable, fall back to IVFFlat with calculated lists
             IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'cwe_chunks_hnsw_cos' AND tablename = 'cwe_chunks') THEN
                 BEGIN
-                    EXECUTE 'CREATE INDEX cwe_chunks_hnsw_cos ON cwe_chunks USING hnsw (embedding vector_cosine_ops)';
+                    EXECUTE 'CREATE INDEX cwe_chunks_hnsw_cos ON cwe_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 24, ef_construction = 200)';
                     RAISE NOTICE 'Created HNSW vector index on cwe_chunks';
                 EXCEPTION WHEN OTHERS THEN
                     RAISE NOTICE 'HNSW not available, falling back to IVFFlat for cwe_chunks';
-                    EXECUTE 'CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)';
-                    RAISE NOTICE 'Created IVFFlat vector index on cwe_chunks';
+                    EXECUTE 'CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = {ivf_lists})';
                 END;
             END IF;
+
+            -- Refresh statistics after schema setup
+            PERFORM pg_catalog.pg_stat_reset();
+            EXECUTE 'ANALYZE cwe_chunks';
         END $$;
         """
 
@@ -168,6 +175,15 @@ class PostgresChunkStore:
             cur.execute(atomic_ddl)
         self.conn.commit()
         logger.info("Schema setup completed for chunked table: cwe_chunks")
+
+    def _recommended_ivf_lists(self, table_name: str) -> int:
+        """Calculate IVF lists from current table count (sqrt(N), clamped)."""
+        with self.conn.cursor() as cur:
+            cur.execute(f"SELECT GREATEST(1, COUNT(*)) FROM {table_name};")
+            (n,) = cur.fetchone()
+        import math
+        return max(64, min(8192, int(math.sqrt(n))))
+
 
     # ---------- Writes ----------
     def store_batch(self, chunks: List[Dict[str, Any]]) -> int:
@@ -288,9 +304,9 @@ class PostgresChunkStore:
         ),
         scored AS (
           SELECT *,
-                 1 - (cos_dist / NULLIF((SELECT MAX(cos_dist) FROM joined), 0)) AS vec_sim_norm,
-                 fts_rank / NULLIF((SELECT MAX(fts_rank) FROM joined), 0)        AS fts_norm,
-                 alias_sim / NULLIF((SELECT MAX(alias_sim) FROM joined), 0)      AS alias_norm,
+                 COALESCE(1 - (cos_dist / NULLIF((SELECT MAX(cos_dist) FROM joined), 0)), 0) AS vec_sim_norm,
+                 COALESCE(fts_rank / NULLIF((SELECT MAX(fts_rank) FROM joined), 0), 0) AS fts_norm,
+                 COALESCE(alias_sim / NULLIF((SELECT MAX(alias_sim) FROM joined), 0), 0) AS alias_norm,
                  CASE
                    WHEN %s <> '' AND section = %s THEN %s
                    ELSE 0

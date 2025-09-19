@@ -74,6 +74,7 @@ class PostgresVectorStore:
         self.conn = psycopg.connect(**conn_params)
         self.conn.execute("SET statement_timeout = '30s';")
         self.conn.execute("SET ivfflat.probes = 10;")  # Improve IVFFlat recall (harmless if HNSW is used)
+        self.conn.execute("SET hnsw.ef_search = 80;")  # Improve HNSW recall (harmless if IVFFlat is used)
         self._ensure_schema()
 
     def _prepare_connection_params(self, database_url: str) -> Dict[str, Any]:
@@ -115,11 +116,14 @@ class PostgresVectorStore:
         logger.info("Ensuring Postgres schema exists for hybrid retrieval...")
 
         # Atomic DDL block for robust schema management
+        ivf_lists = self._recommended_ivf_lists(self.table)
         atomic_ddl = f"""
         DO $$
         BEGIN
             CREATE EXTENSION IF NOT EXISTS vector;
             CREATE EXTENSION IF NOT EXISTS pg_trgm;
+            -- Optional: unaccent for more robust full-text search (removes diacritics)
+            CREATE EXTENSION IF NOT EXISTS unaccent;
 
             CREATE TABLE IF NOT EXISTS {self.table} (
                 id TEXT PRIMARY KEY,
@@ -142,17 +146,20 @@ class PostgresVectorStore:
             CREATE INDEX IF NOT EXISTS cwe_fulltext_gin ON {self.table} USING GIN (tsv);
             CREATE INDEX IF NOT EXISTS cwe_embeddings_cwe_id_idx ON {self.table}(cwe_id);
 
-            -- Try HNSW first; if unavailable, fall back to IVFFlat
+            -- Try HNSW first; if unavailable, fall back to IVFFlat with calculated lists
             IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'cwe_embed_hnsw_cos' AND tablename = '{self.table}') THEN
                 BEGIN
-                    EXECUTE 'CREATE INDEX cwe_embed_hnsw_cos ON {self.table} USING hnsw (embedding vector_cosine_ops)';
+                    EXECUTE 'CREATE INDEX cwe_embed_hnsw_cos ON {self.table} USING hnsw (embedding vector_cosine_ops) WITH (m = 24, ef_construction = 200)';
                     RAISE NOTICE 'Created HNSW vector index on {self.table}';
                 EXCEPTION WHEN OTHERS THEN
                     RAISE NOTICE 'HNSW not available, falling back to IVFFlat for {self.table}';
-                    EXECUTE 'CREATE INDEX IF NOT EXISTS cwe_embed_ivf_cos ON {self.table} USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)';
-                    RAISE NOTICE 'Created IVFFlat vector index on {self.table}';
+                    EXECUTE 'CREATE INDEX IF NOT EXISTS cwe_embed_ivf_cos ON {self.table} USING ivfflat (embedding vector_cosine_ops) WITH (lists = {ivf_lists})';
                 END;
             END IF;
+
+            -- Refresh statistics after schema setup
+            PERFORM pg_catalog.pg_stat_reset();
+            EXECUTE 'ANALYZE {self.table}';
         END $$;
         """
 
@@ -160,6 +167,14 @@ class PostgresVectorStore:
             cur.execute(atomic_ddl)
         self.conn.commit()
         logger.info(f"Schema setup completed for table: {self.table}")
+
+    def _recommended_ivf_lists(self, table: str) -> int:
+        """Calculate IVF lists from current table count (sqrt(N), clamped)."""
+        with self.conn.cursor() as cur:
+            cur.execute(f"SELECT GREATEST(1, COUNT(*)) FROM {table};")
+            (n,) = cur.fetchone()
+        import math
+        return max(64, min(8192, int(math.sqrt(n))))
 
     # ---- Write ----
     def store_batch(self, docs: List[Dict[str, Any]]) -> int:
@@ -277,10 +292,10 @@ class PostgresVectorStore:
         ),
         agg AS (
           SELECT *,
-                 -- Normalize distances/ranks to [0,1] with simple max scaling
-                 1 - (cos_dist / NULLIF((SELECT MAX(cos_dist) FROM joined), 0)) AS vec_sim_norm,
-                 fts_rank / NULLIF(GREATEST((SELECT MAX(fts_rank) FROM joined), 1e-9), 0) AS fts_norm,
-                 alias_sim / NULLIF((SELECT MAX(alias_sim) FROM joined), 0)      AS alias_norm
+                 -- Normalize distances/ranks to [0,1] with robust max scaling
+                 COALESCE(1 - (cos_dist / NULLIF((SELECT MAX(cos_dist) FROM joined), 0)), 0) AS vec_sim_norm,
+                 COALESCE(fts_rank / NULLIF(GREATEST((SELECT MAX(fts_rank) FROM joined), 1e-9), 0), 0) AS fts_norm,
+                 COALESCE(alias_sim / NULLIF((SELECT MAX(alias_sim) FROM joined), 0), 0) AS alias_norm
             FROM joined
         )
         SELECT id, cwe_id, name, abstraction, status, full_text,

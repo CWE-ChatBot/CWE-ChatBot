@@ -92,10 +92,11 @@ CREATE TABLE IF NOT EXISTS cwe_embeddings (
 
 CREATE INDEX IF NOT EXISTS cwe_fulltext_gin ON cwe_embeddings USING GIN (tsv);
 CREATE INDEX IF NOT EXISTS cwe_embeddings_cwe_id_idx ON cwe_embeddings(cwe_id);
--- Prefer HNSW if available; otherwise IVFFlat:
--- CREATE INDEX cwe_embed_hnsw_cos ON cwe_embeddings USING hnsw (embedding vector_cosine_ops);
-CREATE INDEX IF NOT EXISTS cwe_embed_ivf_cos ON cwe_embeddings
-  USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+-- Optimized vector indexes (created automatically):
+-- HNSW (preferred): CREATE INDEX cwe_embed_hnsw_cos ON cwe_embeddings
+--   USING hnsw (embedding vector_cosine_ops) WITH (m=24, ef_construction=200);
+-- IVFFlat (fallback): CREATE INDEX cwe_embed_ivf_cos ON cwe_embeddings
+--   USING ivfflat (embedding vector_cosine_ops) WITH (lists = sqrt(row_count));
 ```
 
 ### Chunked table (recommended)
@@ -1019,6 +1020,15 @@ Start with **chunked + hybrid** and tune based on query type:
   - Both indexes support the chunked retrieval display pattern (group by CWE → show 1-2 best chunks)
 - **Query Performance**: Covering indexes eliminate additional table lookups for common query patterns
 - **Automatic Creation**: All performance indexes are created automatically during schema setup
+
+**Advanced pgvector Optimizations**:
+- **HNSW Index Parameters**: `m=24, ef_construction=200` for optimal recall/performance balance
+- **Dynamic IVF Lists**: Auto-calculated as `sqrt(row_count)` with min 100, max 2000 for optimal clustering
+- **Connection-Level Tuning**:
+  - `hnsw.ef_search=80` for improved HNSW recall (default is 40)
+  - `ivfflat.probes=10` for better IVFFlat search quality (default is 1)
+- **Robust Score Normalization**: COALESCE guards against NULL values in hybrid queries
+- **Intelligent Index Selection**: HNSW preferred, IVF created only when HNSW unavailable
 
 ### 🔒 Security Recommendations
 
