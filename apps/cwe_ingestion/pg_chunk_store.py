@@ -131,7 +131,8 @@ class PostgresChunkStore:
                 logger.warning("unaccent extension not available, continuing without it")
 
             # Create table
-            cur.execute(f"""
+            from psycopg import sql
+            table_ddl = sql.SQL("""
                 CREATE TABLE IF NOT EXISTS cwe_chunks (
                     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     cwe_id              TEXT NOT NULL,
@@ -145,10 +146,11 @@ class PostgresChunkStore:
                         setweight(to_tsvector('english', COALESCE(name,'')), 'B') ||
                         setweight(to_tsvector('english', COALESCE(full_text,'')), 'C')
                     ) STORED,
-                    embedding           vector({self.dims}) NOT NULL,
+                    embedding           vector({}) NOT NULL,
                     created_at          TIMESTAMPTZ DEFAULT now()
                 );
-            """)
+            """).format(sql.Literal(self.dims))
+            cur.execute(table_ddl)
 
             # Create indexes
             cur.execute("CREATE INDEX IF NOT EXISTS cwe_chunks_cwe_id_idx ON cwe_chunks(cwe_id);")
@@ -166,7 +168,8 @@ class PostgresChunkStore:
                     except Exception:
                         logger.info("HNSW not available, falling back to IVFFlat for cwe_chunks")
                         ivf_lists = self._recommended_ivf_lists('cwe_chunks')
-                        cur.execute(f"CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = {ivf_lists});")
+                        ivf_sql = sql.SQL("CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = {});").format(sql.Literal(ivf_lists))
+                        cur.execute(ivf_sql)
             except Exception as e:
                 logger.warning(f"Vector index creation skipped: {e}")
 
