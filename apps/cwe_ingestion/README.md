@@ -301,6 +301,12 @@ poetry run python cli.py --help
 - **`query`** - Query similar CWEs with hybrid retrieval
 - **`stats`** - Database health check and collection statistics
 
+**Key Options:**
+- **`--only-cwes-file PATH`** - Process only CWEs listed in file (supports incremental updates)
+- **`-c, --target-cwes ID`** - Target specific CWE IDs (can be combined with file)
+- **`--embedder-type {local,gemini}`** - Choose embedding provider
+- **`--chunked/--single`** - Storage mode (chunked recommended)
+
 ### 💰 Multi-Database Ingestion (Cost-Optimized)
 
 **Generate embeddings once and distribute to multiple databases** - ideal for Gemini embeddings:
@@ -336,6 +342,47 @@ poetry run python cli.py ingest-multi \
 - ⚡ **Faster ingestion** - no duplicate embedding generation
 - 🎯 **Flexible storage** - different modes per database
 - 🔒 **Consistent data** - same embeddings across environments
+
+### 📈 Incremental Updates (New!)
+
+**Process only changed CWEs based on MITRE change reports** for maximum cost efficiency:
+
+```bash
+# Create file with changed CWE IDs (supports both formats)
+cat > changed_cwes.txt << EOF
+79
+CWE-89
+22
+352
+# Comments and empty lines are ignored
+434
+EOF
+
+# Process only changed CWEs (cost-optimized for Gemini)
+poetry run python cli.py ingest-multi --only-cwes-file changed_cwes.txt --embedder-type gemini
+
+# Single database incremental update
+poetry run python cli.py ingest --only-cwes-file changed_cwes.txt --chunked
+
+# Mix file + inline flags (deduped, order preserved)
+poetry run python cli.py ingest-multi \
+  --only-cwes-file changed_cwes.txt \
+  -c CWE-352 -c 434 \
+  --embedder-type gemini
+```
+
+**File Format:**
+- One CWE ID per line
+- Supports both `79` and `CWE-79` formats
+- Comments start with `#`
+- Empty lines ignored
+- Automatic deduplication while preserving order
+
+**Use Cases:**
+- 📊 **MITRE Updates**: Process [CWE diff reports](https://cwe.mitre.org/data/reports/diff_reports/) efficiently
+- 💰 **Cost Control**: Only generate embeddings for changed content
+- 🔄 **Selective Refresh**: Update specific CWEs without full re-ingestion
+- 🎯 **Targeted Testing**: Test specific vulnerability patterns
 
 ### 📊 Single Database Ingestion
 
