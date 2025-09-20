@@ -405,38 +405,40 @@ class PostgresChunkStore:
         # Reciprocal Rank Fusion (RRF) over vector KNN and FTS candidate pools.
         # Keeps both pools via UNION ALL and aggregates per chunk id.
         sql = """
-        WITH MATERIALIZED vec_search AS (
-          SELECT id,
-                 ROW_NUMBER() OVER (ORDER BY embedding <=> %s::vector) AS rnk_v
-          FROM   cwe_chunks
-          ORDER  BY embedding <=> %s::vector
-          LIMIT  %s
-        ),
-        MATERIALIZED fts_search AS (
-          SELECT id,
-                 ROW_NUMBER() OVER (
-                   ORDER BY ts_rank(tsv, websearch_to_tsquery('english', %s)) DESC
-                 ) AS rnk_f
-          FROM   cwe_chunks
-          WHERE  tsv @@ websearch_to_tsquery('english', %s)
-          LIMIT  %s
-        ),
-        MATERIALIZED alias_search AS (
-          SELECT id,
-                 ROW_NUMBER() OVER (
-                   ORDER BY GREATEST(
-                     similarity(lower(alternate_terms_text), lower(%s)),
-                     similarity(lower(regexp_replace(alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
-                   ) DESC
-                 ) AS rnk_a
-          FROM   cwe_chunks
-          WHERE  alternate_terms_text <> ''
-          ORDER  BY GREATEST(
-                     similarity(lower(alternate_terms_text), lower(%s)),
-                     similarity(lower(regexp_replace(alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
-                   ) DESC
-          LIMIT  %s
-        ),
+        WITH
+          vec_search AS MATERIALIZED (
+            SELECT id,
+                   embedding_h <=> l2_normalize(%s::vector)::halfvec AS dist,
+                   ROW_NUMBER() OVER (ORDER BY embedding_h <=> l2_normalize(%s::vector)::halfvec) AS rnk_v
+            FROM   cwe_chunks
+            ORDER  BY dist
+            LIMIT  %s
+          ),
+          fts_search AS MATERIALIZED (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                     ORDER BY ts_rank(tsv, websearch_to_tsquery('english', %s)) DESC
+                   ) AS rnk_f
+            FROM   cwe_chunks
+            WHERE  tsv @@ websearch_to_tsquery('english', %s)
+            LIMIT  %s
+          ),
+          alias_search AS MATERIALIZED (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                     ORDER BY GREATEST(
+                       similarity(lower(alternate_terms_text), lower(%s)),
+                       similarity(lower(regexp_replace(alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
+                     ) DESC
+                   ) AS rnk_a
+            FROM   cwe_chunks
+            WHERE  alternate_terms_text <> ''
+            ORDER  BY GREATEST(
+                       similarity(lower(alternate_terms_text), lower(%s)),
+                       similarity(lower(regexp_replace(alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
+                     ) DESC
+            LIMIT  %s
+          ),
         unioned AS (
           SELECT id, rnk_v AS rnk FROM vec_search
           UNION ALL
