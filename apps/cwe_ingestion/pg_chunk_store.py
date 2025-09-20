@@ -274,6 +274,107 @@ class PostgresChunkStore:
             })
         return out
 
+    # ---------- Optimized halfvec queries for <200ms p95 ----------
+    def query_similar_fast(self, query_embedding: np.ndarray, n_results: int = 5) -> List[Dict]:
+        """
+        Fast vector similarity search using halfvec(3072) + HNSW index.
+        Target: <20ms query time for optimal p95 performance.
+        """
+        if isinstance(query_embedding, np.ndarray):
+            # Normalize to unit length for cosine similarity
+            query_embedding = query_embedding / np.linalg.norm(query_embedding)
+            query_embedding = query_embedding.tolist()
+
+        # Optimize HNSW settings for speed
+        with self.conn.cursor() as cur:
+            cur.execute("SET LOCAL hnsw.ef_search = 80;")
+            cur.execute("SET LOCAL jit = off;")
+            cur.execute("SET LOCAL work_mem = '64MB';")
+
+            sql = """
+            SELECT cwe_id, section, section_rank, name, full_text,
+                   embedding_h <=> %s::halfvec AS cos_dist
+              FROM cwe_chunks
+          ORDER BY embedding_h <=> %s::halfvec
+             LIMIT %s;
+            """
+            cur.execute(sql, (query_embedding, query_embedding, n_results))
+            rows = cur.fetchall()
+
+        out: List[Dict] = []
+        for r in rows:
+            out.append({
+                "metadata": {
+                    "cwe_id": r[0],
+                    "section": r[1],
+                    "section_rank": r[2],
+                    "name": r[3],
+                },
+                "document": r[4],
+                "distance": float(r[5]),
+            })
+        return out
+
+    def query_hybrid_fast(
+        self,
+        query_text: str,
+        query_embedding: np.ndarray,
+        limit_chunks: int = 20,
+        fts_limit: int = 200,
+        section_intent_boost: Optional[str] = None,
+    ) -> List[Dict]:
+        """
+        Fast hybrid search: FTS shortlist → halfvec rerank for optimal performance.
+        Recommended pattern for <200ms p95 end-to-end.
+        """
+        if isinstance(query_embedding, np.ndarray):
+            # Normalize to unit length for cosine similarity
+            query_embedding = query_embedding / np.linalg.norm(query_embedding)
+            query_embedding = query_embedding.tolist()
+
+        # Optimize PostgreSQL settings
+        with self.conn.cursor() as cur:
+            cur.execute("SET LOCAL hnsw.ef_search = 64;")  # Lower for hybrid (speed over pure accuracy)
+            cur.execute("SET LOCAL jit = off;")
+            cur.execute("SET LOCAL work_mem = '64MB';")
+
+            # Hybrid query: FTS shortlist → halfvec rerank
+            sql = """
+            WITH txt AS (
+              SELECT id
+              FROM   cwe_chunks
+              WHERE  tsv @@ websearch_to_tsquery('english', %s)
+              ORDER  BY ts_rank(tsv, websearch_to_tsquery('english', %s)) DESC
+              LIMIT %s
+            )
+            SELECT c.cwe_id, c.section, c.section_rank, c.name, c.full_text,
+                   c.embedding_h <=> %s::halfvec AS distance
+            FROM   cwe_chunks c
+            JOIN   txt USING (id)
+            ORDER  BY distance
+            LIMIT %s;
+            """
+
+            cur.execute(sql, (
+                query_text, query_text, fts_limit,
+                query_embedding, limit_chunks
+            ))
+            rows = cur.fetchall()
+
+        results: List[Dict] = []
+        for r in rows:
+            results.append({
+                "cwe_id": r[0],
+                "section": r[1],
+                "section_rank": r[2],
+                "name": r[3],
+                "full_text": r[4],
+                "distance": float(r[5]),
+                "score": 1.0 - float(r[5]),  # Convert distance to similarity score
+            })
+
+        return results
+
     # ---------- Hybrid query over chunks ----------
     def query_hybrid(
         self,
