@@ -21,6 +21,7 @@ try:
     from user_context import UserContextManager, UserPersona, UserContext
     from conversation import ConversationManager
     from input_security import InputSanitizer, SecurityValidator
+    from file_processor import FileProcessor
 except ImportError as e:
     logging.error(f"Failed to import Story 2.1 components: {e}")
     sys.exit(1)
@@ -37,11 +38,12 @@ logger = logging.getLogger(__name__)
 conversation_manager: Optional[ConversationManager] = None
 input_sanitizer: Optional[InputSanitizer] = None
 security_validator: Optional[SecurityValidator] = None
+file_processor: Optional[FileProcessor] = None
 
 
 def initialize_components():
     """Initialize all Story 2.1 chatbot components with error handling."""
-    global conversation_manager, input_sanitizer, security_validator
+    global conversation_manager, input_sanitizer, security_validator, file_processor
 
     try:
         # Get required environment variables
@@ -58,6 +60,7 @@ def initialize_components():
         # Initialize security components
         input_sanitizer = InputSanitizer()
         security_validator = SecurityValidator()
+        file_processor = FileProcessor()
 
         # Initialize conversation manager with all Story 2.1 components
         conversation_manager = ConversationManager(
@@ -99,6 +102,8 @@ I'm here to help you with Common Weakness Enumeration (CWE) information. To prov
 • **Academic Researcher** - Comprehensive analysis and relationships
 • **Bug Bounty Hunter** - Exploitation patterns and testing techniques
 • **Product Manager** - Business impact and prevention strategies
+• **CWE Analyzer** - CVE-to-CWE mapping analysis with confidence scoring
+• **CVE Creator** - Structured CVE vulnerability descriptions
 
 Select your persona to get started:"""
 
@@ -108,7 +113,9 @@ Select your persona to get started:"""
         cl.Action(name="persona_developer", value="Developer", label="💻 Developer", payload={}),
         cl.Action(name="persona_academic", value="Academic Researcher", label="🎓 Academic Researcher", payload={}),
         cl.Action(name="persona_bug_bounty", value="Bug Bounty Hunter", label="🔍 Bug Bounty Hunter", payload={}),
-        cl.Action(name="persona_product_manager", value="Product Manager", label="📊 Product Manager", payload={})
+        cl.Action(name="persona_product_manager", value="Product Manager", label="📊 Product Manager", payload={}),
+        cl.Action(name="persona_cwe_analyzer", value="CWE Analyzer", label="🔬 CWE Analyzer", payload={}),
+        cl.Action(name="persona_cve_creator", value="CVE Creator", label="📝 CVE Creator", payload={})
     ]
 
     await cl.Message(content=welcome_message, actions=persona_actions).send()
@@ -133,6 +140,22 @@ async def main(message: cl.Message):
 
     try:
         user_query = message.content.strip()
+
+        # Process file attachments if present (especially for CVE Creator)
+        if hasattr(message, 'elements') and message.elements and file_processor:
+            logger.info(f"Processing {len(message.elements)} file attachments for {context.persona}")
+            file_content = await file_processor.process_attachments(message)
+
+            if file_content:
+                # Combine user query with file content
+                if user_query:
+                    user_query = f"{user_query}\n\n--- Attached File Content ---\n{file_content}"
+                else:
+                    user_query = f"--- Attached File Content ---\n{file_content}"
+                logger.info(f"File content extracted: {len(file_content)} characters")
+            else:
+                logger.warning("File attachments found but no content extracted")
+
         logger.info(f"Processing user query: '{user_query[:100]}...' for persona: {context.persona}")
 
         # Process message using conversation manager
@@ -193,6 +216,16 @@ async def on_select_product_manager_persona(action):
     """Handle Product Manager persona selection."""
     await handle_persona_selection("Product Manager")
 
+@cl.action_callback("persona_cwe_analyzer")
+async def on_select_cwe_analyzer_persona(action):
+    """Handle CWE Analyzer persona selection."""
+    await handle_persona_selection("CWE Analyzer")
+
+@cl.action_callback("persona_cve_creator")
+async def on_select_cve_creator_persona(action):
+    """Handle CVE Creator persona selection."""
+    await handle_persona_selection("CVE Creator")
+
 @cl.action_callback("change_persona")
 async def on_change_persona(action):
     """Handle persona change request."""
@@ -210,7 +243,9 @@ async def on_change_persona(action):
         cl.Action(name="persona_developer", value="Developer", label="💻 Developer", payload={}),
         cl.Action(name="persona_academic", value="Academic Researcher", label="🎓 Academic Researcher", payload={}),
         cl.Action(name="persona_bug_bounty", value="Bug Bounty Hunter", label="🔍 Bug Bounty Hunter", payload={}),
-        cl.Action(name="persona_product_manager", value="Product Manager", label="📊 Product Manager", payload={})
+        cl.Action(name="persona_product_manager", value="Product Manager", label="📊 Product Manager", payload={}),
+        cl.Action(name="persona_cwe_analyzer", value="CWE Analyzer", label="🔬 CWE Analyzer", payload={}),
+        cl.Action(name="persona_cve_creator", value="CVE Creator", label="📝 CVE Creator", payload={})
     ]
 
     await cl.Message(content=welcome_message, actions=persona_actions).send()
@@ -243,12 +278,37 @@ async def handle_persona_selection(persona: str):
                 "Developer": "You'll receive responses focused on remediation steps, code examples, and prevention techniques.",
                 "Academic Researcher": "You'll receive responses focused on comprehensive analysis, relationships, and taxonomies.",
                 "Bug Bounty Hunter": "You'll receive responses focused on exploitation patterns, testing techniques, and detection methods.",
-                "Product Manager": "You'll receive responses focused on business impact, prevention strategies, and trend analysis."
+                "Product Manager": "You'll receive responses focused on business impact, prevention strategies, and trend analysis.",
+                "CWE Analyzer": "You'll receive responses focused on CVE-to-CWE mapping analysis with confidence scoring and structured vulnerability assessment.",
+                "CVE Creator": """I'll help you create structured CVE vulnerability descriptions from your existing research and information.
+
+To create an accurate CVE description, please provide your vulnerability information through one of these methods:
+
+**Option 1: Chat Message** - Include as much detail as possible:
+• Vulnerability type and technical details
+• Affected product/component information (vendor, product name, versions)
+• Attack vectors and exploitation methods
+• Impact and severity assessment
+• Affected platforms/environments
+• Any existing patches or mitigations
+• Discovery details and timeline
+
+**Option 2: PDF File Upload** - Upload a PDF document containing:
+• Vulnerability research reports or security advisories
+• Patch documentation or technical analysis
+• Vendor communications or disclosure reports
+• Note: Only PDF files up to 10MB are supported for upload
+
+Once you provide this information, I will analyze it and create a structured CVE description using the standardized format."""
             }
 
             confirmation_message = f"""Great! Your persona has been set to **{persona}**.
 
-{persona_descriptions.get(persona, "You'll receive responses tailored to your role.")}
+{persona_descriptions.get(persona, "You'll receive responses tailored to your role.")}"""
+
+            # CVE Creator gets a different ending - no generic CWE guidance
+            if persona != "CVE Creator":
+                confirmation_message += """
 
 I'm ready to help you with CWE information. You can:
 

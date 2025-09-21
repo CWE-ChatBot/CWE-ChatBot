@@ -22,6 +22,8 @@ class UserPersona(Enum):
     ACADEMIC_RESEARCHER = "Academic Researcher"
     BUG_BOUNTY_HUNTER = "Bug Bounty Hunter"
     PRODUCT_MANAGER = "Product Manager"
+    CWE_ANALYZER = "CWE Analyzer"
+    CVE_CREATOR = "CVE Creator"
 
     @classmethod
     def get_all_personas(cls) -> List[str]:
@@ -133,6 +135,22 @@ class UserContext:
                 "response_focus": "business_impact",
                 "include_trend_analysis": True,
                 "include_prevention_strategies": True
+            },
+            UserPersona.CWE_ANALYZER.value: {
+                "section_boost": "Description",
+                "preferred_sections": ["Description", "Example", "Relationships"],
+                "response_focus": "cve_mapping_analysis",
+                "include_confidence_scores": True,
+                "include_relationship_analysis": True,
+                "include_vulnerability_chains": True
+            },
+            UserPersona.CVE_CREATOR.value: {
+                "section_boost": "Description",
+                "preferred_sections": ["Description", "Example", "Detection"],
+                "response_focus": "cve_description_creation",
+                "include_structured_format": True,
+                "include_component_breakdown": True,
+                "include_severity_assessment": True
             }
         }
 
@@ -374,6 +392,18 @@ class UserContextManager:
                 "response_detail_level": "standard",
                 "include_examples": False,
                 "include_mitigations": True
+            },
+            UserPersona.CWE_ANALYZER.value: {
+                "section_boost": "Description",
+                "response_detail_level": "detailed",
+                "include_examples": True,
+                "include_mitigations": False
+            },
+            UserPersona.CVE_CREATOR.value: {
+                "section_boost": "Description",
+                "response_detail_level": "standard",
+                "include_examples": True,
+                "include_mitigations": False
             }
         }
 

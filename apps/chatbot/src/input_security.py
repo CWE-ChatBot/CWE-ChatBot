@@ -76,12 +76,13 @@ class InputSanitizer:
             for pattern in self.command_patterns
         ]
 
-    def sanitize_input(self, user_input: str) -> Dict[str, Any]:
+    def sanitize_input(self, user_input: str, user_persona: str = "Developer") -> Dict[str, Any]:
         """
         Sanitize user input and return results with security analysis.
 
         Args:
             user_input: Raw user input string
+            user_persona: User's persona for context-specific handling
 
         Returns:
             Dictionary containing:
@@ -92,6 +93,16 @@ class InputSanitizer:
             - sanitized_length: Length after sanitization
         """
         if not user_input or not isinstance(user_input, str):
+            # CVE Creator can work with minimal input (file attachments might result in empty text)
+            if user_persona == "CVE Creator":
+                return {
+                    "sanitized_input": user_input or "[File attachment or minimal input for CVE Creator]",
+                    "security_flags": [],  # No flags for CVE Creator minimal input
+                    "is_safe": True,       # Safe for CVE Creator
+                    "original_length": len(user_input) if user_input else 0,
+                    "sanitized_length": len(user_input) if user_input else 0
+                }
+
             return {
                 "sanitized_input": "",
                 "security_flags": ["empty_or_invalid_input"],
@@ -187,12 +198,13 @@ class InputSanitizer:
 
         return text
 
-    def validate_cwe_context(self, query: str) -> bool:
+    def validate_cwe_context(self, query: str, user_persona: str = "Developer") -> bool:
         """
         Validate that the query is CWE-related and appropriate for the system.
 
         Args:
             query: Sanitized user query
+            user_persona: User's persona for context-specific validation
 
         Returns:
             True if query appears to be legitimate CWE-related content
@@ -200,7 +212,11 @@ class InputSanitizer:
         if not query or len(query) < 3:
             return False
 
-        # Look for CWE-related keywords
+        # CVE Creator has different validation - accepts vulnerability information
+        if user_persona == "CVE Creator":
+            return self._validate_cve_creator_context(query)
+
+        # Look for CWE-related keywords for other personas
         cwe_keywords = [
             'cwe', 'weakness', 'vulnerability', 'security', 'exploit',
             'injection', 'xss', 'csrf', 'buffer', 'overflow', 'authentication',
@@ -216,6 +232,35 @@ class InputSanitizer:
 
         # Consider query valid if it has CWE keywords or direct CWE ID reference
         return cwe_keyword_count > 0 or has_cwe_id
+
+    def _validate_cve_creator_context(self, query: str) -> bool:
+        """
+        Validate context specifically for CVE Creator persona.
+
+        CVE Creator accepts vulnerability information, patches, and security research.
+        """
+        query_lower = query.lower()
+
+        # CVE Creator specific keywords - broader vulnerability terms
+        cve_creator_keywords = [
+            'vulnerability', 'exploit', 'security', 'cve', 'bug', 'flaw',
+            'patch', 'fix', 'advisory', 'disclosure', 'report', 'research',
+            'poc', 'proof', 'concept', 'attack', 'malicious', 'injection',
+            'overflow', 'bypass', 'escalation', 'unauthorized', 'disclosure',
+            'vendor', 'product', 'version', 'affected', 'impact', 'vector',
+            'component', 'platform', 'file', 'attachment', 'document'
+        ]
+
+        # Check for vulnerability-related keywords
+        keyword_count = sum(1 for keyword in cve_creator_keywords if keyword in query_lower)
+
+        # Accept if has relevant keywords or if query suggests file attachment
+        has_file_indicators = any(indicator in query_lower for indicator in [
+            'attach', 'file', 'upload', 'document', 'report', 'pdf', 'doc'
+        ])
+
+        # CVE Creator is more permissive - accepts vulnerability content or file indicators
+        return keyword_count > 0 or has_file_indicators
 
     def generate_fallback_message(self, security_flags: List[str], user_persona: str = "Developer") -> str:
         """
@@ -233,7 +278,9 @@ class InputSanitizer:
             "Developer": "I can only help with CWE-related development and security questions.",
             "Academic Researcher": "I can only provide information about CWE research topics.",
             "Bug Bounty Hunter": "I can only assist with legitimate CWE-related security research.",
-            "Product Manager": "I can only help with CWE-related product security planning."
+            "Product Manager": "I can only help with CWE-related product security planning.",
+            "CWE Analyzer": "I can only assist with CVE-to-CWE mapping analysis and vulnerability assessment.",
+            "CVE Creator": "I can only help create CVE descriptions from vulnerability information. Please provide your existing vulnerability research, patches, or security advisories."
         }
 
         base_message = persona_messages.get(user_persona, persona_messages["Developer"])

@@ -111,8 +111,8 @@ class ConversationManager:
             )
             self._add_message(session_id, user_message)
 
-            # Sanitize input
-            sanitization_result = self.input_sanitizer.sanitize_input(message_content)
+            # Sanitize input (pass persona for context-specific handling)
+            sanitization_result = self.input_sanitizer.sanitize_input(message_content, context.persona)
 
             if not sanitization_result["is_safe"]:
                 # Generate fallback response for unsafe input
@@ -140,8 +140,8 @@ class ConversationManager:
 
             sanitized_query = sanitization_result["sanitized_input"]
 
-            # Validate CWE relevance
-            if not self.input_sanitizer.validate_cwe_context(sanitized_query):
+            # Validate CWE relevance (pass persona for context-specific validation)
+            if not self.input_sanitizer.validate_cwe_context(sanitized_query, context.persona):
                 fallback_response = self.input_sanitizer.generate_fallback_message(
                     ["non_cwe_query"],
                     context.persona
@@ -153,32 +153,42 @@ class ConversationManager:
                     "is_cwe_relevant": False
                 }
 
-            # Process query using hybrid retrieval
-            user_context_data = context.get_persona_preferences()
-            retrieved_chunks = await self.query_handler.process_query(
-                sanitized_query,
-                user_context_data
-            )
-
-            if not retrieved_chunks:
-                # No relevant information found
-                fallback_response = self.response_generator._generate_fallback_response(
+            # Handle CVE Creator differently - it doesn't need CWE database retrieval
+            if context.persona == "CVE Creator":
+                # CVE Creator works directly with user-provided vulnerability information
+                response = await self.response_generator.generate_response(
                     sanitized_query,
+                    [],  # Empty chunks - CVE Creator doesn't use CWE database
                     context.persona
                 )
-                return {
-                    "response": fallback_response,
-                    "session_id": session_id,
-                    "is_safe": True,
-                    "retrieved_chunks": 0
-                }
+                retrieved_chunks = []
+            else:
+                # Process query using hybrid retrieval for other personas
+                user_context_data = context.get_persona_preferences()
+                retrieved_chunks = await self.query_handler.process_query(
+                    sanitized_query,
+                    user_context_data
+                )
 
-            # Generate persona-specific response
-            response = await self.response_generator.generate_response(
-                sanitized_query,
-                retrieved_chunks,
-                context.persona
-            )
+                if not retrieved_chunks:
+                    # No relevant information found
+                    fallback_response = self.response_generator._generate_fallback_response(
+                        sanitized_query,
+                        context.persona
+                    )
+                    return {
+                        "response": fallback_response,
+                        "session_id": session_id,
+                        "is_safe": True,
+                        "retrieved_chunks": 0
+                    }
+
+                # Generate persona-specific response
+                response = await self.response_generator.generate_response(
+                    sanitized_query,
+                    retrieved_chunks,
+                    context.persona
+                )
 
             # Validate response security
             validation_result = self.security_validator.validate_response(response)
