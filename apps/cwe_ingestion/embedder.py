@@ -77,7 +77,7 @@ class CWEEmbedder:
         self.model = SentenceTransformer(self.model_name)
         self.embedding_dimension = self.model.get_sentence_embedding_dimension()
 
-    def _use_mock_embedder(self):
+    def _use_mock_embedder(self) -> None:
         """Use mock embedder for testing when sentence-transformers is not available."""
         self.model = None
         self.embedding_dimension = 384  # Mock dimension
@@ -103,7 +103,7 @@ class CWEEmbedder:
 
             if self.model is not None:
                 # Use real sentence transformer
-                embedding = self.model.encode(text.strip(), convert_to_numpy=True)
+                embedding: np.ndarray = self.model.encode(text.strip(), convert_to_numpy=True)
                 return embedding
             else:
                 # Use mock embedder for testing

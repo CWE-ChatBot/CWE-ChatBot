@@ -4,23 +4,37 @@ CWE Query Handler - Story 2.1 Integration with Story 1.5 Production Infrastructu
 Integrates with existing production hybrid retrieval system from Story 1.5.
 """
 
+import asyncio
 import sys
 import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
 
-# Add cwe_ingestion to path for imports from Story 1.5
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "cwe_ingestion"))
-
+# Prefer package import; allow override via CWE_INGESTION_PATH
 try:
-    from pg_chunk_store import PostgresChunkStore
-    from embedder import GeminiEmbedder
-except ImportError as e:
-    logging.error(f"Failed to import Story 1.5 components: {e}")
-    raise ImportError(
-        "Story 1.5 components required. Ensure pg_chunk_store.py and embedder.py are available in cwe_ingestion."
-    ) from e
+    # If the repo is run from root, this works without hacks
+    from apps.cwe_ingestion.pg_chunk_store import PostgresChunkStore  # type: ignore
+    from apps.cwe_ingestion.embedder import GeminiEmbedder  # type: ignore
+except Exception:
+    ingestion_path = os.getenv("CWE_INGESTION_PATH")
+    if ingestion_path and os.path.isdir(ingestion_path):
+        sys.path.insert(0, ingestion_path)
+        try:
+            # Support pointing directly at the cwe_ingestion folder
+            from pg_chunk_store import PostgresChunkStore  # type: ignore
+            from embedder import GeminiEmbedder  # type: ignore
+        except Exception as e:  # pragma: no cover
+            logging.error(f"Failed to import ingestion modules from CWE_INGESTION_PATH={ingestion_path}: {e}")
+            raise ImportError(
+                "Unable to import ingestion modules. Set CWE_INGESTION_PATH to the 'apps/cwe_ingestion' directory, "
+                "or install the ingestion package so 'apps.cwe_ingestion' can be imported."
+            ) from e
+    else:  # pragma: no cover
+        raise ImportError(
+            "Ingestion modules not found. Either install the project so 'apps.cwe_ingestion' is importable, or set "
+            "CWE_INGESTION_PATH environment variable to point at the 'apps/cwe_ingestion' directory."
+        )
 
 logger = logging.getLogger(__name__)
 
@@ -34,20 +48,30 @@ class CWEQueryHandler:
     - GeminiEmbedder: Production Gemini embeddings (3072D)
     """
 
-    def __init__(self, database_url: str, gemini_api_key: str):
+    def __init__(self, database_url: str, gemini_api_key: str, hybrid_weights: Optional[Dict[str, float]] = None) -> None:
         """
         Initialize handler with Story 1.5 production components.
 
         Args:
             database_url: PostgreSQL connection string for production database
             gemini_api_key: Gemini API key for embeddings
+            hybrid_weights: RRF weights dict with w_vec, w_fts, w_alias keys (defaults to validated config values)
         """
         try:
             # Use existing production components from Story 1.5
             self.store = PostgresChunkStore(dims=3072, database_url=database_url)
             self.embedder = GeminiEmbedder(api_key=gemini_api_key)
 
+            # Store hybrid weights (use provided weights or fall back to config defaults)
+            if hybrid_weights is None:
+                # Import config here to avoid circular imports
+                from .app_config import config
+                self.hybrid_weights = config.get_hybrid_weights()
+            else:
+                self.hybrid_weights = hybrid_weights
+
             logger.info("CWEQueryHandler initialized with Story 1.5 production infrastructure")
+            logger.info(f"RRF weights: {self.hybrid_weights}")
 
             # Verify database connection
             stats = self.store.get_collection_stats()
@@ -74,17 +98,12 @@ class CWEQueryHandler:
         try:
             logger.info(f"Processing query: '{query[:50]}...' for persona: {user_context.get('persona', 'unknown')}")
 
-            # Generate embedding using existing Gemini embedder from Story 1.5
-            query_embedding = self.embedder.embed_text(query)
+            # Generate embedding using existing Gemini embedder from Story 1.5 (non-blocking)
+            query_embedding = await asyncio.to_thread(self.embedder.embed_text, query)
             logger.debug(f"Generated {len(query_embedding)}D embedding")
 
-            # Use existing hybrid query with optimized weights from Story 1.5 persona testing
-            # These weights achieved 60% success rate in Story 1.5 validation
-            weights = {
-                "w_vec": 0.65,   # Vector similarity
-                "w_fts": 0.25,   # Full-text search
-                "w_alias": 0.10  # Alias matching
-            }
+            # Use centralized hybrid weights from Config (Story 1.5 validated weights)
+            weights = self.hybrid_weights
 
             # Apply persona-specific section boost if configured
             section_boost = user_context.get("section_boost")
@@ -101,7 +120,7 @@ class CWEQueryHandler:
                 logger.debug(f"Applied section boost: {section_boost}")
 
             # Execute hybrid search using Story 1.5 production system
-            results = self.store.query_hybrid(**query_params)
+            results = await asyncio.to_thread(self.store.query_hybrid, **query_params)
 
             logger.info(f"Retrieved {len(results)} chunks")
 
@@ -120,7 +139,8 @@ class CWEQueryHandler:
     def get_database_stats(self) -> Dict[str, Any]:
         """Get production database statistics."""
         try:
-            return self.store.get_collection_stats()
+            stats: Dict[str, Any] = self.store.get_collection_stats()
+            return stats
         except Exception as e:
             logger.error(f"Failed to get database stats: {e}")
             return {"count": 0, "error": str(e)}

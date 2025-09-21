@@ -11,6 +11,7 @@ import chainlit as cl
 import PyPDF2
 import io
 import tempfile
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class FileProcessor:
     for vulnerability analysis and CVE description creation.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize file processor - PDF only for CVE Creator."""
         self.supported_types = [
             'application/pdf'
@@ -81,7 +82,7 @@ class FileProcessor:
             return "\n".join(extracted_content)
         return None
 
-    async def _extract_file_content(self, file_element) -> Optional[str]:
+    async def _extract_file_content(self, file_element: Any) -> Optional[str]:
         """
         Extract text content from a file element.
 
@@ -96,8 +97,7 @@ class FileProcessor:
             if hasattr(file_element, 'content'):
                 file_content = file_element.content
             elif hasattr(file_element, 'path'):
-                with open(file_element.path, 'rb') as f:
-                    file_content = f.read()
+                file_content = await asyncio.to_thread(self._read_file_from_path, file_element.path)
             else:
                 logger.error(f"Cannot access file content for {file_element.name}")
                 return None
@@ -106,13 +106,14 @@ class FileProcessor:
             mime_type = getattr(file_element, 'mime', 'application/octet-stream')
 
             if mime_type == 'application/pdf':
-                return self._extract_pdf_content(file_content)
+                return await asyncio.to_thread(self._extract_pdf_content, file_content)
             elif mime_type.startswith('text/'):
                 return self._extract_text_content(file_content)
             else:
                 # Try to treat as text first
                 try:
-                    return file_content.decode('utf-8')
+                    decoded_content: str = file_content.decode('utf-8')
+                    return decoded_content
                 except UnicodeDecodeError:
                     logger.warning(f"Cannot decode {file_element.name} as text")
                     return f"[Binary file - {file_element.name} - unable to extract text content]"
@@ -228,7 +229,7 @@ class FileProcessor:
 
         return found_types
 
-    def _extract_product_info(self, content: str) -> Dict[str, List[str]]:
+    def _extract_product_info(self, content: str) -> Dict[str, Any]:
         """Extract product and vendor information."""
         import re
 
@@ -302,7 +303,12 @@ class FileProcessor:
 
         return min(score, 100)
 
-    def _get_file_size(self, file_element) -> int:
+    def _read_file_from_path(self, file_path: str) -> bytes:
+        """Helper method to read file content from path (for asyncio.to_thread)."""
+        with open(file_path, 'rb') as f:
+            return f.read()
+
+    def _get_file_size(self, file_element: Any) -> int:
         """
         Get the file size in bytes from a file element.
 

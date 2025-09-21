@@ -11,7 +11,7 @@ from datetime import datetime
 import asyncio
 import chainlit as cl
 
-from user_context import UserContextManager, UserContext, UserPersona
+from user_context import UserContext, UserPersona
 from input_security import InputSanitizer, SecurityValidator
 from query_handler import CWEQueryHandler
 from response_generator import ResponseGenerator
@@ -47,7 +47,7 @@ class ConversationManager:
         self,
         database_url: str,
         gemini_api_key: str,
-        context_manager: Optional[UserContextManager] = None
+        context_manager: Optional[Any] = None  # kept for backward-compat; no longer used
     ):
         """
         Initialize conversation manager with required components.
@@ -59,20 +59,246 @@ class ConversationManager:
         """
         try:
             # Initialize core components
-            self.context_manager = context_manager or UserContextManager()
+            self.context_manager = context_manager  # deprecated; state now in cl.user_session
             self.input_sanitizer = InputSanitizer()
             self.security_validator = SecurityValidator()
             self.query_handler = CWEQueryHandler(database_url, gemini_api_key)
             self.response_generator = ResponseGenerator(gemini_api_key)
 
-            # Message storage for current session
-            self.conversation_messages: Dict[str, List[ConversationMessage]] = {}
+            # No local message storage; rely on Chainlit's built-in persistence
 
             logger.info("ConversationManager initialized successfully")
 
         except Exception as e:
             logger.error(f"Failed to initialize ConversationManager: {e}")
             raise
+
+    # -----------------------------
+    # Per-user context via cl.user_session
+    # -----------------------------
+    def _get_or_create_user_context(self, session_id: str) -> UserContext:
+        """
+        Retrieve the UserContext from cl.user_session, creating it if missing.
+        Always binds the provided Chainlit session_id onto the context.
+        """
+        ctx: Optional[UserContext] = cl.user_session.get("user_context")
+        if not ctx:
+            ctx = UserContext()
+            ctx.session_id = session_id
+            cl.user_session["user_context"] = ctx
+            logger.info(f"Created new UserContext in user_session for session {session_id}")
+        else:
+            ctx.update_activity()
+        return ctx
+
+    async def process_user_message_streaming(
+        self,
+        session_id: str,
+        message_content: str,
+        message_id: str
+    ) -> Dict[str, Any]:
+        """
+        Process user message and generate streaming response.
+
+        Args:
+            session_id: Chainlit session ID
+            message_content: User's message content
+            message_id: Unique message identifier
+
+        Returns:
+            Dictionary containing response metadata and message reference
+        """
+        try:
+            logger.info(f"Processing streaming message for session {session_id}")
+
+            # Get or create user context in cl.user_session
+            context = self._get_or_create_user_context(session_id)
+
+            # Store user message
+            user_message = ConversationMessage(
+                message_id=message_id,
+                session_id=session_id,
+                content=message_content,
+                message_type="user"
+            )
+            self._add_message(session_id, user_message)
+
+            # Sanitize input (pass persona for context-specific handling)
+            sanitization_result = self.input_sanitizer.sanitize_input(message_content, context.persona)
+
+            if not sanitization_result["is_safe"]:
+                # Generate fallback response for unsafe input
+                fallback_response = self.input_sanitizer.generate_fallback_message(
+                    sanitization_result["security_flags"],
+                    context.persona
+                )
+
+                # Log security event
+                self.security_validator.log_security_event(
+                    "unsafe_input_detected",
+                    {
+                        "session_id": session_id,
+                        "security_flags": sanitization_result["security_flags"],
+                        "persona": context.persona
+                    }
+                )
+
+                # Send non-streaming fallback
+                msg = cl.Message(content=fallback_response)
+                await msg.send()
+
+                return {
+                    "response": fallback_response,
+                    "session_id": session_id,
+                    "is_safe": False,
+                    "security_flags": sanitization_result["security_flags"],
+                    "message": msg
+                }
+
+            sanitized_query = sanitization_result["sanitized_input"]
+
+            # Validate CWE relevance (pass persona for context-specific validation)
+            if not self.input_sanitizer.validate_cwe_context(sanitized_query, context.persona):
+                fallback_response = self.input_sanitizer.generate_fallback_message(
+                    ["non_cwe_query"],
+                    context.persona
+                )
+
+                msg = cl.Message(content=fallback_response)
+                await msg.send()
+
+                return {
+                    "response": fallback_response,
+                    "session_id": session_id,
+                    "is_safe": True,
+                    "is_cwe_relevant": False,
+                    "message": msg
+                }
+
+            # Handle CVE Creator differently - it doesn't need CWE database retrieval
+            if context.persona == "CVE Creator":
+                # CVE Creator works directly with user-provided vulnerability information
+                async with cl.Step(name="Generate CVE Response", type="llm") as generate_step:
+                    generate_step.input = f"Generating CVE analysis for: {sanitized_query[:100]}..."
+
+                    # Create streaming message
+                    msg = cl.Message(content="")
+                    await msg.send()
+
+                    response = await self.response_generator.generate_response_streaming(
+                        sanitized_query,
+                        [],  # Empty chunks - CVE Creator doesn't use CWE database
+                        context.persona,
+                        msg
+                    )
+
+                    generate_step.output = f"Generated CVE response ({len(response)} characters)"
+
+                retrieved_chunks = []
+            else:
+                # Process query using hybrid retrieval for other personas
+                async with cl.Step(name="Retrieve CWE Information", type="retrieval") as retrieval_step:
+                    retrieval_step.input = f"Searching CWE database for: {sanitized_query[:100]}..."
+
+                    user_context_data = context.get_persona_preferences()
+                    retrieved_chunks = await self.query_handler.process_query(
+                        sanitized_query,
+                        user_context_data
+                    )
+
+                    if retrieved_chunks:
+                        retrieved_cwes = list(set(chunk["metadata"]["cwe_id"] for chunk in retrieved_chunks))
+                        retrieval_step.output = f"Found {len(retrieved_chunks)} relevant chunks from CWEs: {', '.join(retrieved_cwes[:5])}{'...' if len(retrieved_cwes) > 5 else ''}"
+                    else:
+                        retrieval_step.output = "No relevant CWE information found"
+
+                if not retrieved_chunks:
+                    # No relevant information found
+                    fallback_response = self.response_generator._generate_fallback_response(
+                        sanitized_query,
+                        context.persona
+                    )
+
+                    msg = cl.Message(content=fallback_response)
+                    await msg.send()
+
+                    return {
+                        "response": fallback_response,
+                        "session_id": session_id,
+                        "is_safe": True,
+                        "retrieved_chunks": 0,
+                        "message": msg
+                    }
+
+                # Generate persona-specific response with streaming
+                async with cl.Step(name="Generate Response", type="llm") as generate_step:
+                    generate_step.input = f"Generating {context.persona} response using {len(retrieved_chunks)} CWE chunks"
+
+                    # Create streaming message
+                    msg = cl.Message(content="")
+                    await msg.send()
+
+                    response = await self.response_generator.generate_response_streaming(
+                        sanitized_query,
+                        retrieved_chunks,
+                        context.persona,
+                        msg
+                    )
+
+                    generate_step.output = f"Generated response ({len(response)} characters) for {context.persona}"
+
+            # Validate response security
+            validation_result = self.security_validator.validate_response(response)
+            final_response = validation_result["validated_response"]
+
+            # Extract CWEs for context tracking
+            retrieved_cwes = list(set(
+                chunk["metadata"]["cwe_id"] for chunk in retrieved_chunks
+            ))
+
+            # Record interaction directly on the per-user context
+            context.add_conversation_entry(sanitized_query, final_response, retrieved_cwes)
+
+            # Store assistant message
+            assistant_message = ConversationMessage(
+                message_id=f"{message_id}_response",
+                session_id=session_id,
+                content=final_response,
+                message_type="assistant",
+                metadata={
+                    "retrieved_cwes": retrieved_cwes,
+                    "chunk_count": len(retrieved_chunks),
+                    "persona": context.persona,
+                    "security_validated": validation_result["is_safe"]
+                }
+            )
+            self._add_message(session_id, assistant_message)
+
+            return {
+                "response": final_response,
+                "session_id": session_id,
+                "is_safe": validation_result["is_safe"],
+                "retrieved_cwes": retrieved_cwes,
+                "chunk_count": len(retrieved_chunks),
+                "retrieved_chunks": retrieved_chunks,  # Include chunks for source elements
+                "persona": context.persona,
+                "message": msg
+            }
+
+        except Exception as e:
+            logger.error(f"Error processing streaming message: {e}")
+            error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
+
+            msg = cl.Message(content=error_response)
+            await msg.send()
+
+            return {
+                "response": error_response,
+                "session_id": session_id,
+                "is_safe": True,
+                "error": str(e),
+                "message": msg
+            }
 
     async def process_user_message(
         self,
@@ -94,13 +320,8 @@ class ConversationManager:
         try:
             logger.info(f"Processing message for session {session_id}")
 
-            # Get or create user context
-            context = self.context_manager.get_session(session_id)
-            if not context:
-                # Create new session with default persona
-                context = self.context_manager.create_session()
-                session_id = context.session_id
-                logger.info(f"Created new session {session_id}")
+            # Get or create user context in cl.user_session
+            context = self._get_or_create_user_context(session_id)
 
             # Store user message
             user_message = ConversationMessage(
@@ -156,19 +377,34 @@ class ConversationManager:
             # Handle CVE Creator differently - it doesn't need CWE database retrieval
             if context.persona == "CVE Creator":
                 # CVE Creator works directly with user-provided vulnerability information
-                response = await self.response_generator.generate_response(
-                    sanitized_query,
-                    [],  # Empty chunks - CVE Creator doesn't use CWE database
-                    context.persona
-                )
+                async with cl.Step(name="Generate CVE Response", type="llm") as generate_step:
+                    generate_step.input = f"Generating CVE analysis for: {sanitized_query[:100]}..."
+
+                    response = await self.response_generator.generate_response(
+                        sanitized_query,
+                        [],  # Empty chunks - CVE Creator doesn't use CWE database
+                        context.persona
+                    )
+
+                    generate_step.output = f"Generated CVE response ({len(response)} characters)"
+
                 retrieved_chunks = []
             else:
                 # Process query using hybrid retrieval for other personas
-                user_context_data = context.get_persona_preferences()
-                retrieved_chunks = await self.query_handler.process_query(
-                    sanitized_query,
-                    user_context_data
-                )
+                async with cl.Step(name="Retrieve CWE Information", type="retrieval") as retrieval_step:
+                    retrieval_step.input = f"Searching CWE database for: {sanitized_query[:100]}..."
+
+                    user_context_data = context.get_persona_preferences()
+                    retrieved_chunks = await self.query_handler.process_query(
+                        sanitized_query,
+                        user_context_data
+                    )
+
+                    if retrieved_chunks:
+                        retrieved_cwes = list(set(chunk["metadata"]["cwe_id"] for chunk in retrieved_chunks))
+                        retrieval_step.output = f"Found {len(retrieved_chunks)} relevant chunks from CWEs: {', '.join(retrieved_cwes[:5])}{'...' if len(retrieved_cwes) > 5 else ''}"
+                    else:
+                        retrieval_step.output = "No relevant CWE information found"
 
                 if not retrieved_chunks:
                     # No relevant information found
@@ -184,11 +420,16 @@ class ConversationManager:
                     }
 
                 # Generate persona-specific response
-                response = await self.response_generator.generate_response(
-                    sanitized_query,
-                    retrieved_chunks,
-                    context.persona
-                )
+                async with cl.Step(name="Generate Response", type="llm") as generate_step:
+                    generate_step.input = f"Generating {context.persona} response using {len(retrieved_chunks)} CWE chunks"
+
+                    response = await self.response_generator.generate_response(
+                        sanitized_query,
+                        retrieved_chunks,
+                        context.persona
+                    )
+
+                    generate_step.output = f"Generated response ({len(response)} characters) for {context.persona}"
 
             # Validate response security
             validation_result = self.security_validator.validate_response(response)
@@ -199,13 +440,8 @@ class ConversationManager:
                 chunk["metadata"]["cwe_id"] for chunk in retrieved_chunks
             ))
 
-            # Record interaction
-            self.context_manager.record_interaction(
-                session_id,
-                sanitized_query,
-                final_response,
-                retrieved_cwes
-            )
+            # Record interaction directly on the per-user context
+            context.add_conversation_entry(sanitized_query, final_response, retrieved_cwes)
 
             # Store assistant message
             assistant_message = ConversationMessage(
@@ -228,6 +464,7 @@ class ConversationManager:
                 "is_safe": validation_result["is_safe"],
                 "retrieved_cwes": retrieved_cwes,
                 "chunk_count": len(retrieved_chunks),
+                "retrieved_chunks": retrieved_chunks,  # Include chunks for source elements
                 "persona": context.persona
             }
 
@@ -257,19 +494,20 @@ class ConversationManager:
             logger.error(f"Invalid persona: {new_persona}")
             return False
 
-        success = self.context_manager.update_persona(session_id, new_persona)
-        if success:
-            # Add system message about persona change
-            system_message = ConversationMessage(
-                message_id=f"persona_change_{datetime.now().timestamp()}",
-                session_id=session_id,
-                content=f"Persona updated to: {new_persona}",
-                message_type="system",
-                metadata={"persona_change": True, "new_persona": new_persona}
-            )
-            self._add_message(session_id, system_message)
-
-        return success
+        context = self._get_or_create_user_context(session_id)
+        old_persona = context.persona
+        context.persona = new_persona
+        context.update_activity()
+        # Add system message about persona change
+        system_message = ConversationMessage(
+            message_id=f"persona_change_{datetime.now().timestamp()}",
+            session_id=session_id,
+            content=f"Persona updated to: {new_persona}",
+            message_type="system",
+            metadata={"persona_change": True, "new_persona": new_persona, "old_persona": old_persona}
+        )
+        self._add_message(session_id, system_message)
+        return True
 
     def get_conversation_history(self, session_id: str, limit: int = 20) -> List[ConversationMessage]:
         """
@@ -282,8 +520,8 @@ class ConversationManager:
         Returns:
             List of conversation messages
         """
-        messages = self.conversation_messages.get(session_id, [])
-        return messages[-limit:] if limit else messages
+        # Chainlit UI shows persisted history; avoid duplicating storage here.
+        return []
 
     def get_session_context(self, session_id: str) -> Optional[UserContext]:
         """
@@ -295,7 +533,7 @@ class ConversationManager:
         Returns:
             UserContext if found, None otherwise
         """
-        return self.context_manager.get_session(session_id)
+        return cl.user_session.get("user_context")
 
     def record_feedback(self, session_id: str, message_id: str, rating: int) -> bool:
         """
@@ -313,7 +551,7 @@ class ConversationManager:
             logger.error(f"Invalid rating: {rating}")
             return False
 
-        context = self.context_manager.get_session(session_id)
+        context = self._get_or_create_user_context(session_id)
         if not context:
             logger.error(f"Session not found: {session_id}")
             return False
@@ -333,20 +571,8 @@ class ConversationManager:
         Returns:
             Number of sessions cleaned up
         """
-        # Get expired session IDs before cleanup
-        expired_count = self.context_manager.cleanup_expired_sessions()
-
-        # Clean up conversation messages for expired sessions
-        active_session_ids = set(self.context_manager.active_sessions.keys())
-        expired_message_sessions = [
-            session_id for session_id in self.conversation_messages.keys()
-            if session_id not in active_session_ids
-        ]
-
-        for session_id in expired_message_sessions:
-            del self.conversation_messages[session_id]
-
-        return expired_count
+        # cl.user_session is per-connection; nothing to clean here
+        return 0
 
     def get_system_health(self) -> Dict[str, Any]:
         """
@@ -355,24 +581,14 @@ class ConversationManager:
         Returns:
             System health status
         """
-        health = self.query_handler.health_check()
+        health: Dict[str, Any] = self.query_handler.health_check()
+        # Per-user data now lives in cl.user_session; global counts are not available here
         health.update({
-            "active_sessions": self.context_manager.get_active_session_count(),
-            "persona_distribution": self.context_manager.get_persona_distribution(),
-            "total_conversations": sum(
-                len(messages) for messages in self.conversation_messages.values()
-            )
+            "active_sessions": None,
+            "persona_distribution": {}
         })
-
         return health
 
-    def _add_message(self, session_id: str, message: ConversationMessage):
-        """Add message to conversation history."""
-        if session_id not in self.conversation_messages:
-            self.conversation_messages[session_id] = []
-
-        self.conversation_messages[session_id].append(message)
-
-        # Keep only last 50 messages per session for memory efficiency
-        if len(self.conversation_messages[session_id]) > 50:
-            self.conversation_messages[session_id] = self.conversation_messages[session_id][-50:]
+    def _add_message(self, session_id: str, message: ConversationMessage) -> None:
+        """No-op for local storage; Chainlit persists messages in its data layer."""
+        logger.debug(f"Message recorded (type={message.message_type}) for session {session_id}")

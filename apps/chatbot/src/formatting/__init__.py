@@ -1,1 +1,0 @@
-"""Response formatting modules for user display."""

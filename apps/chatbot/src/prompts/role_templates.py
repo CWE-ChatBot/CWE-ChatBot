@@ -8,8 +8,8 @@ import logging
 import html
 import re
 from typing import Dict, Any, Optional, Union
-from src.user.role_manager import UserRole
-from src.security.secure_logging import get_secure_logger
+from ..user_context import UserPersona
+from ..security.secure_logging import get_secure_logger
 
 logger = get_secure_logger(__name__)
 
@@ -20,7 +20,7 @@ class RolePromptTemplates:
     Templates guide the LLM on how to structure and prioritize CWE information.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the prompt template system."""
         self._base_context = {
             "system_role": "You are a cybersecurity expert specializing in Common Weakness Enumeration (CWE) information.",
@@ -62,7 +62,7 @@ class RolePromptTemplates:
             r'`[^`]+`'     # Command substitution
         ]
     
-    def get_role_prompt(self, role: Optional[UserRole], context: Dict[str, Any]) -> str:
+    def get_role_prompt(self, role: Optional[UserPersona], context: Dict[str, Any]) -> str:
         """
         Generate a role-specific prompt template.
         
@@ -77,12 +77,12 @@ class RolePromptTemplates:
             return self._get_generic_prompt_template()
         
         # Get role-specific template
-        role_templates = {
-            UserRole.PSIRT: self._get_psirt_prompt_template,
-            UserRole.DEVELOPER: self._get_developer_prompt_template,
-            UserRole.ACADEMIC: self._get_academic_prompt_template,
-            UserRole.BUG_BOUNTY: self._get_bug_bounty_prompt_template,
-            UserRole.PRODUCT_MANAGER: self._get_product_manager_prompt_template
+        role_templates: Dict[UserPersona, Union[str, callable]] = {
+            UserPersona.PSIRT_MEMBER: self._get_psirt_prompt_template,
+            UserPersona.DEVELOPER: self._get_developer_prompt_template,
+            UserPersona.ACADEMIC_RESEARCHER: self._get_academic_prompt_template,
+            UserPersona.BUG_BOUNTY_HUNTER: self._get_bug_bounty_prompt_template,
+            UserPersona.PRODUCT_MANAGER: self._get_product_manager_prompt_template
         }
         
         template_func = role_templates.get(role, self._get_generic_prompt_template)

@@ -14,6 +14,8 @@ Implementation plan to remediate two medium-priority security vulnerabilities id
 ## Implementation Strategy
 
 ### Phase 1: MED-007 - Input Sanitization Integration (Higher Priority)
+Note: The referenced component has been removed in the R-1 refactor. See `apps/chatbot/src/response_generator.py` and file-based prompts for current response generation.
+
 **Component**: `apps/chatbot/src/processing/role_aware_responder.py`  
 **Risk Level**: CVSS 5.4 - Higher impact, easier implementation  
 **Estimated Time**: 2-3 hours
@@ -136,21 +138,17 @@ def test_role_response_input_sanitization():
 
 ---
 
-## Phase 2: MED-006 - Session Data Encryption
+## Phase 2: MED-006 - Session Data Encryption (Deprecated)
 
 ### 2.1 Analysis of Current Gap
-**Security Issue**: Role information stored in plain text in session memory.
+Note: Session encryption for role values has been deprecated as unnecessary complexity. Role values are not sensitive and are stored as plaintext with validation. This section is retained for historical context.
 
-**Current Implementation (VULNERABLE)**:
+**Original Implementation (now replaced)**:
 ```python
 cl.user_session[self.ROLE_SESSION_KEY] = role.value  # Plain text storage
 ```
 
-**Target Implementation (SECURE)**:
-```python
-encrypted_role = self.session_encryptor.encrypt(role.value)
-cl.user_session[self.ROLE_SESSION_KEY] = encrypted_role  # Encrypted storage
-```
+Session encryption utility and tests have been removed in the refactor. If encryption of session data is reintroduced in the future, prefer signed values (HMAC) for tamper detection instead of opaque ciphertext for non-sensitive fields.
 
 ### 2.2 Implementation Tasks
 

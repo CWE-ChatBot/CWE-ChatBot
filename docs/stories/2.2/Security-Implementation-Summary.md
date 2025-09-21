@@ -17,7 +17,7 @@ This document provides a comprehensive summary of all security enhancements impl
 
 **Files Created/Modified:**
 - `NEW: /apps/chatbot/src/security/csrf_protection.py` (290 lines)
-- `ENHANCED: /apps/chatbot/src/formatting/progressive_response_formatter.py` 
+Note: Progressive response formatter has been deprecated in favor of persona prompts and `response_generator.py`.
 - `ENHANCED: /apps/chatbot/main.py` (action handlers)
 
 **Key Features:**

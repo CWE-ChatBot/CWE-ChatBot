@@ -23,16 +23,22 @@ class Config:
     pg_user: str = os.getenv("POSTGRES_USER", "postgres")
     pg_password: str = os.getenv("POSTGRES_PASSWORD", "")
     
-    # Embedding Model Configuration (following ADR)
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-    embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
-    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    # Embedding/LLM Configuration (Gemini standard)
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "models/embedding-001")
+    embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "3072"))
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     
-    # Retrieval Configuration
-    hybrid_dense_weight: float = float(os.getenv("HYBRID_DENSE_WEIGHT", "0.6"))
-    hybrid_sparse_weight: float = float(os.getenv("HYBRID_SPARSE_WEIGHT", "0.4"))
+    # Retrieval Configuration (RRF hybrid weights)
+    w_vec: float = float(os.getenv("RRF_W_VEC", "0.65"))    # Vector similarity
+    w_fts: float = float(os.getenv("RRF_W_FTS", "0.25"))    # Full-text search
+    w_alias: float = float(os.getenv("RRF_W_ALIAS", "0.10")) # Alias matching
     max_retrieval_results: int = int(os.getenv("MAX_RETRIEVAL_RESULTS", "5"))
     similarity_threshold: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.1"))
+    # RRF (ingestion-aligned) parameters
+    rrf_k_vec: int = int(os.getenv("RRF_K_VEC", "200"))
+    rrf_fts_k: int = int(os.getenv("RRF_FTS_K", "200"))
+    rrf_alias_k: int = int(os.getenv("RRF_ALIAS_K", "200"))
+    rrf_k_rrf: int = int(os.getenv("RRF_K_RRF", "60"))
     
     # Security Configuration
     max_input_length: int = int(os.getenv("MAX_INPUT_LENGTH", "1000"))
@@ -53,10 +59,11 @@ class Config:
         }
     
     def get_hybrid_weights(self) -> Dict[str, float]:
-        """Get hybrid retrieval weights."""
+        """Get RRF hybrid retrieval weights."""
         return {
-            "dense": self.hybrid_dense_weight,
-            "sparse": self.hybrid_sparse_weight
+            "w_vec": self.w_vec,
+            "w_fts": self.w_fts,
+            "w_alias": self.w_alias
         }
     
     def validate_config(self) -> None:
@@ -67,14 +74,14 @@ class Config:
         if not self.pg_password:
             errors.append("POSTGRES_PASSWORD environment variable is required")
         
-        # Check OpenAI API key
-        if not self.openai_api_key:
-            errors.append("OPENAI_API_KEY environment variable is required")
+        # Check Gemini API key
+        if not self.gemini_api_key:
+            errors.append("GEMINI_API_KEY environment variable is required")
         
-        # Validate weights sum to 1.0
-        total_weight = self.hybrid_dense_weight + self.hybrid_sparse_weight
+        # Validate RRF weights sum to 1.0
+        total_weight = self.w_vec + self.w_fts + self.w_alias
         if not abs(total_weight - 1.0) < 0.001:
-            errors.append(f"Hybrid weights must sum to 1.0, got {total_weight}")
+            errors.append(f"RRF weights (w_vec + w_fts + w_alias) must sum to 1.0, got {total_weight}")
         
         if errors:
             raise ValueError(f"Configuration errors: {'; '.join(errors)}")

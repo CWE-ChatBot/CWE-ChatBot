@@ -66,11 +66,11 @@ class UserContext:
     preferred_cwe_categories: List[str] = field(default_factory=list)
     feedback_ratings: List[int] = field(default_factory=list)
 
-    def update_activity(self):
+    def update_activity(self) -> None:
         """Update last activity timestamp."""
         self.last_active = datetime.now()
 
-    def add_conversation_entry(self, query: str, response: str, retrieved_cwes: List[str]):
+    def add_conversation_entry(self, query: str, response: str, retrieved_cwes: List[str]) -> None:
         """Add conversation entry to history."""
         self.conversation_history.append({
             "timestamp": datetime.now().isoformat(),
@@ -155,7 +155,8 @@ class UserContext:
         }
 
         if self.persona in persona_configs:
-            base_preferences.update(persona_configs[self.persona])
+            persona_config: Dict[str, Any] = persona_configs[self.persona]
+            base_preferences.update(persona_config)
 
         return base_preferences
 
@@ -185,17 +186,18 @@ class UserContextManager:
     for personalized user experiences.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize context manager."""
         self.active_sessions: Dict[str, UserContext] = {}
         self.session_timeout_minutes = 30
         logger.info("UserContextManager initialized")
 
-    def create_session(self, persona: str = UserPersona.DEVELOPER.value) -> UserContext:
+    def create_session(self, session_id: str = None, persona: str = UserPersona.DEVELOPER.value) -> UserContext:
         """
         Create new user session with specified persona.
 
         Args:
+            session_id: Explicit session ID (uses Chainlit session ID)
             persona: User persona for role-based responses
 
         Returns:
@@ -205,7 +207,12 @@ class UserContextManager:
             logger.warning(f"Invalid persona '{persona}', defaulting to Developer")
             persona = UserPersona.DEVELOPER.value
 
-        context = UserContext(persona=persona)
+        # Create context with explicit session_id if provided
+        if session_id:
+            context = UserContext(persona=persona)
+            context.session_id = session_id  # Override the auto-generated UUID
+        else:
+            context = UserContext(persona=persona)
 
         # Set persona-specific defaults
         persona_defaults = self._get_persona_defaults(persona)
@@ -415,7 +422,7 @@ class UserContextManager:
 
     def get_persona_distribution(self) -> Dict[str, int]:
         """Get distribution of active sessions by persona."""
-        distribution = {}
+        distribution: Dict[str, int] = {}
         for context in self.active_sessions.values():
             persona = context.persona
             distribution[persona] = distribution.get(persona, 0) + 1

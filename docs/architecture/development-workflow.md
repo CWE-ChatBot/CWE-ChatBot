@@ -36,7 +36,7 @@ Environment variables are used to manage sensitive information and configuration
   * **Backend (.env file - at `cwe-chatbot-monorepo/.env`):** This file should be created based on `.env.example` and *never* committed to version control.
       * `CHAINLIT_PORT=8000` (Local port for Chainlit UI)
       * `CHAINLIT_HOST=0.0.0.0`
-      * `OPENAI_API_KEY=sk-...` (Example: If using OpenAI LLM, for internal testing/development)
+      * `GEMINI_API_KEY=...` (Required for embeddings/LLM in current architecture)
       * `GCP_PROJECT_ID=your-gcp-project-id`
       * `PG_CONN_STRING=postgresql://user:pass@localhost:5432/cwe_chatbot_db` (Local PostgreSQL connection string)
       * `VECTOR_DB_API_KEY=your-vector-db-api-key` (If using managed service like Pinecone)

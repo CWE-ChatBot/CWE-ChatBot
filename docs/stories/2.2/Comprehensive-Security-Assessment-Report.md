@@ -20,7 +20,7 @@ This comprehensive assessment was conducted using multiple specialized Claude Co
 ## **🎯 Key Security Achievements**
 
 ### **✅ M1: Enhanced Action Button Validation - HIGHLY EFFECTIVE**
-**Implementation Location:** `/apps/chatbot/src/formatting/progressive_response_formatter.py`
+Note: The progressive response formatter is deprecated. Current UI paths should leverage content from `response_generator.py` and prompts.
 
 **Security Controls Implemented:**
 - **Input Type Validation**: Prevents injection through non-string inputs

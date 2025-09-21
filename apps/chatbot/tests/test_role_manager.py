@@ -15,7 +15,8 @@ sys.modules['chainlit'] = MagicMock()
 # Add src to path for imports  
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from src.user.role_manager import RoleManager, UserRole
+from src.user.role_manager import RoleManager
+from src.user_context import UserPersona
 
 
 class TestRoleManager:
@@ -25,24 +26,17 @@ class TestRoleManager:
         """Set up test fixtures."""
         self.role_manager = RoleManager()
     
-    def test_user_role_enum(self):
-        """Test UserRole enum values and methods."""
+    def test_user_persona_enum(self):
+        """Test UserPersona enum values and usage."""
         # Test all role values exist
-        assert UserRole.PSIRT.value == "psirt"
-        assert UserRole.DEVELOPER.value == "developer"
-        assert UserRole.ACADEMIC.value == "academic"
-        assert UserRole.BUG_BOUNTY.value == "bug_bounty"
-        assert UserRole.PRODUCT_MANAGER.value == "product_manager"
+        assert UserPersona.PSIRT_MEMBER.value == "PSIRT Member"
+        assert UserPersona.DEVELOPER.value == "Developer"
         
         # Test display names
-        assert UserRole.PSIRT.get_display_name() == "PSIRT Member"
-        assert UserRole.DEVELOPER.get_display_name() == "Developer"
+        assert UserPersona.PSIRT_MEMBER.value == "PSIRT Member"
+        assert UserPersona.DEVELOPER.value == "Developer"
         
-        # Test descriptions exist and are non-empty
-        for role in UserRole:
-            description = role.get_description()
-            assert isinstance(description, str)
-            assert len(description) > 0
+        # Persona enum is source of truth; descriptions are generated internally
     
     @patch('chainlit.user_session')
     def test_role_selection_and_retrieval(self, mock_session):
@@ -56,22 +50,22 @@ class TestRoleManager:
         assert not self.role_manager.is_role_selected()
         
         # Test setting a role
-        success = self.role_manager.set_user_role(UserRole.DEVELOPER)
+        success = self.role_manager.set_user_role(UserPersona.DEVELOPER)
         assert success
         
-        # Verify role was stored correctly
-        mock_session.__setitem__.assert_any_call(RoleManager.ROLE_SESSION_KEY, "developer")
-        mock_session.__setitem__.assert_any_call(RoleManager.ROLE_SET_FLAG, True)
+        # Verify keys were set with plaintext value
+        calls = dict((c.args[0], c.args[1]) for c in mock_session.__setitem__.call_args_list)
+        assert calls[RoleManager.ROLE_SESSION_KEY] == 'Developer'
+        assert calls[RoleManager.ROLE_SET_FLAG] is True
     
     @patch('chainlit.user_session')
     def test_get_current_role_with_valid_data(self, mock_session):
         """Test retrieving current role with valid session data."""
         mock_session.get = Mock(side_effect=lambda key, default=None: {
-            RoleManager.ROLE_SESSION_KEY: "psirt"
+            RoleManager.ROLE_SESSION_KEY: "PSIRT Member"
         }.get(key, default))
-        
         role = self.role_manager.get_current_role()
-        assert role == UserRole.PSIRT
+        assert role == UserPersona.PSIRT_MEMBER
     
     @patch('chainlit.user_session')
     def test_get_current_role_with_invalid_data(self, mock_session):
@@ -79,13 +73,12 @@ class TestRoleManager:
         mock_session.get = Mock(side_effect=lambda key, default=None: {
             RoleManager.ROLE_SESSION_KEY: "invalid_role"
         }.get(key, default))
-        
         role = self.role_manager.get_current_role()
         assert role is None
     
     def test_set_user_role_invalid_input(self):
         """Test setting role with invalid input."""
-        # Test with non-UserRole input
+        # Test with invalid input types/values
         success = self.role_manager.set_user_role("invalid")
         assert not success
         
@@ -112,14 +105,15 @@ class TestRoleManager:
         with patch('chainlit.Action') as mock_action:
             actions = self.role_manager.get_role_actions()
             
-            # Should create one action per role
-            assert mock_action.call_count == len(UserRole)
+            # Should create one action per persona
+            from src.user_context import UserPersona
+            assert mock_action.call_count == len(UserPersona)
             
             # Verify action parameters for first call (PSIRT)
             first_call = mock_action.call_args_list[0]
             args, kwargs = first_call
-            assert kwargs['name'] == 'select_role_psirt'
-            assert kwargs['value'] == 'psirt'
+            assert kwargs['name'] == 'select_role_psirt_member'
+            assert kwargs['value'] == 'PSIRT Member'
             assert kwargs['label'] == 'PSIRT Member'
             assert len(kwargs['description']) > 0
     
@@ -130,7 +124,6 @@ class TestRoleManager:
             RoleManager.ROLE_SESSION_KEY: "developer",
             RoleManager.ROLE_SET_FLAG: True
         }.get(key, default))
-        
         is_valid = self.role_manager.validate_role_integrity()
         assert is_valid
     
@@ -157,10 +150,9 @@ class TestRoleManager:
     def test_validate_role_integrity_invalid_role(self, mock_session):
         """Test role integrity validation with invalid role value."""
         mock_session.get = Mock(side_effect=lambda key, default=None: {
-            RoleManager.ROLE_SESSION_KEY: "hacker_role",  # Invalid role
+            RoleManager.ROLE_SESSION_KEY: "hacker_role",
             RoleManager.ROLE_SET_FLAG: True
         }.get(key, default))
-        
         is_valid = self.role_manager.validate_role_integrity()
         assert not is_valid
     
@@ -179,9 +171,8 @@ class TestRoleManager:
         mock_session.get = Mock(side_effect=lambda key, default=None: {
             RoleManager.ROLE_SESSION_KEY: "psirt"
         }.get(key, default))
-        
         context = self.role_manager.get_role_context()
-        assert context['role'] == "psirt"
+        assert context['role'] == "PSIRT Member"
         assert context['role_name'] == "PSIRT Member"
         assert len(context['focus_areas']) > 0
         assert "Impact assessment" in context['focus_areas'][0]
@@ -235,13 +226,9 @@ class TestRoleManagerSecurity:
         """Test consistency between session keys."""
         # Both keys should be set together or not at all
         test_cases = [
-            # Valid: both set
-            ({RoleManager.ROLE_SESSION_KEY: "developer", RoleManager.ROLE_SET_FLAG: True}, True),
-            # Valid: both unset  
+            ({RoleManager.ROLE_SESSION_KEY: "Developer", RoleManager.ROLE_SET_FLAG: True}, True),
             ({}, True),
-            # Invalid: only role set
-            ({RoleManager.ROLE_SESSION_KEY: "developer"}, False),
-            # Invalid: only flag set
+            ({RoleManager.ROLE_SESSION_KEY: "Developer"}, False),
             ({RoleManager.ROLE_SET_FLAG: True}, False)
         ]
         

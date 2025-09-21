@@ -10,18 +10,19 @@ import logging
 import sys
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Literal
 
 import chainlit as cl
+from pydantic import BaseModel, Field
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Add package root so `src.*` imports resolve
+sys.path.insert(0, str(Path(__file__).parent))
 
 try:
-    from user_context import UserContextManager, UserPersona, UserContext
-    from conversation import ConversationManager
-    from input_security import InputSanitizer, SecurityValidator
-    from file_processor import FileProcessor
+    from src.user_context import UserPersona, UserContext
+    from src.conversation import ConversationManager
+    from src.input_security import InputSanitizer, SecurityValidator
+    from src.file_processor import FileProcessor
 except ImportError as e:
     logging.error(f"Failed to import Story 2.1 components: {e}")
     sys.exit(1)
@@ -33,6 +34,25 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Pydantic Chat Settings for native UI
+class UISettings(BaseModel):
+    persona: Literal["PSIRT Member", "Developer", "Academic Researcher", "Bug Bounty Hunter", "Product Manager", "CWE Analyzer", "CVE Creator"] = Field(
+        default="Developer",
+        description="Your cybersecurity role - determines response focus and depth"
+    )
+    detail_level: Literal["basic", "standard", "detailed"] = Field(
+        default="standard",
+        description="Level of detail in responses"
+    )
+    include_examples: bool = Field(
+        default=True,
+        description="Include code examples and practical demonstrations"
+    )
+    include_mitigations: bool = Field(
+        default=True,
+        description="Include prevention and mitigation guidance"
+    )
 
 # Global components (initialized on startup)
 conversation_manager: Optional[ConversationManager] = None
@@ -84,17 +104,30 @@ def initialize_components():
 
 @cl.on_chat_start
 async def start():
-    """Initialize the chat session with persona selection."""
+    """Initialize the chat session with settings-based persona configuration."""
     global conversation_manager
 
     if not conversation_manager:
         await cl.Message(content="System is initializing. Please try again in a moment.").send()
         return
 
-    # Create session and show persona selection
+    # Initialize default settings
+    default_settings = UISettings()
+    cl.user_session.set("ui_settings", default_settings.dict())
+
+    # Initialize per-user context in Chainlit with default persona
+    session_id = cl.context.session.id
+    await conversation_manager.update_user_persona(session_id, default_settings.persona)
+
+    # Welcome message that guides users to the settings panel
     welcome_message = """Welcome to the CWE ChatBot! 🛡️
 
-I'm here to help you with Common Weakness Enumeration (CWE) information. To provide you with the most relevant responses, please select your role:
+I'm here to help you with Common Weakness Enumeration (CWE) information.
+
+**👆 Configure your experience using the Settings panel** (gear icon above) to:
+• Select your cybersecurity role/persona
+• Adjust detail level and preferences
+• Customize response format
 
 **Available Personas:**
 • **PSIRT Member** - Impact assessment and advisory creation
@@ -105,20 +138,9 @@ I'm here to help you with Common Weakness Enumeration (CWE) information. To prov
 • **CWE Analyzer** - CVE-to-CWE mapping analysis with confidence scoring
 • **CVE Creator** - Structured CVE vulnerability descriptions
 
-Select your persona to get started:"""
+Once configured, ask me anything about cybersecurity weaknesses!"""
 
-    # Create persona selection actions (Chainlit 2.8.0 format)
-    persona_actions = [
-        cl.Action(name="persona_psirt", value="PSIRT Member", label="🚨 PSIRT Member", payload={}),
-        cl.Action(name="persona_developer", value="Developer", label="💻 Developer", payload={}),
-        cl.Action(name="persona_academic", value="Academic Researcher", label="🎓 Academic Researcher", payload={}),
-        cl.Action(name="persona_bug_bounty", value="Bug Bounty Hunter", label="🔍 Bug Bounty Hunter", payload={}),
-        cl.Action(name="persona_product_manager", value="Product Manager", label="📊 Product Manager", payload={}),
-        cl.Action(name="persona_cwe_analyzer", value="CWE Analyzer", label="🔬 CWE Analyzer", payload={}),
-        cl.Action(name="persona_cve_creator", value="CVE Creator", label="📝 CVE Creator", payload={})
-    ]
-
-    await cl.Message(content=welcome_message, actions=persona_actions).send()
+    await cl.Message(content=welcome_message).send()
 
 
 @cl.on_message
@@ -130,57 +152,112 @@ async def main(message: cl.Message):
         await cl.Message(content="System is initializing. Please try again in a moment.").send()
         return
 
-    # Check if user has selected a persona
+    # Get current settings and ensure session exists
     session_id = cl.context.session.id
-    context = conversation_manager.get_session_context(session_id)
+    ui_settings = cl.user_session.get("ui_settings")
 
-    if not context:
-        await cl.Message(content="Please select your persona first using the buttons above before asking questions.").send()
-        return
+    if not ui_settings:
+        # Initialize with defaults if missing
+        default_settings = UISettings()
+        ui_settings = default_settings.dict()
+        cl.user_session.set("ui_settings", ui_settings)
+
+    # Ensure conversation context exists with current persona (settings panel drives persona)
+    context = conversation_manager.get_session_context(session_id)
+    if not context or context.persona != ui_settings["persona"]:
+        await conversation_manager.update_user_persona(session_id, ui_settings["persona"])
 
     try:
         user_query = message.content.strip()
 
         # Process file attachments if present (especially for CVE Creator)
         if hasattr(message, 'elements') and message.elements and file_processor:
-            logger.info(f"Processing {len(message.elements)} file attachments for {context.persona}")
-            file_content = await file_processor.process_attachments(message)
+            async with cl.Step(name="Process file attachments", type="tool") as file_step:
+                file_step.input = f"Processing {len(message.elements)} file(s) for {ui_settings['persona']}"
 
-            if file_content:
-                # Combine user query with file content
-                if user_query:
-                    user_query = f"{user_query}\n\n--- Attached File Content ---\n{file_content}"
+                logger.info(f"Processing {len(message.elements)} file attachments for {ui_settings['persona']}")
+                file_content = await file_processor.process_attachments(message)
+
+                if file_content:
+                    # Combine user query with file content
+                    if user_query:
+                        user_query = f"{user_query}\n\n--- Attached File Content ---\n{file_content}"
+                    else:
+                        user_query = f"--- Attached File Content ---\n{file_content}"
+
+                    file_step.output = f"Extracted {len(file_content)} characters from file(s)"
+                    logger.info(f"File content extracted: {len(file_content)} characters")
                 else:
-                    user_query = f"--- Attached File Content ---\n{file_content}"
-                logger.info(f"File content extracted: {len(file_content)} characters")
-            else:
-                logger.warning("File attachments found but no content extracted")
+                    file_step.output = "No content extracted from file(s)"
+                    logger.warning("File attachments found but no content extracted")
 
-        logger.info(f"Processing user query: '{user_query[:100]}...' for persona: {context.persona}")
+        logger.info(f"Processing user query: '{user_query[:100]}...' for persona: {ui_settings['persona']}")
 
-        # Process message using conversation manager
-        result = await conversation_manager.process_user_message(
+        # Process message using conversation manager with streaming
+        result = await conversation_manager.process_user_message_streaming(
             session_id=session_id,
             message_content=user_query,
             message_id=message.id
         )
 
-        # Send response to user
-        response_content = result["response"]
+        # Create source cards as Chainlit Elements if we have retrieved chunks
+        elements = []
+        if result.get("retrieved_cwes") and result.get("chunk_count", 0) > 0:
+            # Get the retrieved chunks to create source elements
+            retrieved_chunks = result.get("retrieved_chunks", [])
+
+            # Group chunks by CWE and create source cards
+            cwe_groups = {}
+            for chunk in retrieved_chunks:
+                cwe_id = chunk["metadata"]["cwe_id"]
+                if cwe_id not in cwe_groups:
+                    cwe_groups[cwe_id] = {
+                        "name": chunk["metadata"]["name"],
+                        "chunks": []
+                    }
+                cwe_groups[cwe_id]["chunks"].append(chunk)
+
+            # Create source elements for each CWE
+            for cwe_id, cwe_info in list(cwe_groups.items())[:3]:  # Limit to top 3 CWEs
+                # Get best scoring chunk for this CWE
+                best_chunk = max(cwe_info["chunks"], key=lambda x: x.get("scores", {}).get("hybrid", 0.0))
+                score = best_chunk.get("scores", {}).get("hybrid", 0.0)
+
+                # Create source content showing the CWE information
+                source_content = f"**{cwe_id}: {cwe_info['name']}**\n\n"
+                source_content += f"**Relevance Score:** {score:.3f}\n\n"
+
+                # Add section content from the best chunk
+                section = best_chunk["metadata"].get("section", "Content")
+                source_content += f"**{section}:**\n"
+                document_text = best_chunk["document"]
+
+                # Truncate if too long
+                if len(document_text) > 500:
+                    source_content += document_text[:500] + "..."
+                else:
+                    source_content += document_text
+
+                # Create Chainlit Text element for the source
+                source_element = cl.Text(
+                    name=f"Source: {cwe_id}",
+                    content=source_content,
+                    display="side"  # Display in sidebar
+                )
+                elements.append(source_element)
 
         # Add metadata for debugging if needed
         if not result.get("is_safe", True):
             logger.warning(f"Security flags detected: {result.get('security_flags', [])}")
 
-        # Add action buttons for persona change
-        actions = []
-        if result.get("retrieved_cwes"):
-            actions.append(cl.Action(name="change_persona", value="change_persona", label="Change Persona", payload={}))
-
-        await cl.Message(content=response_content, actions=actions).send()
+        # The response was already streamed, just update the message with elements if needed
+        if elements and result.get("message"):
+            result["message"].elements = elements
+            await result["message"].update()
 
         # Log successful interaction
-        logger.info(f"Successfully processed query for {context.persona}, retrieved {result.get('chunk_count', 0)} chunks")
+        current_persona = ui_settings["persona"]
+        logger.info(f"Successfully processed query for {current_persona}, retrieved {result.get('chunk_count', 0)} chunks")
 
     except Exception as e:
         # Secure error handling - never expose internal details
@@ -189,145 +266,74 @@ async def main(message: cl.Message):
         await cl.Message(content=error_response).send()
 
 
-# Persona selection action callbacks
-
-@cl.action_callback("persona_psirt")
-async def on_select_psirt_persona(action):
-    """Handle PSIRT Member persona selection."""
-    await handle_persona_selection("PSIRT Member")
-
-@cl.action_callback("persona_developer")
-async def on_select_developer_persona(action):
-    """Handle Developer persona selection."""
-    await handle_persona_selection("Developer")
-
-@cl.action_callback("persona_academic")
-async def on_select_academic_persona(action):
-    """Handle Academic Researcher persona selection."""
-    await handle_persona_selection("Academic Researcher")
-
-@cl.action_callback("persona_bug_bounty")
-async def on_select_bug_bounty_persona(action):
-    """Handle Bug Bounty Hunter persona selection."""
-    await handle_persona_selection("Bug Bounty Hunter")
-
-@cl.action_callback("persona_product_manager")
-async def on_select_product_manager_persona(action):
-    """Handle Product Manager persona selection."""
-    await handle_persona_selection("Product Manager")
-
-@cl.action_callback("persona_cwe_analyzer")
-async def on_select_cwe_analyzer_persona(action):
-    """Handle CWE Analyzer persona selection."""
-    await handle_persona_selection("CWE Analyzer")
-
-@cl.action_callback("persona_cve_creator")
-async def on_select_cve_creator_persona(action):
-    """Handle CVE Creator persona selection."""
-    await handle_persona_selection("CVE Creator")
-
-@cl.action_callback("change_persona")
-async def on_change_persona(action):
-    """Handle persona change request."""
+@cl.on_settings_update
+async def on_settings_update(settings: Dict[str, Any]):
+    """Handle settings updates from the native Chainlit settings panel."""
     global conversation_manager
 
     if not conversation_manager:
-        await cl.Message(content="System not available.").send()
-        return
-
-    # Show persona selection options
-    welcome_message = "Please select your new persona:"
-
-    persona_actions = [
-        cl.Action(name="persona_psirt", value="PSIRT Member", label="🚨 PSIRT Member", payload={}),
-        cl.Action(name="persona_developer", value="Developer", label="💻 Developer", payload={}),
-        cl.Action(name="persona_academic", value="Academic Researcher", label="🎓 Academic Researcher", payload={}),
-        cl.Action(name="persona_bug_bounty", value="Bug Bounty Hunter", label="🔍 Bug Bounty Hunter", payload={}),
-        cl.Action(name="persona_product_manager", value="Product Manager", label="📊 Product Manager", payload={}),
-        cl.Action(name="persona_cwe_analyzer", value="CWE Analyzer", label="🔬 CWE Analyzer", payload={}),
-        cl.Action(name="persona_cve_creator", value="CVE Creator", label="📝 CVE Creator", payload={})
-    ]
-
-    await cl.Message(content=welcome_message, actions=persona_actions).send()
-
-
-async def handle_persona_selection(persona: str):
-    """Handle persona selection logic."""
-    global conversation_manager
-
-    if not conversation_manager:
-        await cl.Message(content="System not available.").send()
         return
 
     try:
         session_id = cl.context.session.id
 
-        # Update or create session with selected persona
-        success = await conversation_manager.update_user_persona(session_id, persona)
+        # Normalize settings to our UISettings model and persist
+        model = UISettings(**settings) if isinstance(settings, dict) else UISettings()
+        cl.user_session.set("ui_settings", model.dict())
 
-        if not success:
-            # Create new session if update failed - use Chainlit's session ID
-            context = UserContext(session_id=session_id, persona=persona)
-            conversation_manager.context_manager.active_sessions[session_id] = context
-            success = True
+        # Update persona in conversation manager if it changed
+        current_context = conversation_manager.get_session_context(session_id)
+        if current_context and current_context.persona != model.persona:
+            success = await conversation_manager.update_user_persona(session_id, model.persona)
+            if success:
+                logger.info(f"Updated persona to {model.persona} for session {session_id}")
 
-        if success:
-            # Get persona-specific welcome message
-            persona_descriptions = {
-                "PSIRT Member": "You'll receive responses focused on impact assessment, advisory creation, and CVSS considerations.",
-                "Developer": "You'll receive responses focused on remediation steps, code examples, and prevention techniques.",
-                "Academic Researcher": "You'll receive responses focused on comprehensive analysis, relationships, and taxonomies.",
-                "Bug Bounty Hunter": "You'll receive responses focused on exploitation patterns, testing techniques, and detection methods.",
-                "Product Manager": "You'll receive responses focused on business impact, prevention strategies, and trend analysis.",
-                "CWE Analyzer": "You'll receive responses focused on CVE-to-CWE mapping analysis with confidence scoring and structured vulnerability assessment.",
-                "CVE Creator": """I'll help you create structured CVE vulnerability descriptions from your existing research and information.
-
-To create an accurate CVE description, please provide your vulnerability information through one of these methods:
-
-**Option 1: Chat Message** - Include as much detail as possible:
-• Vulnerability type and technical details
-• Affected product/component information (vendor, product name, versions)
-• Attack vectors and exploitation methods
-• Impact and severity assessment
-• Affected platforms/environments
-• Any existing patches or mitigations
-• Discovery details and timeline
-
-**Option 2: PDF File Upload** - Upload a PDF document containing:
-• Vulnerability research reports or security advisories
-• Patch documentation or technical analysis
-• Vendor communications or disclosure reports
-• Note: Only PDF files up to 10MB are supported for upload
-
-Once you provide this information, I will analyze it and create a structured CVE description using the standardized format."""
-            }
-
-            confirmation_message = f"""Great! Your persona has been set to **{persona}**.
-
-{persona_descriptions.get(persona, "You'll receive responses tailored to your role.")}"""
-
-            # CVE Creator gets a different ending - no generic CWE guidance
-            if persona != "CVE Creator":
-                confirmation_message += """
-
-I'm ready to help you with CWE information. You can:
-
-• Ask about specific CWEs (e.g., "Tell me about CWE-79")
-• Search for vulnerabilities by type (e.g., "SQL injection vulnerabilities")
-• Get prevention guidance (e.g., "How to prevent buffer overflows")
-• Learn about security concepts and relationships
-
-What would you like to know about cybersecurity weaknesses?"""
-
-            await cl.Message(content=confirmation_message).send()
-            logger.info(f"Persona successfully set to {persona} for session {session_id}")
-        else:
-            await cl.Message(content="Sorry, there was an error setting your persona. Please try again.").send()
-            logger.error(f"Failed to set persona to {persona}")
+                # Send confirmation message
+                await cl.Message(
+                    content=f"✅ Settings updated! Now responding as **{model.persona}** with **{model.detail_level}** detail level.",
+                    author="System"
+                ).send()
+            else:
+                logger.error(f"Failed to update persona to {model.persona}")
 
     except Exception as e:
-        logger.error(f"Persona selection failed: {e}")
-        await cl.Message(content="Sorry, there was an error with persona selection. Please try again.").send()
+        logger.error(f"Settings update failed: {e}")
+
+
+@cl.on_feedback
+async def on_feedback(feedback: cl.Feedback):
+    """Handle user feedback on messages."""
+    global conversation_manager
+
+    if not conversation_manager:
+        logger.warning("Feedback received but conversation manager not initialized")
+        return
+
+    try:
+        session_id = cl.context.session.id
+        message_id = feedback.forId
+
+        # Convert Chainlit feedback to our rating system (1-5 scale)
+        # Chainlit feedback.value is typically 1 (thumbs up) or 0 (thumbs down)
+        rating = 5 if feedback.value == 1 else 2  # Map thumbs up to 5, thumbs down to 2
+
+        # Record feedback in conversation manager
+        success = conversation_manager.record_feedback(session_id, message_id, rating)
+
+        if success:
+            logger.info(f"Recorded feedback for message {message_id}: {rating}")
+            # Optional: Send a brief acknowledgment (comment out if too noisy)
+            # await cl.Message(
+            #     content="👍 Thank you for your feedback!",
+            #     author="System"
+            # ).send()
+        else:
+            logger.error(f"Failed to record feedback for message {message_id}")
+
+    except Exception as e:
+        logger.error(f"Error processing feedback: {e}")
+
+
 
 
 def main_cli():

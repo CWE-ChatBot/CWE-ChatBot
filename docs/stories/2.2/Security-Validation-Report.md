@@ -148,7 +148,7 @@ def _extract_entities(self, query: str, intent_type: str) -> Dict[str, Any]:
 
 ### **5. Enhanced Retrieval Security (Excellent - 4.4/5)**
 
-**Components:** `CWERelationshipManager`, `HybridRAGManager`
+Note: Legacy components `CWERelationshipManager` and `HybridRAGManager` were removed. Retrieval now uses ingestion-aligned RRF (`PostgresChunkStore.query_hybrid`).
 
 **Security Strengths:**
 - ✅ **SQL Injection Prevention**: Parameterized queries throughout

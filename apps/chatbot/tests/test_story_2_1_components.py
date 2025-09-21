@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch, AsyncMock
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from security import InputSanitizer, SecurityValidator
+from input_security import InputSanitizer, SecurityValidator
 from user_context import UserContext, UserContextManager, UserPersona
 
 

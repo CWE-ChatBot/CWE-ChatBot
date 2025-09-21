@@ -116,7 +116,7 @@ class FollowupProcessor:
     HIGH_CONFIDENCE_THRESHOLD = 0.8
     MEDIUM_CONFIDENCE_THRESHOLD = 0.5
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize follow-up processor."""
         # Compile regex patterns for efficiency
         self.compiled_patterns = {}

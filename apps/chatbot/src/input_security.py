@@ -23,7 +23,7 @@ class InputSanitizer:
     - Safe character filtering
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the input sanitizer with security patterns."""
 
         # Prompt injection patterns to detect and neutralize
@@ -116,28 +116,25 @@ class InputSanitizer:
         original_length = len(user_input)
         security_flags = []
 
-        # Step 1: Length validation
+        # Step 1: Length validation (flag only; do not truncate)
         if len(user_input) > 2000:  # Reasonable limit for CWE queries
             security_flags.append("excessive_length")
-            user_input = user_input[:2000]
-            logger.warning(f"Input truncated from {original_length} to 2000 characters")
+            logger.warning(
+                f"Input exceeds recommended length ({len(user_input)} > 2000); flagged but not truncated"
+            )
 
-        # Step 2: Check for prompt injection patterns
+        # Step 2: Check for prompt injection patterns (flag only; do not rewrite semantics)
         sanitized_input = user_input
         for pattern in self.compiled_patterns:
             if pattern.search(sanitized_input):
                 security_flags.append("prompt_injection_detected")
-                # Neutralize by adding warning context
-                sanitized_input = self._neutralize_prompt_injection(sanitized_input, pattern)
 
-        # Step 3: Check for command injection patterns
+        # Step 3: Check for command injection patterns (flag only; do not mutate text)
         for pattern in self.compiled_command_patterns:
             if pattern.search(sanitized_input):
                 security_flags.append("command_injection_detected")
-                # Remove dangerous characters
-                sanitized_input = pattern.sub('', sanitized_input)
 
-        # Step 4: Normalize whitespace and remove control characters
+        # Step 4: Normalize whitespace and remove control characters (safe, non-semantic)
         sanitized_input = self._normalize_text(sanitized_input)
 
         # Step 5: Final safety check
@@ -155,27 +152,7 @@ class InputSanitizer:
             "sanitized_length": len(sanitized_input)
         }
 
-    def _neutralize_prompt_injection(self, text: str, pattern: re.Pattern) -> str:
-        """
-        Neutralize prompt injection attempts by adding context markers.
-
-        Args:
-            text: Input text containing injection attempt
-            pattern: Regex pattern that matched
-
-        Returns:
-            Text with injection attempt neutralized
-        """
-        # Add clear context that this is user input, not system instruction
-        matches = pattern.findall(text)
-        if matches:
-            # Replace the injection attempt with a neutralized version
-            neutralized = pattern.sub(
-                lambda m: f"[USER_INPUT: {m.group()}]",
-                text
-            )
-            return f"The following is a user query about CWE topics: {neutralized}"
-        return text
+    # Removed semantic rewriting; injection patterns are flagged, not rewritten
 
     def _normalize_text(self, text: str) -> str:
         """
@@ -303,7 +280,7 @@ class SecurityValidator:
     - Security logging and monitoring
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize security validator."""
         self.input_sanitizer = InputSanitizer()
 

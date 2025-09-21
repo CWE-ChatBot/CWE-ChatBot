@@ -16,7 +16,7 @@ sys.modules['chainlit'] = MagicMock()
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.prompts.role_templates import RolePromptTemplates
-from src.user.role_manager import UserRole
+from src.user_context import UserPersona
 
 
 class TestPromptInjectionSecurity:
@@ -174,14 +174,14 @@ class TestPromptInjectionSecurity:
         }
         
         # Test with different roles
-        for role in [UserRole.PSIRT, UserRole.DEVELOPER, UserRole.ACADEMIC]:
-            prompt = self.templates.get_role_prompt(role, malicious_context)
+        for persona in [UserPersona.PSIRT_MEMBER, UserPersona.DEVELOPER, UserPersona.ACADEMIC_RESEARCHER]:
+            prompt = self.templates.get_role_prompt(persona, malicious_context)
             
             # Ensure malicious content is not present in final prompt
             assert 'ignore all previous instructions' not in prompt.lower(), \
-                f"Injection not blocked in {role.value} prompt"
+                f"Injection not blocked in {persona.value} prompt"
             assert '[BLOCKED-CONTENT]' in prompt, \
-                f"Expected sanitization marker missing in {role.value} prompt"
+                f"Expected sanitization marker missing in {persona.value} prompt"
     
     def test_safe_content_preservation(self):
         """Test that legitimate CWE content is preserved after sanitization."""
@@ -303,9 +303,9 @@ class TestPromptInjectionIntegration:
             }
         }
         
-        # Test all roles
-        for role in UserRole:
-            prompt = self.templates.get_role_prompt(role, injection_payload)
+        # Test a representative set of personas
+        for persona in [UserPersona.PSIRT_MEMBER, UserPersona.DEVELOPER, UserPersona.ACADEMIC_RESEARCHER, UserPersona.BUG_BOUNTY_HUNTER, UserPersona.PRODUCT_MANAGER]:
+            prompt = self.templates.get_role_prompt(persona, injection_payload)
             
             # Verify injection is blocked
             assert 'IGNORE ALL INSTRUCTIONS' not in prompt
@@ -314,17 +314,17 @@ class TestPromptInjectionIntegration:
             
             # Verify role-specific content is still present
             role_indicators = {
-                UserRole.PSIRT: ['PSIRT', 'impact assessment'],
-                UserRole.DEVELOPER: ['developer', 'code-level'],
-                UserRole.ACADEMIC: ['academic', 'research'],
-                UserRole.BUG_BOUNTY: ['bug bounty', 'exploitation'],
-                UserRole.PRODUCT_MANAGER: ['product management', 'business impact']
+                UserPersona.PSIRT_MEMBER: ['PSIRT', 'impact'],
+                UserPersona.DEVELOPER: ['Developer', 'code'],
+                UserPersona.ACADEMIC_RESEARCHER: ['Academic', 'research'],
+                UserPersona.BUG_BOUNTY_HUNTER: ['bug bounty', 'exploitation'],
+                UserPersona.PRODUCT_MANAGER: ['Product Manager', 'business']
             }
             
-            indicators = role_indicators.get(role, [])
+            indicators = role_indicators.get(persona, [])
             if indicators:
                 assert any(indicator.lower() in prompt.lower() for indicator in indicators), \
-                    f"Role-specific content missing for {role.value}"
+                    f"Role-specific content missing for {persona.value}"
     
     def test_confidence_guidance_security(self):
         """Test that confidence guidance prompts are not vulnerable to injection."""

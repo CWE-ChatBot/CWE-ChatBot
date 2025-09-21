@@ -6,7 +6,7 @@ Provides flexible environment loading without hardcoded paths.
 import os
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class EnvironmentLoader:
         "~/.config/cwe-chatbot/.env",
     ]
     
-    def __init__(self, search_paths: Optional[List[str]] = None):
+    def __init__(self, search_paths: Optional[List[str]] = None) -> None:
         """
         Initialize environment loader.
         
@@ -124,7 +124,7 @@ class EnvironmentLoader:
         """Get the path of the environment file that was loaded."""
         return self._loaded_from
     
-    def get_search_paths_info(self) -> Dict[str, bool]:
+    def get_search_paths_info(self) -> Dict[str, Optional[bool]]:
         """Get information about search paths and which ones exist."""
         info = {}
         for path_str in self.search_paths:
@@ -152,7 +152,7 @@ def load_env_auto() -> bool:
     return _global_loader.load_environment()
 
 
-def get_env_info() -> Dict[str, any]:
+def get_env_info() -> Dict[str, Any]:
     """Get information about environment loading."""
     return {
         "loaded_from": str(_global_loader.get_loaded_file()) if _global_loader.get_loaded_file() else None,

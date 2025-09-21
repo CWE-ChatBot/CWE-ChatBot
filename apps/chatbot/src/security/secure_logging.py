@@ -87,7 +87,7 @@ class SecureLogger:
         event_type: str, 
         details: Dict[str, Any],
         level: int = logging.WARNING
-    ):
+    ) -> None:
         """
         Log a security-related event.
         
@@ -149,7 +149,7 @@ class SecureLogger:
         return hashlib.md5(value.encode()).hexdigest()[:16]
     
     # Convenience methods that delegate to the underlying logger
-    def debug(self, message: str, *args, **kwargs):
+    def debug(self, message: str, *args: Any, **kwargs: Any) -> None:
         """Log debug message."""
         self.logger.debug(message, *args, **kwargs)
     
@@ -161,11 +161,11 @@ class SecureLogger:
         """Log warning message."""
         self.logger.warning(message, *args, **kwargs)
     
-    def error(self, message: str, *args, **kwargs):
+    def error(self, message: str, *args: Any, **kwargs: Any) -> None:
         """Log error message (use log_exception for exceptions)."""
         self.logger.error(message, *args, **kwargs)
     
-    def critical(self, message: str, *args, **kwargs):
+    def critical(self, message: str, *args: Any, **kwargs: Any) -> None:
         """Log critical message."""
         self.logger.critical(message, *args, **kwargs)
 
@@ -190,7 +190,7 @@ def log_exception_securely(
     message: str, 
     exception: Exception,
     extra_context: Optional[Dict[str, Any]] = None
-):
+) -> None:
     """
     Log an exception securely using any standard logger.
     

@@ -6,7 +6,7 @@ Integrates input sanitization, CWE extraction, and query enhancement.
 import logging
 from typing import Dict, List, Set, Any, Optional
 
-from ..security.input_sanitizer import InputSanitizer
+from ..input_security import InputSanitizer
 from .cwe_extractor import CWEExtractor
 # Story 2.2: Follow-up processing imports
 from .followup_processor import FollowupProcessor
@@ -35,10 +35,7 @@ class QueryProcessor:
             max_input_length: Maximum allowed input length
             strict_mode: If True, reject malicious inputs
         """
-        self.sanitizer = InputSanitizer(
-            max_length=max_input_length,
-            strict_mode=strict_mode
-        )
+        self.sanitizer = InputSanitizer()
         self.cwe_extractor = CWEExtractor()
         
         # Story 2.2: Follow-up processor initialization
@@ -67,10 +64,12 @@ class QueryProcessor:
         
         try:
             # Step 1: Input sanitization (security-first)
-            sanitized_query = self.sanitizer.sanitize(query)
+            sanitization_result = self.sanitizer.sanitize_input(query)
+            sanitized_query = sanitization_result["sanitized_input"]
             
             # Step 2: Security analysis  
-            is_malicious, detected_patterns = self.sanitizer.is_potentially_malicious(query)
+            is_malicious = not sanitization_result["is_safe"]
+            detected_patterns = sanitization_result["security_flags"]
             
             # Step 3: CWE extraction and analysis
             cwe_analysis = self.cwe_extractor.enhance_query_for_search(sanitized_query)
@@ -195,8 +194,8 @@ class QueryProcessor:
             True if input passes security validation
         """
         try:
-            self.sanitizer.sanitize(query)
-            return True
+            sanitization_result = self.sanitizer.sanitize_input(query)
+            return sanitization_result["is_safe"]
         except (ValueError, TypeError):
             return False
     
@@ -210,23 +209,17 @@ class QueryProcessor:
         Returns:
             Detailed security analysis report
         """
-        is_malicious, patterns = self.sanitizer.is_potentially_malicious(query)
-        
-        try:
-            sanitized = self.sanitizer.sanitize(query)
-            sanitization_success = True
-        except (ValueError, TypeError) as e:
-            sanitized = ""
-            sanitization_success = False
+        sanitization_result = self.sanitizer.sanitize_input(query)
+        sanitized_query = sanitization_result["sanitized_input"]
         
         return {
             "input_length": len(query),
-            "is_potentially_malicious": is_malicious,
-            "detected_patterns": patterns,
-            "sanitization_success": sanitization_success,
-            "sanitized_length": len(sanitized),
-            "changes_made": sanitized != query,
-            "security_level": "high_risk" if is_malicious else "safe"
+            "is_potentially_malicious": not sanitization_result["is_safe"],
+            "detected_patterns": sanitization_result["security_flags"],
+            "sanitization_success": sanitization_result["is_safe"],
+            "sanitized_length": len(sanitized_query),
+            "changes_made": sanitized_query != query,
+            "security_level": "high_risk" if not sanitization_result["is_safe"] else "safe"
         }
     
     # Story 2.2: Context-aware processing methods
