@@ -11,10 +11,10 @@ from datetime import datetime
 import asyncio
 import chainlit as cl
 
-from user_context import UserContext, UserPersona
-from input_security import InputSanitizer, SecurityValidator
-from query_handler import CWEQueryHandler
-from response_generator import ResponseGenerator
+from src.user_context import UserContext, UserPersona
+from src.input_security import InputSanitizer, SecurityValidator
+from src.query_handler import CWEQueryHandler
+from src.response_generator import ResponseGenerator
 
 logger = logging.getLogger(__name__)
 
