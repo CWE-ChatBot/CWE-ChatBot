@@ -297,39 +297,75 @@ class SecurityValidator:
         if not response or not isinstance(response, str):
             return {
                 "is_safe": False,
-                "issues": ["empty_or_invalid_response"],
+                "security_issues": ["empty_or_invalid_response"],
+                "confidence_score": 0.0,
                 "validated_response": "I apologize, but I couldn't generate a proper response. Please try rephrasing your question."
             }
 
-        issues = []
+        security_issues = []
+        confidence_score = 1.0
 
-        # Check for leaked system information - refined to avoid false positives on legitimate security content
+        # Check for harmful content patterns
+        harmful_patterns = [
+            r'(?:hack|exploit|attack).*(?:tutorial|guide|instructions)',
+            r'here\'s how to.*(?:break|bypass|crack)',
+            r'use this.*(?:maliciously|illegally)',
+            r'steal.*(?:data|information|credentials)',
+            r'actual\s+(?:malware|virus)\s+code'
+        ]
+
+        for pattern in harmful_patterns:
+            if re.search(pattern, response, re.IGNORECASE):
+                security_issues.append("harmful_content_detected")
+                confidence_score -= 0.3
+                break
+
+        # Check for leaked system information
         system_leak_patterns = [
             r'system\s+prompt',
-            r'(?:my|the)\s+instructions?\s*:',  # More specific to actual prompt leaks
+            r'(?:my|the)\s+instructions?\s*:',
             r'internal\s+error',
             r'traceback',
-            r'exception\s+occurred',
-            r'api\s+key\s*[:=]',  # Actual API key exposure, not discussion
-            r'(?:my|the)\s+secret\s*[:=]',  # Actual secret exposure, not CWE content about secrets
-            r'(?:my|the)\s+password\s*[:=]'  # Actual password exposure, not vulnerability discussion
+            r'api\s+key\s*[:=]',
+            r'(?:my|the)\s+secret\s*[:=]',
+            r'(?:my|the)\s+password\s*[:=]'
         ]
 
         for pattern in system_leak_patterns:
             if re.search(pattern, response, re.IGNORECASE):
-                issues.append("potential_information_disclosure")
+                security_issues.append("sensitive_information")
+                confidence_score -= 0.2
                 break
 
-        # Check response length (increased limit for comprehensive CWE responses)
-        if len(response) > 8000:  # Allow longer responses for detailed CWE information
-            issues.append("excessive_response_length")
+        # Check for potential sensitive information patterns
+        sensitive_patterns = [
+            r'\b(?:sk-[a-zA-Z0-9]{48})\b',  # API key pattern
+            r'\b(?:4[0-9]{12}(?:[0-9]{3})?)\b',  # Credit card pattern
+            r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b',  # IP address pattern
+            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'  # Email pattern
+        ]
+
+        for pattern in sensitive_patterns:
+            if re.search(pattern, response):
+                security_issues.append("sensitive_information")
+                confidence_score -= 0.1
+                break
+
+        # Check response length
+        if len(response) > 8000:
+            security_issues.append("excessive_response_length")
+            confidence_score -= 0.1
             response = response[:8000] + "... [Response truncated for safety]"
 
-        is_safe = len(issues) == 0
+        # Ensure confidence score is within bounds
+        confidence_score = max(0.0, min(1.0, confidence_score))
+
+        is_safe = len(security_issues) == 0
 
         return {
             "is_safe": is_safe,
-            "issues": issues,
+            "security_issues": security_issues,
+            "confidence_score": confidence_score,
             "validated_response": response if is_safe else "I apologize, but I couldn't generate a safe response. Please try rephrasing your question about CWE topics."
         }
 
