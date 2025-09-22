@@ -111,3 +111,10 @@ tmp
 tmp2
 apps/cwe_ingestion/cwe_vector_db/chroma.sqlite3
 digest.txt
+
+# Chainlit app-local configs (generated)
+apps/chatbot/.chainlit/
+
+# Test artifacts
+reports/
+test-results/
