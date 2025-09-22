@@ -114,7 +114,7 @@ if ! command -v poetry &> /dev/null; then
     exit 1
 fi
 
-# Load environment variables from user env file
+# Load environment variables from chatbot-specific env file
 USER_ENV_FILE="$HOME/work/env/.env_cwe_chatbot"
 
 # Helper to load a single key from the user env file if unset
