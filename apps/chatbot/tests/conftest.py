@@ -74,6 +74,10 @@ def chainlit_server(env_ready):
         # Ensure clean test environment
         env["CHAINLIT_HOST"] = host
         env["CHAINLIT_PORT"] = str(port)
+        # Provide a dummy GEMINI key and enable offline mode to avoid startup errors
+        # Do not override AI behavior; tests will use real GEMINI_API_KEY if present.
+        # To load from a specific .env file (e.g., ~/work/env/.env_cwe_chatbot),
+        # set ENV_FILE_PATH in your environment before running pytest.
         # Add current directory to Python path for src imports
         env["PYTHONPATH"] = str(chatbot_dir) + ":" + env.get("PYTHONPATH", "")
         # Set CWE ingestion path for proper imports
@@ -95,6 +99,23 @@ def chainlit_server(env_ready):
         ready = False
         last_error = ""
 
+        def _parse_startup_error(out: str) -> str | None:
+            if not out:
+                return None
+            lowered = out.lower()
+            patterns = [
+                ("missing required configuration: gemini_api_key", "GEMINI_API_KEY is missing. Set it via ENV_FILE_PATH or environment."),
+                ("missing required configuration: database url", "Database URL is missing. Set DATABASE_URL or POSTGRES_* envs."),
+                ("database health check failed", "Database health check failed. Verify Postgres env and connectivity."),
+                ("could not connect to", "Database connection error. Verify Postgres is running and credentials are correct."),
+                ("connection refused", "Database connection refused. Verify host/port and service availability."),
+            ]
+            for needle, msg in patterns:
+                if needle in lowered:
+                    # Return the first 500 chars of output for context
+                    return msg + f"\n\nExcerpt:\n{out[:500]}"
+            return None
+
         while time.time() < deadline:
             try:
                 response = requests.get(f"{url}/health", timeout=2)
@@ -107,6 +128,9 @@ def chainlit_server(env_ready):
             # Check if process has died
             if proc.poll() is not None:
                 stdout, _ = proc.communicate()
+                parsed = _parse_startup_error(stdout or "")
+                if parsed:
+                    pytest.fail(f"Chainlit failed to start: {parsed}")
                 pytest.skip(
                     f"Chainlit process died during startup. Output: {stdout[:500]}"
                 )
@@ -123,11 +147,15 @@ def chainlit_server(env_ready):
                 proc.kill()
                 output_sample = "Failed to collect output"
 
-            pytest.skip(
-                f"Chainlit server failed to start on {url} within "
-                f"{env_ready['test_timeout']}s. Last error: {last_error}. "
-                f"Output sample: {output_sample}"
-            )
+            parsed = _parse_startup_error(stdout or output_sample or "")
+            if parsed:
+                pytest.fail(f"Chainlit failed to start: {parsed}")
+            else:
+                pytest.skip(
+                    f"Chainlit server failed to start on {url} within "
+                    f"{env_ready['test_timeout']}s. Last error: {last_error}. "
+                    f"Output sample: {output_sample}"
+                )
 
         yield {
             "url": url,

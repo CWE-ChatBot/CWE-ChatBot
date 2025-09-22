@@ -13,6 +13,7 @@ from pathlib import Path
 import time
 import pytest
 from playwright.sync_api import sync_playwright, expect
+import os
 
 
 def _try_click(page, selectors: list[str]) -> bool:
@@ -162,5 +163,12 @@ def test_ui_full_paths(chainlit_server):
 
         finally:
             page.close()
+            try:
+                os.makedirs('test-results/videos', exist_ok=True)
+                video = page.video
+                if video:
+                    video.save_as('test-results/videos/test_ui_full_paths.webm')
+            except Exception:
+                pass
             context.close()
             browser.close()

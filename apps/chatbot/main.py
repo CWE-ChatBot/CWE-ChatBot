@@ -78,13 +78,16 @@ def initialize_components() -> bool:
         # Prefer explicit URLs if provided (for dev/prod parity)
         database_url = os.getenv('DATABASE_URL') or os.getenv('LOCAL_DATABASE_URL')
         gemini_api_key = os.getenv('GEMINI_API_KEY') or app_config.gemini_api_key
+        offline_ai = os.getenv('DISABLE_AI') == '1' or os.getenv('GEMINI_OFFLINE') == '1'
 
         if not database_url:
             # Derive URL from POSTGRES_* if available
             if app_config.pg_user and app_config.pg_password:
                 database_url = f"postgresql://{app_config.pg_user}:{app_config.pg_password}@{app_config.pg_host}:{app_config.pg_port}/{app_config.pg_database}"
-        if not database_url or not gemini_api_key:
-            raise ValueError("Missing required configuration: database URL and/or GEMINI_API_KEY")
+        if not database_url:
+            raise ValueError("Missing required configuration: database URL")
+        if not gemini_api_key and not offline_ai:
+            raise ValueError("Missing required configuration: GEMINI_API_KEY (set DISABLE_AI=1 for offline mode)")
 
         logger.info(f"Initializing with database: {database_url[:50]}...")
 

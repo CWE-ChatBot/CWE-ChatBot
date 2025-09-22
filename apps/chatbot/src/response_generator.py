@@ -6,6 +6,7 @@ Generates context-aware responses using retrieved CWE content and persona-specif
 
 import logging
 from typing import Dict, List, Any, Optional
+import os
 import google.generativeai as genai
 import re
 from pathlib import Path
@@ -33,8 +34,13 @@ class ResponseGenerator:
             model_name: Gemini model to use for generation
         """
         try:
-            genai.configure(api_key=gemini_api_key)
-            self.model = genai.GenerativeModel(model_name)
+            # Allow offline mode for tests/CI to avoid startup errors.
+            self.offline = os.getenv("DISABLE_AI") == "1" or os.getenv("GEMINI_OFFLINE") == "1"
+            if not self.offline:
+                genai.configure(api_key=gemini_api_key)
+                self.model = genai.GenerativeModel(model_name)
+            else:
+                self.model = None
 
             # Configure generation for factual, security-focused responses
             self.generation_config = genai.types.GenerationConfig(
@@ -47,7 +53,8 @@ class ResponseGenerator:
             # Load persona-specific prompt templates
             self.persona_prompts = self._load_persona_prompts()
 
-            logger.info(f"ResponseGenerator initialized with {model_name}")
+            mode = "offline" if self.offline else model_name
+            logger.info(f"ResponseGenerator initialized with {mode}")
 
         except Exception as e:
             logger.error(f"Failed to initialize ResponseGenerator: {e}")
@@ -177,6 +184,12 @@ Response:""",
         try:
             logger.info(f"Generating streaming response for persona: {user_persona}")
 
+            # Offline mode: return a deterministic stub without calling the model
+            if getattr(self, "offline", False):
+                stub = f"[offline-mode] {user_persona} response preview for: " + query[:120]
+                await message.stream_token(stub)
+                return stub
+
             # Handle empty retrieval results (CVE Creator doesn't need CWE chunks)
             if not retrieved_chunks and user_persona != "CVE Creator":
                 fallback = self._generate_fallback_response(query, user_persona)
@@ -254,6 +267,9 @@ Response:""",
         """
         try:
             logger.info(f"Generating response for persona: {user_persona}")
+
+            if getattr(self, "offline", False):
+                return f"[offline-mode] {user_persona} response for: " + query[:120]
 
             # Handle empty retrieval results (CVE Creator doesn't need CWE chunks)
             if not retrieved_chunks and user_persona != "CVE Creator":

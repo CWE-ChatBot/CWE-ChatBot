@@ -12,6 +12,7 @@ import tempfile
 import pytest
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+import os
 
 
 def _set_files_if_present(page, file_paths):
@@ -37,7 +38,8 @@ def test_multi_file_upload_and_error_states(chainlit_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_load_state("networkidle", timeout=20000)
@@ -123,5 +125,13 @@ def test_multi_file_upload_and_error_states(chainlit_server):
                     pass
 
         finally:
+            page.close()
+            try:
+                os.makedirs('test-results/videos', exist_ok=True)
+                video = page.video
+                if video:
+                    video.save_as('test-results/videos/test_multi_file_upload_and_error_states.webm')
+            except Exception:
+                pass
+            context.close()
             browser.close()
-

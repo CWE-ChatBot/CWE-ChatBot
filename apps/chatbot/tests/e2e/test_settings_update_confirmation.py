@@ -5,6 +5,7 @@ Skips if settings panel cannot be interacted with in this environment.
 
 import pytest
 from playwright.sync_api import sync_playwright
+import os
 
 
 @pytest.mark.e2e
@@ -61,5 +62,12 @@ def test_settings_update_confirmation(chainlit_server):
 
         finally:
             page.close()
+            try:
+                os.makedirs('test-results/videos', exist_ok=True)
+                video = page.video
+                if video:
+                    video.save_as('test-results/videos/test_settings_update_confirmation.webm')
+            except Exception:
+                pass
             context.close()
             browser.close()

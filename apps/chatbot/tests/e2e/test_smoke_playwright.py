@@ -5,6 +5,7 @@ Tests basic user workflows: role selection, messaging, and response handling.
 
 import pytest
 from playwright.sync_api import sync_playwright, expect
+import os
 
 
 @pytest.mark.e2e
@@ -91,6 +92,14 @@ def test_basic_smoke_flow(chainlit_server):
 
         finally:
             page.close()
+            # Persist video manually
+            try:
+                os.makedirs('test-results/videos', exist_ok=True)
+                video = page.video
+                if video:
+                    video.save_as('test-results/videos/test_basic_smoke_flow.webm')
+            except Exception:
+                pass
             context.close()
             browser.close()
 
@@ -132,6 +141,13 @@ def test_role_selection_interface(chainlit_server):
 
         finally:
             page.close()
+            try:
+                os.makedirs('test-results/videos', exist_ok=True)
+                video = page.video
+                if video:
+                    video.save_as('test-results/videos/test_role_selection_interface.webm')
+            except Exception:
+                pass
             context.close()
             browser.close()
 
@@ -178,6 +194,13 @@ def test_application_loads_without_errors(chainlit_server):
 
         finally:
             page.close()
+            try:
+                os.makedirs('test-results/videos', exist_ok=True)
+                video = page.video
+                if video:
+                    video.save_as('test-results/videos/test_application_loads_without_errors.webm')
+            except Exception:
+                pass
             context.close()
             browser.close()
 
@@ -222,6 +245,13 @@ def test_responsive_ui_basic(chainlit_server):
 
         finally:
             page.close()
+            try:
+                os.makedirs('test-results/videos', exist_ok=True)
+                video = page.video
+                if video:
+                    video.save_as('test-results/videos/test_responsive_ui_basic.webm')
+            except Exception:
+                pass
             context.close()
             browser.close()
 
