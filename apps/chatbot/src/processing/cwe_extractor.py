@@ -172,17 +172,68 @@ class CWEExtractor:
     def enhance_query_for_search(self, text: str) -> Dict[str, Any]:
         """
         Enhance query with extracted information for improved search.
-        
+
         Args:
             text: Original user query
-            
+
         Returns:
-            Dictionary with enhanced query information
+            Dictionary with enhanced query information including expanded terms
         """
+        # Get base query classification
+        query_type = self.classify_query_type(text)
+
+        # Map internal types to expected external types
+        type_mapping = {
+            "direct_cwe_lookup": "direct_cwe_lookup",
+            "prevention_guidance": "prevention_guidance",
+            "vulnerability_inquiry": "vulnerability_inquiry",
+            "programming_security": "general_security",
+            "general_security": "general_security",
+            "general_query": "general_security",
+            "unknown": "general_security"
+        }
+
+        mapped_type = type_mapping.get(query_type, "general_security")
+
+        # Generate enhanced query with relevant expansions
+        enhanced_query = self._generate_enhanced_query(text, mapped_type)
+
         return {
-            'original_query': text,
+            'query_type': mapped_type,
             'cwe_ids': self.extract_cwe_ids(text),
             'keyphrases': self.extract_keyphrases(text),
-            'query_type': self.classify_query_type(text),
-            'has_direct_cwe': self.has_direct_cwe_reference(text)
+            'enhanced_query': enhanced_query
         }
+
+    def _generate_enhanced_query(self, original: str, query_type: str) -> str:
+        """
+        Generate enhanced query with expanded terms for better retrieval.
+
+        Args:
+            original: Original query text
+            query_type: Classified query type
+
+        Returns:
+            Enhanced query string with relevant expansions
+        """
+        enhanced = original
+
+        # Add CWE-specific expansions
+        cwe_ids = self.extract_cwe_ids(original)
+        for cwe_id in cwe_ids:
+            if cwe_id == "CWE-79":
+                enhanced += " cross-site scripting XSS injection script"
+            elif cwe_id == "CWE-89":
+                enhanced += " SQL injection database query"
+            elif cwe_id == "CWE-787":
+                enhanced += " buffer overflow memory corruption"
+            elif cwe_id == "CWE-22":
+                enhanced += " path traversal directory traversal"
+
+        # Add query type specific terms
+        if query_type == "prevention_guidance":
+            enhanced += " mitigation prevention secure coding best practices"
+        elif query_type == "vulnerability_inquiry":
+            enhanced += " vulnerability weakness security flaw exploit"
+
+        return enhanced
