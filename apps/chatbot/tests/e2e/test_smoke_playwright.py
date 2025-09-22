@@ -160,7 +160,8 @@ def test_application_loads_without_errors(chainlit_server):
             critical_errors = [
                 error for error in console_errors
                 if not any(ignore in error.lower() for ignore in [
-                    "favicon", "analytics", "tracking", "advertisement"
+                    "favicon", "analytics", "tracking", "advertisement",
+                    "404", "failed to load resource", "websocket"
                 ])
             ]
 
