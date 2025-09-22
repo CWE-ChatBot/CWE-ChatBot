@@ -9,7 +9,7 @@ from typing import Dict, List, Any, Optional
 from enum import Enum
 from dataclasses import dataclass, field
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,8 @@ class UserContext:
 
     session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     persona: str = UserPersona.DEVELOPER.value
-    created_at: datetime = field(default_factory=datetime.now)
-    last_active: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_active: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Persona-specific preferences
     section_boost: Optional[str] = None
@@ -68,12 +68,12 @@ class UserContext:
 
     def update_activity(self) -> None:
         """Update last activity timestamp."""
-        self.last_active = datetime.now()
+        self.last_active = datetime.now(timezone.utc)
 
     def add_conversation_entry(self, query: str, response: str, retrieved_cwes: List[str]) -> None:
         """Add conversation entry to history."""
         self.conversation_history.append({
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "query": query,
             "response_length": len(response),
             "retrieved_cwes": retrieved_cwes,
@@ -319,7 +319,7 @@ class UserContextManager:
         Returns:
             Number of sessions cleaned up
         """
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
         expired_sessions = []
 
         for session_id, context in self.active_sessions.items():

@@ -32,6 +32,8 @@ class FileProcessor:
         # Maximum file size: 10MB for PDF documents
         self.max_file_size_mb = 10
         self.max_file_size_bytes = self.max_file_size_mb * 1024 * 1024
+        # Cap PDF pages to avoid extremely large documents
+        self.max_pdf_pages = 30
 
     async def process_attachments(self, message: cl.Message) -> Optional[str]:
         """
@@ -135,6 +137,7 @@ class FileProcessor:
                 return "[PDF contains no pages]"
 
             text_content = []
+            total_pages = len(reader.pages)
             for page_num, page in enumerate(reader.pages, 1):
                 try:
                     page_text = page.extract_text()
@@ -144,6 +147,12 @@ class FileProcessor:
                         text_content.append(f"--- Page {page_num} ---\n[Page contains no extractable text]")
                 except Exception as page_error:
                     text_content.append(f"--- Page {page_num} ---\n[Error extracting text: {str(page_error)}]")
+
+                if page_num >= self.max_pdf_pages:
+                    remaining = max(0, total_pages - self.max_pdf_pages)
+                    if remaining > 0:
+                        text_content.append(f"\n[Truncated: processed first {self.max_pdf_pages} of {total_pages} pages]")
+                    break
 
             if text_content:
                 full_content = "\n\n".join(text_content)

@@ -44,7 +44,7 @@ class RoleManager:
         ctx: Optional[UserContext] = cl.user_session.get("user_context")
         if not ctx:
             ctx = UserContext()
-            cl.user_session["user_context"] = ctx
+            cl.user_session.set("user_context", ctx)
             logger.info("Created UserContext in cl.user_session")
         ctx.update_activity()
         return ctx
@@ -104,8 +104,8 @@ class RoleManager:
             ctx.persona = role_value
             ctx.update_activity()
             # Keep legacy flags for compatibility with any remaining callers
-            cl.user_session[self.ROLE_SESSION_KEY] = role_value
-            cl.user_session[self.ROLE_SET_FLAG] = True
+            cl.user_session.set(self.ROLE_SESSION_KEY, role_value)
+            cl.user_session.set(self.ROLE_SET_FLAG, True)
             logger.info(f"User role set on user_context: {role_value}")
             return True
         except Exception as e:
@@ -138,8 +138,8 @@ class RoleManager:
                 ctx.persona = UserPersona.DEVELOPER.value
                 ctx.update_activity()
             # Also clean legacy keys
-            cl.user_session.pop(self.ROLE_SESSION_KEY, None)
-            cl.user_session.pop(self.ROLE_SET_FLAG, None)
+            cl.user_session.set(self.ROLE_SESSION_KEY, None)
+            cl.user_session.set(self.ROLE_SET_FLAG, None)
             logger.info("User role cleared (user_context + legacy keys)")
             return True
         except Exception as e:
@@ -266,8 +266,8 @@ class RoleManager:
         This provides defense against session tampering attacks.
         """
         try:
-            cl.user_session.pop(self.ROLE_SESSION_KEY, None)
-            cl.user_session.pop(self.ROLE_SET_FLAG, None)
+            cl.user_session.set(self.ROLE_SESSION_KEY, None)
+            cl.user_session.set(self.ROLE_SET_FLAG, None)
             ctx = cl.user_session.get("user_context")
             if ctx:
                 ctx.persona = UserPersona.DEVELOPER.value

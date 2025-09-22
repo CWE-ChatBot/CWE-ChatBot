@@ -4,9 +4,10 @@ Security Input Sanitization - Story 2.1
 Provides input sanitization and validation to prevent prompt injection and other security attacks.
 """
 
+import os
 import re
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ class InputSanitizer:
         logger.debug(f"Sanitizing input of length {len(user_input)}")
 
         original_length = len(user_input)
-        security_flags = []
+        security_flags: List[str] = []
 
         # Step 1: Length validation (flag only; do not truncate)
         if len(user_input) > 2000:  # Reasonable limit for CWE queries
@@ -123,23 +124,38 @@ class InputSanitizer:
                 f"Input exceeds recommended length ({len(user_input)} > 2000); flagged but not truncated"
             )
 
-        # Step 2: Check for prompt injection patterns (flag only; do not rewrite semantics)
+        # Step 2: Ignore fenced code blocks when checking for risky patterns
         sanitized_input = user_input
-        for pattern in self.compiled_patterns:
-            if pattern.search(sanitized_input):
-                security_flags.append("prompt_injection_detected")
+        text_for_scanning, _code_blocks = self._strip_fenced_code_for_scan(sanitized_input)
 
-        # Step 3: Check for command injection patterns (flag only; do not mutate text)
-        for pattern in self.compiled_command_patterns:
-            if pattern.search(sanitized_input):
-                security_flags.append("command_injection_detected")
+        # Step 3: Check for prompt injection patterns (flag only; do not rewrite semantics)
+        prompt_hits = any(p.search(text_for_scanning) for p in self.compiled_patterns)
+        if prompt_hits:
+            security_flags.append("prompt_injection_detected")
 
-        # Step 4: Normalize whitespace and remove control characters (safe, non-semantic)
+        # Step 4: Check for command injection patterns (flag only; do not mutate text)
+        command_hits = any(p.search(text_for_scanning) for p in self.compiled_command_patterns)
+        if command_hits:
+            security_flags.append("command_injection_detected")
+
+        # Step 5: Normalize whitespace and remove control characters (safe, non-semantic)
         sanitized_input = self._normalize_text(sanitized_input)
 
-        # Step 5: Final safety check
-        is_safe = not any(flag in ["prompt_injection_detected", "command_injection_detected"]
-                         for flag in security_flags)
+        # Step 6: Final safety check
+        # Under strict mode, any high-risk signal blocks. Otherwise require multiple signals to block.
+        # Determine strictness from environment to avoid import-time coupling
+        env_val = os.getenv("ENABLE_STRICT_SANITIZATION", "true").lower().strip()
+        strict_mode = env_val in ("1", "true", "yes", "on")
+        high_risk_categories = set()
+        if prompt_hits:
+            high_risk_categories.add("prompt")
+        if command_hits:
+            high_risk_categories.add("command")
+
+        if strict_mode:
+            is_safe = len(high_risk_categories) == 0
+        else:
+            is_safe = len(high_risk_categories) < 2  # require multiple distinct categories to block
 
         if security_flags:
             logger.warning(f"Security flags detected: {security_flags}")
@@ -153,6 +169,20 @@ class InputSanitizer:
         }
 
     # Removed semantic rewriting; injection patterns are flagged, not rewritten
+
+    def _strip_fenced_code_for_scan(self, text: str) -> Tuple[str, List[str]]:
+        """
+        Remove fenced code blocks (``` ... ```) from text for the purpose of scanning,
+        returning the text without code and the list of code blocks removed.
+        """
+        code_blocks: List[str] = []
+        pattern = re.compile(r"```[\s\S]*?```|~~~[\s\S]*?~~~", re.MULTILINE)
+
+        def repl(m: re.Match) -> str:
+            code_blocks.append(m.group(0))
+            return "\n[code block]\n"
+
+        return pattern.sub(repl, text), code_blocks
 
     def _normalize_text(self, text: str) -> str:
         """

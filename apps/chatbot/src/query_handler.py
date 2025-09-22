@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
+from src.security.secure_logging import get_secure_logger
 
 # Prefer package import; allow override via CWE_INGESTION_PATH
 try:
@@ -36,7 +37,7 @@ except Exception:
             "CWE_INGESTION_PATH environment variable to point at the 'apps/cwe_ingestion' directory."
         )
 
-logger = logging.getLogger(__name__)
+logger = get_secure_logger(__name__)
 
 
 class CWEQueryHandler:
@@ -81,7 +82,7 @@ class CWEQueryHandler:
                 logger.warning("Production database appears empty. Verify Story 1.5 ingestion completed.")
 
         except Exception as e:
-            logger.error(f"Failed to initialize CWEQueryHandler: {e}")
+            logger.log_exception("Failed to initialize CWEQueryHandler", e)
             raise
 
     async def process_query(self, query: str, user_context: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -132,7 +133,7 @@ class CWEQueryHandler:
             return results
 
         except Exception as e:
-            logger.error(f"Query processing failed: {e}")
+            logger.log_exception("Query processing failed", e)
             # Return empty results on error to ensure graceful degradation
             return []
 
@@ -142,7 +143,7 @@ class CWEQueryHandler:
             stats: Dict[str, Any] = self.store.get_collection_stats()
             return stats
         except Exception as e:
-            logger.error(f"Failed to get database stats: {e}")
+            logger.log_exception("Failed to get database stats", e)
             return {"count": 0, "error": str(e)}
 
     def health_check(self) -> Dict[str, bool]:
@@ -164,3 +165,13 @@ class CWEQueryHandler:
             health["embedder"] = False
 
         return health
+
+    def close(self) -> None:
+        """Close underlying resources."""
+        try:
+            if getattr(self, "store", None) is not None:
+                conn = getattr(self.store, "conn", None)
+                if conn:
+                    conn.close()
+        except Exception as e:
+            logger.log_exception("Error closing QueryHandler resources", e)

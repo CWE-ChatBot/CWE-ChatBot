@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "CWE ChatBot - Conversational AI for Common Weakness Enumeration"
 authors = ["CWE-ChatBot Team"]
 packages = [
-    {include = "chatbot", from = "apps/chatbot/src"},
+    # Expose the Chainlit app package at import path `src.*`
+    {include = "src", from = "apps/chatbot"},
     {include = "shared", from = "."},
 ]
 
@@ -70,7 +71,7 @@ target-version = "py310"
 
 
 [tool.pytest.ini_options]
-testpaths = ["apps/chatbot/tests", "shared/tests", "tests"]
+testpaths = ["apps/chatbot/tests", "shared/tests", "tests", "apps/tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "--cov=apps/chatbot/src --cov=shared --cov-report=html --cov-report=term"
 

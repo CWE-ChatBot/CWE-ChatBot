@@ -150,6 +150,7 @@ User Query: {user_query}
 
 Instructions:
 - Use the standardized CVE format; note missing info.
+- Format key segments as bold (e.g., **Impact**, **Product**, **Vendor**, **Version**, **Affected Platform**, **Attacker**, **Action**, **Vector**); do not use square brackets.
 Response:""",
         )
         return mapping
@@ -212,6 +213,18 @@ Response:""",
 
             # Validate and clean final response
             cleaned_response = self._clean_response(full_response)
+
+            # CVE Creator formatting: convert [segments] to **bold** (avoid markdown links)
+            if user_persona == "CVE Creator":
+                formatted = self._format_cve_creator(cleaned_response)
+                if formatted != cleaned_response:
+                    try:
+                        # Update streamed message with final formatted text
+                        message.content = formatted
+                        await message.update()
+                    except Exception:
+                        pass
+                cleaned_response = formatted
             logger.info(f"Generated streaming response length: {len(cleaned_response)} characters")
 
             return cleaned_response
@@ -266,6 +279,10 @@ Response:""",
             # Validate and clean response
             generated_text = response.text if response.text else ""
             cleaned_response = self._clean_response(generated_text)
+
+            # CVE Creator formatting: convert [segments] to **bold** (avoid markdown links)
+            if user_persona == "CVE Creator":
+                cleaned_response = self._format_cve_creator(cleaned_response)
 
             logger.info(f"Generated response length: {len(cleaned_response)} characters")
 
@@ -366,3 +383,14 @@ Response:""",
     def _generate_error_response(self, user_persona: str) -> str:
         """Generate safe error response without exposing system details."""
         return "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment. I'm here to help with Common Weakness Enumeration (CWE) topics."
+
+    def _format_cve_creator(self, text: str) -> str:
+        """
+        For CVE Creator persona, replace bracketed segments with bold for easy copy-paste.
+        Avoid altering markdown links of the form [label](url).
+        """
+        # Replace [foo] with **foo** when not followed by '(' (to avoid links)
+        try:
+            return re.sub(r"\[([^\[\]]+)\](?!\()", r"**\1**", text)
+        except Exception:
+            return text

@@ -61,8 +61,6 @@ This pipeline downloads the CWE XML from MITRE, parses and normalizes entries, g
 
 ```
 
-Of course. Here is the content for a new markdown file named `NETWORK_ARCHITECTURE.md` containing the network diagram.
-
 # Network Architecture Diagram
 
 ```mermaid
@@ -96,7 +94,6 @@ Of course. Here is the content for a new markdown file named `NETWORK_ARCHITECTU
 
 ```
 
-This diagram illustrates the network connections for the CWE Data Ingestion Pipeline, covering both **local development** and **production** access patterns.
 
 ## 📝 Overview
 

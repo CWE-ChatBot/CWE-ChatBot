@@ -7,7 +7,7 @@ Manages conversation flow, session state, and message handling for Chainlit inte
 import logging
 from typing import Dict, List, Any, Optional, AsyncGenerator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import chainlit as cl
 
@@ -15,8 +15,9 @@ from src.user_context import UserContext, UserPersona
 from src.input_security import InputSanitizer, SecurityValidator
 from src.query_handler import CWEQueryHandler
 from src.response_generator import ResponseGenerator
+from src.security.secure_logging import get_secure_logger
 
-logger = logging.getLogger(__name__)
+logger = get_secure_logger(__name__)
 
 
 @dataclass
@@ -27,7 +28,7 @@ class ConversationMessage:
     session_id: str
     content: str
     message_type: str  # 'user', 'assistant', 'system'
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -70,7 +71,7 @@ class ConversationManager:
             logger.info("ConversationManager initialized successfully")
 
         except Exception as e:
-            logger.error(f"Failed to initialize ConversationManager: {e}")
+            logger.log_exception("Failed to initialize ConversationManager", e)
             raise
 
     # -----------------------------
@@ -85,7 +86,7 @@ class ConversationManager:
         if not ctx:
             ctx = UserContext()
             ctx.session_id = session_id
-            cl.user_session["user_context"] = ctx
+            cl.user_session.set("user_context", ctx)
             logger.info(f"Created new UserContext in user_session for session {session_id}")
         else:
             ctx.update_activity()
@@ -286,7 +287,7 @@ class ConversationManager:
             }
 
         except Exception as e:
-            logger.error(f"Error processing streaming message: {e}")
+            logger.log_exception("Error processing streaming message", e)
             error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
 
             msg = cl.Message(content=error_response)
@@ -434,6 +435,13 @@ class ConversationManager:
             # Validate response security
             validation_result = self.security_validator.validate_response(response)
             final_response = validation_result["validated_response"]
+            # If validation altered the streamed content, update the message with the final text
+            try:
+                if 'msg' in locals() and final_response != response:
+                    msg.content = final_response
+                    await msg.update()
+            except Exception as upd_err:
+                logger.log_exception("Failed to update streamed message after validation", upd_err)
 
             # Extract CWEs for context tracking
             retrieved_cwes = list(set(
@@ -469,7 +477,7 @@ class ConversationManager:
             }
 
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
+            logger.log_exception("Error processing message", e)
             error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
 
             return {
@@ -500,7 +508,7 @@ class ConversationManager:
         context.update_activity()
         # Add system message about persona change
         system_message = ConversationMessage(
-            message_id=f"persona_change_{datetime.now().timestamp()}",
+            message_id=f"persona_change_{datetime.now(timezone.utc).timestamp()}",
             session_id=session_id,
             content=f"Persona updated to: {new_persona}",
             message_type="system",

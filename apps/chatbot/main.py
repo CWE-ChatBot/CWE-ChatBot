@@ -7,26 +7,23 @@ Integrates with Story 1.5 production infrastructure.
 
 import asyncio
 import logging
-import sys
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional, Literal
+import time
 
 import chainlit as cl
+from chainlit.input_widget import Select, Switch
+from chainlit import ChatProfile, AskFileMessage
 from pydantic import BaseModel, Field
 
-# Add package root so `src.*` imports resolve
-current_dir = Path(__file__).parent.absolute()
-sys.path.insert(0, str(current_dir))
-
-try:
-    from src.user_context import UserPersona, UserContext
-    from src.conversation import ConversationManager
-    from src.input_security import InputSanitizer, SecurityValidator
-    from src.file_processor import FileProcessor
-except ImportError as e:
-    logging.error(f"Failed to import Story 2.1 components: {e}")
-    sys.exit(1)
+from src.user_context import UserPersona, UserContext
+from src.conversation import ConversationManager
+from src.input_security import InputSanitizer, SecurityValidator
+from src.file_processor import FileProcessor
+from src.security.secure_logging import get_secure_logger
+from src.app_config import config as app_config
 
 
 # Configure logging
@@ -34,7 +31,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = get_secure_logger(__name__)
 
 # Pydantic Chat Settings for native UI
 class UISettings(BaseModel):
@@ -60,21 +57,34 @@ conversation_manager: Optional[ConversationManager] = None
 input_sanitizer: Optional[InputSanitizer] = None
 security_validator: Optional[SecurityValidator] = None
 file_processor: Optional[FileProcessor] = None
+_init_ok: bool = False
 
 
-def initialize_components():
+def initialize_components() -> bool:
     """Initialize all Story 2.1 chatbot components with error handling."""
-    global conversation_manager, input_sanitizer, security_validator, file_processor
+    global conversation_manager, input_sanitizer, security_validator, file_processor, _init_ok
 
     try:
-        # Get required environment variables
+        # Validate config once; if it fails, we will surface a UI error and disable handlers
+        try:
+            app_config.validate_config()
+        except Exception as cfg_err:
+            logger.log_exception("Configuration validation failed", cfg_err, extra_context={
+                "component": "startup",
+            })
+            _init_ok = False
+            # Still attempt partial initialization to provide a helpful UI message
+        
+        # Prefer explicit URLs if provided (for dev/prod parity)
         database_url = os.getenv('DATABASE_URL') or os.getenv('LOCAL_DATABASE_URL')
-        gemini_api_key = os.getenv('GEMINI_API_KEY')
+        gemini_api_key = os.getenv('GEMINI_API_KEY') or app_config.gemini_api_key
 
         if not database_url:
-            raise ValueError("DATABASE_URL or LOCAL_DATABASE_URL environment variable required")
-        if not gemini_api_key:
-            raise ValueError("GEMINI_API_KEY environment variable required")
+            # Derive URL from POSTGRES_* if available
+            if app_config.pg_user and app_config.pg_password:
+                database_url = f"postgresql://{app_config.pg_user}:{app_config.pg_password}@{app_config.pg_host}:{app_config.pg_port}/{app_config.pg_database}"
+        if not database_url or not gemini_api_key:
+            raise ValueError("Missing required configuration: database URL and/or GEMINI_API_KEY")
 
         logger.info(f"Initializing with database: {database_url[:50]}...")
 
@@ -94,13 +104,23 @@ def initialize_components():
         if not health.get('database', False):
             raise RuntimeError("Database health check failed")
 
-        logger.info(f"Story 2.1 components initialized successfully")
+        logger.info("Story 2.1 components initialized successfully")
         logger.info(f"Database health: {health}")
-        return True
-
+        _init_ok = True
+        return _init_ok
     except Exception as e:
-        logger.error(f"Component initialization failed: {e}")
-        return False
+        logger.log_exception("Component initialization failed", e, extra_context={"component": "startup"})
+        _init_ok = False
+        return _init_ok
+
+
+@cl.set_chat_profiles
+def set_profiles():
+    """Expose personas as top-bar chat profiles for quick access."""
+    profiles = []
+    for p in UserPersona:
+        profiles.append(ChatProfile(name=p.value, markdown_description=f"Persona: {p.value}"))
+    return profiles
 
 
 @cl.on_chat_start
@@ -108,13 +128,59 @@ async def start():
     """Initialize the chat session with settings-based persona configuration."""
     global conversation_manager
 
-    if not conversation_manager:
-        await cl.Message(content="System is initializing. Please try again in a moment.").send()
+    if not conversation_manager or not _init_ok:
+        await cl.Message(content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB).").send()
         return
 
-    # Initialize default settings
+    # Initialize default settings and expose a Settings panel
     default_settings = UISettings()
+
+    # If a chat profile (top bar) is selected, use it as the persona
+    selected_profile = cl.user_session.get("chat_profile")
+    if isinstance(selected_profile, str) and selected_profile in UserPersona.get_all_personas():
+        default_settings.persona = selected_profile
+
     cl.user_session.set("ui_settings", default_settings.dict())
+
+    # Build and display the Chainlit settings panel
+    try:
+        settings_panel = cl.ChatSettings(
+            [
+                Select(
+                    id="detail_level",
+                    label="Detail Level",
+                    values=["basic", "standard", "detailed"],
+                    initial_index=["basic", "standard", "detailed"].index(default_settings.detail_level),
+                    description="How much detail to include"
+                ),
+                Switch(
+                    id="include_examples",
+                    label="Include Code Examples",
+                    initial=default_settings.include_examples,
+                ),
+                Switch(
+                    id="include_mitigations",
+                    label="Include Mitigations",
+                    initial=default_settings.include_mitigations,
+                ),
+            ]
+        )
+        await settings_panel.send()
+    except Exception as e:
+        # Non-fatal if UI widgets API changes; continue without settings panel
+        logger.log_exception("Failed to render settings panel", e)
+
+    # One-time UI hint for this session (points to header selector & gear)
+    try:
+        if not cl.user_session.get("ui_hint_shown"):
+            tip = (
+                "Use the Persona selector in the top bar to switch roles, "
+                "and the gear next to the input to adjust detail level, examples, and mitigations."
+            )
+            await cl.Message(content=f"💡 {tip}", author="System").send()
+            cl.user_session.set("ui_hint_shown", True)
+    except Exception as e:
+        logger.log_exception("Failed to send UI hint", e)
 
     # Initialize per-user context in Chainlit with default persona
     session_id = cl.context.session.id
@@ -125,8 +191,8 @@ async def start():
 
 I'm here to help you with Common Weakness Enumeration (CWE) information.
 
-**👆 Configure your experience using the Settings panel** (gear icon above) to:
-• Select your cybersecurity role/persona
+**Configure your experience using the top Persona selector** (header dropdown) and the Settings panel (gear icon in the input area) to:
+• Select your cybersecurity role/persona (top dropdown)
 • Adjust detail level and preferences
 • Customize response format
 
@@ -143,14 +209,28 @@ Once configured, ask me anything about cybersecurity weaknesses!"""
 
     await cl.Message(content=welcome_message).send()
 
+    # Provide a quick action to attach files (useful for CVE Creator)
+    try:
+        attach_action = [
+            cl.Action(
+                name="attach_files",
+                value="attach_files",
+                label="Attach Files (PDF)",
+                payload={"source": "welcome"}
+            )
+        ]
+        await cl.Message(content="You can attach relevant documents if needed.", actions=attach_action, author="System").send()
+    except Exception as e:
+        logger.log_exception("Failed to render attach files action", e)
+
 
 @cl.on_message
 async def main(message: cl.Message):
     """Handle incoming messages with Story 2.1 NLU and RAG pipeline."""
 
     # Check if components are initialized
-    if not conversation_manager:
-        await cl.Message(content="System is initializing. Please try again in a moment.").send()
+    if not conversation_manager or not _init_ok:
+        await cl.Message(content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB).").send()
         return
 
     # Get current settings and ensure session exists
@@ -169,7 +249,24 @@ async def main(message: cl.Message):
         await conversation_manager.update_user_persona(session_id, ui_settings["persona"])
 
     try:
+        # Prevent accidental double-send with a 1s debounce
+        now = time.monotonic()
+        last_ts = cl.user_session.get("_last_msg_ts") or 0.0
+        if now - float(last_ts) < 1.0:
+            logger.info("Debounced duplicate message within 1s window")
+            return
+        cl.user_session.set("_last_msg_ts", now)
+
         user_query = message.content.strip()
+
+        # If user uploaded files via the Attach Files action earlier, merge their content
+        pending_upload = cl.user_session.get("uploaded_file_content")
+        if pending_upload:
+            if user_query:
+                user_query = f"{user_query}\n\n--- Attached File Content ---\n{pending_upload}"
+            else:
+                user_query = f"--- Attached File Content ---\n{pending_upload}"
+            cl.user_session.set("uploaded_file_content", None)
 
         # Process file attachments if present (especially for CVE Creator)
         if hasattr(message, 'elements') and message.elements and file_processor:
@@ -262,7 +359,7 @@ async def main(message: cl.Message):
 
     except Exception as e:
         # Secure error handling - never expose internal details
-        logger.error(f"Error processing message: {e}")
+        logger.log_exception("Error processing message", e, extra_context={"handler": "on_message"})
         error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
         await cl.Message(content=error_response).send()
 
@@ -278,8 +375,12 @@ async def on_settings_update(settings: Dict[str, Any]):
     try:
         session_id = cl.context.session.id
 
-        # Normalize settings to our UISettings model and persist
-        model = UISettings(**settings) if isinstance(settings, dict) else UISettings()
+        # Normalize settings to our UISettings model and persist.
+        # Merge with existing stored settings so missing fields (like persona when using top profiles)
+        # are preserved rather than reset to defaults.
+        existing = cl.user_session.get("ui_settings") or {}
+        merged = {**existing, **(settings or {})}
+        model = UISettings(**merged)
         cl.user_session.set("ui_settings", model.dict())
 
         # Update persona in conversation manager if it changed
@@ -298,7 +399,7 @@ async def on_settings_update(settings: Dict[str, Any]):
                 logger.error(f"Failed to update persona to {model.persona}")
 
     except Exception as e:
-        logger.error(f"Settings update failed: {e}")
+        logger.log_exception("Settings update failed", e)
 
 
 @cl.on_feedback
@@ -344,9 +445,46 @@ async def on_feedback(feedback):
             logger.error(f"Failed to record feedback for message {message_id}")
 
     except Exception as e:
-        logger.error(f"Error processing feedback: {e}")
+        logger.log_exception("Error processing feedback", e)
         # Log feedback object structure for debugging
         logger.debug(f"Feedback object attributes: {dir(feedback) if feedback else 'None'}")
+
+
+# Action: Attach Files
+@cl.action_callback("attach_files")
+async def on_attach_files(action):
+    """Handle file attachment via a guided prompt; stores extracted content for next message."""
+    global file_processor
+    try:
+        # Prompt the user to upload PDF files (up to 10MB each, max 3)
+        ask = AskFileMessage(
+            content="Upload PDF(s) with vulnerability details (max 3 files, 10MB each).",
+            accept=["application/pdf"],
+            max_files=3,
+            max_size_mb=10,
+            timeout=600,
+        )
+        files = await ask.send()
+
+        if not files:
+            await cl.Message(content="No files uploaded.", author="System").send()
+            return
+
+        # Reuse FileProcessor on a temporary message wrapper to extract content
+        class _Tmp:
+            pass
+        tmp = _Tmp()
+        tmp.elements = files
+
+        content = await file_processor.process_attachments(tmp) if file_processor else None
+        if content:
+            cl.user_session.set("uploaded_file_content", content)
+            await cl.Message(content="📎 Files received. I will use them in your next prompt.", author="System").send()
+        else:
+            await cl.Message(content="Unable to extract text from the uploaded files. Please ensure they are text-based PDFs.", author="System").send()
+    except Exception as e:
+        logger.log_exception("Attach files flow failed", e)
+        await cl.Message(content="File upload failed. Please try again or use smaller PDFs.", author="System").send()
 
 
 
@@ -363,6 +501,20 @@ def main_cli():
 
 # Initialize components when module loads for Chainlit
 initialize_components()
+
+
+@cl.on_stop
+async def on_stop() -> None:
+    """Gracefully close resources when the app stops."""
+    try:
+        if conversation_manager and getattr(conversation_manager, "query_handler", None):
+            qh = conversation_manager.query_handler
+            close_fn = getattr(qh, "close", None)
+            if callable(close_fn):
+                close_fn()
+                logger.info("Closed retriever/database resources")
+    except Exception as e:
+        logger.log_exception("Shutdown cleanup failed", e)
 
 if __name__ == "__main__":
     # This allows running the app directly with: python main.py

@@ -110,6 +110,44 @@ echo -e "${BLUE}🔧 Setting up environment...${NC}"
 export CWE_INGESTION_PATH="$PROJECT_ROOT/apps/cwe_ingestion"
 echo -e "${GREEN}✅ CWE_INGESTION_PATH=${CWE_INGESTION_PATH}${NC}"
 
+# Load common environment variables from user env file if not already set
+USER_ENV_FILE="$HOME/work/env/.env"
+
+# Helper to load a single key from the user env file if unset
+load_env_key() {
+  local key="$1"
+  local current_val="${!key:-}"
+  if [[ -z "$current_val" && -f "$USER_ENV_FILE" ]]; then
+    # Extract key=value with support for quoted strings
+    local line
+    line=$(grep -E "^${key}=" "$USER_ENV_FILE" | tail -n 1 || true)
+    if [[ -n "$line" ]]; then
+      local val
+      val=$(echo "$line" | sed -E "s/^${key}=//; s/^\"(.*)\"$/\1/; s/^'(.*)'$/\1/")
+      if [[ -n "$val" ]]; then
+        export "$key"="$val"
+        echo -e "${GREEN}✅ Loaded ${key} from ${USER_ENV_FILE}${NC}"
+      fi
+    fi
+  fi
+}
+
+# Keys to attempt loading (won't overwrite existing env)
+for KEY in \
+  GEMINI_API_KEY \
+  OPENAI_API_KEY \
+  DATABASE_URL \
+  LOCAL_DATABASE_URL \
+  PROD_DATABASE_URL \
+  POSTGRES_HOST \
+  POSTGRES_PORT \
+  POSTGRES_DATABASE \
+  POSTGRES_USER \
+  POSTGRES_PASSWORD
+do
+  load_env_key "$KEY"
+done
+
 # Verify CWE ingestion directory exists
 if [[ ! -d "$CWE_INGESTION_PATH" ]]; then
     echo -e "${RED}❌ CWE ingestion directory not found: $CWE_INGESTION_PATH${NC}"
