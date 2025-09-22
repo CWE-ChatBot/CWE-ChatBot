@@ -17,7 +17,8 @@ def test_basic_smoke_flow(chainlit_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
 
         try:
             # Navigate to application
@@ -89,6 +90,8 @@ def test_basic_smoke_flow(chainlit_server):
                 assert len(page_title) > 0, "Page should have a title"
 
         finally:
+            page.close()
+            context.close()
             browser.close()
 
 
@@ -99,7 +102,8 @@ def test_role_selection_interface(chainlit_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
 
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -127,6 +131,8 @@ def test_role_selection_interface(chainlit_server):
             assert page.url.startswith("http"), "Page should remain loaded"
 
         finally:
+            page.close()
+            context.close()
             browser.close()
 
 
@@ -137,7 +143,8 @@ def test_application_loads_without_errors(chainlit_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
 
         # Collect console errors
         console_errors = []
@@ -170,6 +177,8 @@ def test_application_loads_without_errors(chainlit_server):
             assert len(critical_errors) == 0, f"Console errors occurred: {critical_errors}"
 
         finally:
+            page.close()
+            context.close()
             browser.close()
 
 
@@ -180,7 +189,8 @@ def test_responsive_ui_basic(chainlit_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
 
         try:
             # Test different viewport sizes
@@ -211,6 +221,8 @@ def test_responsive_ui_basic(chainlit_server):
                     f"Horizontal scroll at {viewport_width}px: {scroll_width}px content width"
 
         finally:
+            page.close()
+            context.close()
             browser.close()
 
 

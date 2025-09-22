@@ -13,7 +13,8 @@ def test_settings_update_confirmation(chainlit_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_load_state("networkidle", timeout=20000)
@@ -59,5 +60,6 @@ def test_settings_update_confirmation(chainlit_server):
                 pytest.skip("Settings confirmation message not visible in this build.")
 
         finally:
+            page.close()
+            context.close()
             browser.close()
-

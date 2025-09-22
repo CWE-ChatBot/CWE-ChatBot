@@ -32,7 +32,8 @@ def test_cwe_retrieval_with_content(chainlit_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
 
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -82,6 +83,8 @@ def test_cwe_retrieval_with_content(chainlit_server):
                 "Response should contain mitigation guidance"
 
         finally:
+            page.close()
+            context.close()
             browser.close()
 
 
@@ -108,7 +111,8 @@ def test_multiple_cwe_comparison(chainlit_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
 
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -164,6 +168,8 @@ def test_multiple_cwe_comparison(chainlit_server):
                 "Response should contain comparison language"
 
         finally:
+            page.close()
+            context.close()
             browser.close()
 
 
@@ -189,7 +195,8 @@ def test_role_specific_responses(chainlit_server, sample_roles):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
 
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -256,6 +263,8 @@ def test_role_specific_responses(chainlit_server, sample_roles):
                         "PSIRT response should contain impact assessment terms"
 
         finally:
+            page.close()
+            context.close()
             browser.close()
 
 

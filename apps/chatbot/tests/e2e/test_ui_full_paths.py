@@ -52,7 +52,8 @@ def test_ui_full_paths(chainlit_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
         try:
             # Navigate and wait until idle
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -160,4 +161,6 @@ def test_ui_full_paths(chainlit_server):
             assert "[Remote Code Execution]" not in content_html, "Raw bracketed segments should be formatted"
 
         finally:
+            page.close()
+            context.close()
             browser.close()

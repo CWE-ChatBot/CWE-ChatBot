@@ -13,7 +13,8 @@ def test_sources_sidebar_renders(chainlit_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir="test-results/videos/")
+        page = context.new_page()
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_load_state("networkidle", timeout=20000)
@@ -39,5 +40,6 @@ def test_sources_sidebar_renders(chainlit_server):
                 pytest.skip("No source cards visible in sidebar in this environment.")
 
         finally:
+            page.close()
+            context.close()
             browser.close()
-
