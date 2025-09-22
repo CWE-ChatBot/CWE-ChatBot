@@ -16,7 +16,8 @@ import chainlit as cl
 from pydantic import BaseModel, Field
 
 # Add package root so `src.*` imports resolve
-sys.path.insert(0, str(Path(__file__).parent))
+current_dir = Path(__file__).parent.absolute()
+sys.path.insert(0, str(current_dir))
 
 try:
     from src.user_context import UserPersona, UserContext
@@ -301,7 +302,7 @@ async def on_settings_update(settings: Dict[str, Any]):
 
 
 @cl.on_feedback
-async def on_feedback(feedback: cl.Feedback):
+async def on_feedback(feedback):
     """Handle user feedback on messages."""
     global conversation_manager
 
@@ -311,18 +312,30 @@ async def on_feedback(feedback: cl.Feedback):
 
     try:
         session_id = cl.context.session.id
-        message_id = feedback.forId
+
+        # Get message ID from feedback object
+        # In current Chainlit, feedback has 'forId' attribute pointing to the message
+        message_id = getattr(feedback, 'forId', getattr(feedback, 'for_id', None))
+
+        if not message_id:
+            logger.error("Feedback received but no message ID found")
+            return
 
         # Convert Chainlit feedback to our rating system (1-5 scale)
         # Chainlit feedback.value is typically 1 (thumbs up) or 0 (thumbs down)
-        rating = 5 if feedback.value == 1 else 2  # Map thumbs up to 5, thumbs down to 2
+        feedback_value = getattr(feedback, 'value', None)
+        if feedback_value is None:
+            logger.error("Feedback received but no value found")
+            return
+
+        rating = 5 if feedback_value == 1 else 2  # Map thumbs up to 5, thumbs down to 2
 
         # Record feedback in conversation manager
         success = conversation_manager.record_feedback(session_id, message_id, rating)
 
         if success:
-            logger.info(f"Recorded feedback for message {message_id}: {rating}")
-            # Optional: Send a brief acknowledgment (comment out if too noisy)
+            logger.info(f"Recorded feedback for message {message_id}: rating {rating} (feedback value: {feedback_value})")
+            # Optional: Send a brief acknowledgment (disabled to avoid noise)
             # await cl.Message(
             #     content="👍 Thank you for your feedback!",
             #     author="System"
@@ -332,6 +345,8 @@ async def on_feedback(feedback: cl.Feedback):
 
     except Exception as e:
         logger.error(f"Error processing feedback: {e}")
+        # Log feedback object structure for debugging
+        logger.debug(f"Feedback object attributes: {dir(feedback) if feedback else 'None'}")
 
 
 
