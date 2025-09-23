@@ -116,8 +116,14 @@ class CWEQueryHandler:
             }
 
             if section_boost:
+                # Pull boost value from centralized config
+                try:
+                    from .app_config import config
+                    boost_value = getattr(config, "section_boost_value", 0.15)
+                except Exception:
+                    boost_value = 0.15
                 query_params["section_intent_boost"] = section_boost
-                query_params["section_boost_value"] = 0.15
+                query_params["section_boost_value"] = boost_value
                 logger.debug(f"Applied section boost: {section_boost}")
 
             # Execute hybrid search using Story 1.5 production system

@@ -48,6 +48,7 @@ usage() {
     echo ""
     echo "Environment Variables (will be loaded from ~/work/env/.env_cwe_chatbot if available):"
     echo "  GEMINI_API_KEY        Your Gemini API key for embeddings (REQUIRED)"
+    echo "  PROVIDER              LLM provider: google | vertex (default: google)"
     echo ""
     echo "Database Configuration (Local Docker PostgreSQL):"
     echo "  POSTGRES_HOST         PostgreSQL host (default: localhost)"

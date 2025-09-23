@@ -154,7 +154,7 @@ class CWEEmbedder:
         # Use hash of text to generate consistent embeddings
         text_hash = hash(text) % (2**32)
         np.random.seed(text_hash)
-        embedding = np.random.rand(self.embedding_dimension).astype(np.float32)
+        embedding = np.random.rand(self.embedding_dimension).astype(np.float32) # DevSkim: ignore DS148264
         # Normalize to unit vector
         norm = np.linalg.norm(embedding)
         if norm > 0:

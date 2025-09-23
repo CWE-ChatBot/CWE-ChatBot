@@ -67,9 +67,22 @@ class SecureLogger:
             'exception_type': type(exception).__name__,
             'operation': message
         }
+        # Include hashed session/user IDs and request_id for traceability
+        try:
+            if extra_context:
+                sid = extra_context.get('session_id') or extra_context.get('session')
+                if sid:
+                    safe_info['session_hash'] = self._hash_sensitive_value(str(sid))
+                rid = extra_context.get('request_id') or extra_context.get('req_id')
+                if rid:
+                    safe_info['request_id'] = str(rid)
+        except Exception:
+            pass
         
         if extra_context:
-            safe_info.update(extra_context)
+            # Avoid leaking sensitive fields in production; only attach non-sensitive extras in debug
+            if self.is_debug_mode or self.is_development:
+                safe_info.update(extra_context)
         
         # Create production-safe log message
         safe_message = f"{message}: {type(exception).__name__}"

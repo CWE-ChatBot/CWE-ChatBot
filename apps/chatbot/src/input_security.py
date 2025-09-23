@@ -94,16 +94,6 @@ class InputSanitizer:
             - sanitized_length: Length after sanitization
         """
         if not user_input or not isinstance(user_input, str):
-            # CVE Creator can work with minimal input (file attachments might result in empty text)
-            if user_persona == "CVE Creator":
-                return {
-                    "sanitized_input": user_input or "[File attachment or minimal input for CVE Creator]",
-                    "security_flags": [],  # No flags for CVE Creator minimal input
-                    "is_safe": True,       # Safe for CVE Creator
-                    "original_length": len(user_input) if user_input else 0,
-                    "sanitized_length": len(user_input) if user_input else 0
-                }
-
             return {
                 "sanitized_input": "",
                 "security_flags": ["empty_or_invalid_input"],
@@ -219,10 +209,6 @@ class InputSanitizer:
         if not query or len(query) < 3:
             return False
 
-        # CVE Creator has different validation - accepts vulnerability information
-        if user_persona == "CVE Creator":
-            return self._validate_cve_creator_context(query)
-
         # Look for CWE-related keywords for other personas
         cwe_keywords = [
             'cwe', 'weakness', 'vulnerability', 'security', 'exploit',
@@ -240,34 +226,7 @@ class InputSanitizer:
         # Consider query valid if it has CWE keywords or direct CWE ID reference
         return cwe_keyword_count > 0 or has_cwe_id
 
-    def _validate_cve_creator_context(self, query: str) -> bool:
-        """
-        Validate context specifically for CVE Creator persona.
-
-        CVE Creator accepts vulnerability information, patches, and security research.
-        """
-        query_lower = query.lower()
-
-        # CVE Creator specific keywords - broader vulnerability terms
-        cve_creator_keywords = [
-            'vulnerability', 'exploit', 'security', 'cve', 'bug', 'flaw',
-            'patch', 'fix', 'advisory', 'disclosure', 'report', 'research',
-            'poc', 'proof', 'concept', 'attack', 'malicious', 'injection',
-            'overflow', 'bypass', 'escalation', 'unauthorized', 'disclosure',
-            'vendor', 'product', 'version', 'affected', 'impact', 'vector',
-            'component', 'platform', 'file', 'attachment', 'document'
-        ]
-
-        # Check for vulnerability-related keywords
-        keyword_count = sum(1 for keyword in cve_creator_keywords if keyword in query_lower)
-
-        # Accept if has relevant keywords or if query suggests file attachment
-        has_file_indicators = any(indicator in query_lower for indicator in [
-            'attach', 'file', 'upload', 'document', 'report', 'pdf', 'doc'
-        ])
-
-        # CVE Creator is more permissive - accepts vulnerability content or file indicators
-        return keyword_count > 0 or has_file_indicators
+    # Removed persona-specific CVE Creator validation; single policy for all personas
 
     def generate_fallback_message(self, security_flags: List[str], user_persona: str = "Developer") -> str:
         """
@@ -367,7 +326,7 @@ class SecurityValidator:
                 confidence_score -= 0.2
                 break
 
-        # Check for potential sensitive information patterns
+        # Check for potential sensitive information patterns and mask instead of hard-blocking
         sensitive_patterns = [
             r'\b(?:sk-[a-zA-Z0-9]{48})\b',  # API key pattern
             r'\b(?:4[0-9]{12}(?:[0-9]{3})?)\b',  # Credit card pattern
@@ -375,11 +334,20 @@ class SecurityValidator:
             r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'  # Email pattern
         ]
 
-        for pattern in sensitive_patterns:
-            if re.search(pattern, response):
-                security_issues.append("sensitive_information")
-                confidence_score -= 0.1
-                break
+        def _mask_sensitive(text: str) -> str:
+            # Mask IPs and emails conservatively; leave context while removing exact values
+            text = re.sub(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', '[REDACTED_IP]', text)
+            text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', '[REDACTED_EMAIL]', text)
+            # Coarse mask for API-like tokens
+            text = re.sub(r'\b(?:sk-[A-Za-z0-9]{24,})\b', '[REDACTED_TOKEN]', text)
+            # Credit card-like sequences
+            text = re.sub(r'\b(?:4[0-9]{12}(?:[0-9]{3})?)\b', '[REDACTED_CC]', text)
+            return text
+
+        if any(re.search(p, response) for p in sensitive_patterns):
+            security_issues.append("sensitive_information_masked")
+            confidence_score -= 0.05
+            response = _mask_sensitive(response)
 
         # Check response length
         if len(response) > 8000:

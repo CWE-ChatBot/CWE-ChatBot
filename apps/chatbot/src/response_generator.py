@@ -7,9 +7,9 @@ Generates context-aware responses using retrieved CWE content and persona-specif
 import logging
 from typing import Dict, List, Any, Optional
 import os
-import google.generativeai as genai
 import re
 from pathlib import Path
+from .llm_provider import get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -34,26 +34,40 @@ class ResponseGenerator:
             model_name: Gemini model to use for generation
         """
         try:
-            # Allow offline mode for tests/CI to avoid startup errors.
+            # Allow offline mode (explicit opt-in)
             self.offline = os.getenv("DISABLE_AI") == "1" or os.getenv("GEMINI_OFFLINE") == "1"
-            if not self.offline:
-                genai.configure(api_key=gemini_api_key)
-                self.model = genai.GenerativeModel(model_name)
-            else:
-                self.model = None
 
             # Configure generation for factual, security-focused responses
-            self.generation_config = genai.types.GenerationConfig(
-                temperature=0.1,  # Low temperature for factual responses
-                max_output_tokens=2048,
-                top_p=0.9,
-                top_k=40
-            )
+            self.generation_config = {
+                "temperature": 0.1,  # Low temperature for factual responses
+                "max_output_tokens": 2048,
+                "top_p": 0.9,
+                "top_k": 40,
+            }
+            # Permissive safety settings for security content (explicitly logged)
+            self.safety_settings = {
+                "HARASSMENT": "BLOCK_NONE",
+                "HATE_SPEECH": "BLOCK_NONE",
+                "SEXUAL": "BLOCK_NONE",
+                "DANGEROUS_CONTENT": "BLOCK_NONE",
+            }
 
             # Load persona-specific prompt templates
             self.persona_prompts = self._load_persona_prompts()
 
             mode = "offline" if self.offline else model_name
+            # Initialize provider adapter
+            provider_name = os.getenv("PROVIDER") or "google"
+            self.provider = get_llm_provider(
+                provider=provider_name,
+                api_key=gemini_api_key,
+                model_name=model_name,
+                generation_config=self.generation_config,
+                safety_settings=getattr(self, "safety_settings", None),
+                offline=self.offline,
+                persona=None,
+            )
+
             logger.info(f"ResponseGenerator initialized with {mode}")
 
         except Exception as e:
@@ -184,14 +198,10 @@ Response:""",
         try:
             logger.info(f"Generating streaming response for persona: {user_persona}")
 
-            # Offline mode: return a deterministic stub without calling the model
-            if getattr(self, "offline", False):
-                stub = f"[offline-mode] {user_persona} response preview for: " + query[:120]
-                await message.stream_token(stub)
-                return stub
+            # Offline handled by provider adapter
 
-            # Handle empty retrieval results (CVE Creator doesn't need CWE chunks)
-            if not retrieved_chunks and user_persona != "CVE Creator":
+            # Handle empty retrieval results uniformly for all personas
+            if not retrieved_chunks:
                 fallback = self._generate_fallback_response(query, user_persona)
                 await message.stream_token(fallback)
                 return fallback
@@ -202,27 +212,19 @@ Response:""",
             # Select persona-specific prompt template
             prompt_template = self.persona_prompts.get(user_persona, self.persona_prompts["Developer"])
 
-            # Generate response using Gemini with RAG context
+            # Generate response using provider with RAG context
             prompt = prompt_template.format(
                 user_query=query,
                 cwe_context=context
             )
 
-            # Use streaming generation
-            response_stream = await self.model.generate_content_async(
-                prompt,
-                generation_config=self.generation_config,
-                stream=True
-            )
-
-            # Stream tokens to Chainlit
+            # Use streaming generation via provider
             full_response = ""
-            async for chunk in response_stream:
-                if chunk.text:
-                    cleaned_chunk = self._clean_response_chunk(chunk.text)
-                    if cleaned_chunk:
-                        await message.stream_token(cleaned_chunk)
-                        full_response += cleaned_chunk
+            async for chunk_text in self.provider.generate_stream(prompt):
+                cleaned_chunk = self._clean_response_chunk(chunk_text)
+                if cleaned_chunk:
+                    await message.stream_token(cleaned_chunk)
+                    full_response += cleaned_chunk
 
             # Validate and clean final response
             cleaned_response = self._clean_response(full_response)
@@ -271,8 +273,8 @@ Response:""",
             if getattr(self, "offline", False):
                 return f"[offline-mode] {user_persona} response for: " + query[:120]
 
-            # Handle empty retrieval results (CVE Creator doesn't need CWE chunks)
-            if not retrieved_chunks and user_persona != "CVE Creator":
+            # Handle empty retrieval results uniformly for all personas
+            if not retrieved_chunks:
                 return self._generate_fallback_response(query, user_persona)
 
             # Build structured context from retrieved chunks
@@ -281,19 +283,13 @@ Response:""",
             # Select persona-specific prompt template
             prompt_template = self.persona_prompts.get(user_persona, self.persona_prompts["Developer"])
 
-            # Generate response using Gemini with RAG context
+            # Generate response using provider with RAG context
             prompt = prompt_template.format(
                 user_query=query,
                 cwe_context=context
             )
 
-            response = await self.model.generate_content_async(
-                prompt,
-                generation_config=self.generation_config
-            )
-
-            # Validate and clean response
-            generated_text = response.text if response.text else ""
+            generated_text = await self.provider.generate(prompt)
             cleaned_response = self._clean_response(generated_text)
 
             # CVE Creator formatting: convert [segments] to **bold** (avoid markdown links)
@@ -344,8 +340,9 @@ Response:""",
                 if section != "Content" and len(context_parts) > 12:
                     break
 
-        # Hard cap overall context size by parts (simple bound)
-        return "\n".join(context_parts[:4000])
+        # Hard cap overall context size by characters to keep prompt size safe
+        context_text = "\n".join(context_parts)
+        return context_text[:16000]
 
     def _clean_response_chunk(self, chunk: str) -> str:
         """

@@ -218,7 +218,7 @@ Once configured, ask me anything about cybersecurity weaknesses!"""
             cl.Action(
                 name="attach_files",
                 value="attach_files",
-                label="Attach Files (PDF)",
+                label="Attach Evidence",
                 payload={"source": "welcome"}
             )
         ]
@@ -265,10 +265,8 @@ async def main(message: cl.Message):
         # If user uploaded files via the Attach Files action earlier, merge their content
         pending_upload = cl.user_session.get("uploaded_file_content")
         if pending_upload:
-            if user_query:
-                user_query = f"{user_query}\n\n--- Attached File Content ---\n{pending_upload}"
-            else:
-                user_query = f"--- Attached File Content ---\n{pending_upload}"
+            # Do not append raw file text into the prompt; store as separate context
+            cl.user_session.set("uploaded_file_context", pending_upload)
             cl.user_session.set("uploaded_file_content", None)
 
         # Process file attachments if present (especially for CVE Creator)
@@ -280,13 +278,9 @@ async def main(message: cl.Message):
                 file_content = await file_processor.process_attachments(message)
 
                 if file_content:
-                    # Combine user query with file content
-                    if user_query:
-                        user_query = f"{user_query}\n\n--- Attached File Content ---\n{file_content}"
-                    else:
-                        user_query = f"--- Attached File Content ---\n{file_content}"
-
-                    file_step.output = f"Extracted {len(file_content)} characters from file(s)"
+                    # SECURITY: do not merge evidence into the prompt; store for isolated use
+                    cl.user_session.set("uploaded_file_context", file_content)
+                    file_step.output = f"Extracted {len(file_content)} characters from file(s) (stored as isolated evidence)"
                     logger.info(f"File content extracted: {len(file_content)} characters")
                 else:
                     file_step.output = "No content extracted from file(s)"
@@ -318,8 +312,9 @@ async def main(message: cl.Message):
                     }
                 cwe_groups[cwe_id]["chunks"].append(chunk)
 
-            # Create source elements for each CWE
-            for cwe_id, cwe_info in list(cwe_groups.items())[:3]:  # Limit to top 3 CWEs
+            # Create source elements for each CWE (skip evidence pseudo-source)
+            filtered = [(cid, info) for cid, info in cwe_groups.items() if cid not in ("EVIDENCE", "FILE")]
+            for cwe_id, cwe_info in filtered[:3]:  # Limit to top 3 CWEs
                 # Get best scoring chunk for this CWE
                 best_chunk = max(cwe_info["chunks"], key=lambda x: x.get("scores", {}).get("hybrid", 0.0))
                 score = best_chunk.get("scores", {}).get("hybrid", 0.0)
@@ -347,6 +342,20 @@ async def main(message: cl.Message):
                 )
                 elements.append(source_element)
 
+        # Add uploaded file evidence as a side element (if present)
+        file_ctx = cl.user_session.get("uploaded_file_context")
+        if file_ctx:
+            # Truncate for display; full text already passed as isolated context
+            preview = file_ctx
+            if len(preview) > 800:
+                preview = preview[:800] + "..."
+            evidence = cl.Text(
+                name="Uploaded Evidence",
+                content=preview,
+                display="side"
+            )
+            elements.append(evidence)
+
         # Add metadata for debugging if needed
         if not result.get("is_safe", True):
             logger.warning(f"Security flags detected: {result.get('security_flags', [])}")
@@ -355,6 +364,10 @@ async def main(message: cl.Message):
         if elements and result.get("message"):
             result["message"].elements = elements
             await result["message"].update()
+
+        # Clear file context after use to avoid unbounded growth
+        if file_ctx:
+            cl.user_session.set("uploaded_file_context", None)
 
         # Log successful interaction
         current_persona = ui_settings["persona"]
@@ -461,8 +474,8 @@ async def on_attach_files(action):
     try:
         # Prompt the user to upload PDF files (up to 10MB each, max 3)
         ask = AskFileMessage(
-            content="Upload PDF(s) with vulnerability details (max 3 files, 10MB each).",
-            accept=["application/pdf"],
+            content="Upload PDF or text files with vulnerability details (max 3 files, 10MB each).",
+            accept=["application/pdf", "text/plain", "text/markdown", "application/json"],
             max_files=3,
             max_size_mb=10,
             timeout=600,

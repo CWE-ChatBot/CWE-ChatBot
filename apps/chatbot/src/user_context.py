@@ -177,6 +177,13 @@ class UserContext:
 
         return ""
 
+    def get_session_context_for_processing(self) -> Dict[str, Any]:
+        """Minimal session hint for processors (persona + recent CWEs)."""
+        return {
+            "persona": self.persona,
+            "last_cwes": self.last_cwes_discussed[-5:],
+        }
+
 
 class UserContextManager:
     """

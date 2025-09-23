@@ -47,6 +47,7 @@ class Config:
     # Application Configuration
     enable_debug_logging: bool = os.getenv("DEBUG", "false").lower() == "true"
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    section_boost_value: float = float(os.getenv("SECTION_BOOST_VALUE", "0.15"))
     
     def get_pg_config(self) -> Dict[str, Any]:
         """Get PostgreSQL connection configuration."""
@@ -66,7 +67,7 @@ class Config:
             "w_alias": self.w_alias
         }
     
-    def validate_config(self) -> None:
+    def validate_config(self, *, offline_ai: bool = False) -> None:
         """Validate configuration and raise errors for missing required values."""
         errors = []
         
@@ -75,12 +76,12 @@ class Config:
             errors.append("POSTGRES_PASSWORD environment variable is required")
         
         # Check Gemini API key
-        if not self.gemini_api_key:
+        if not self.gemini_api_key and not offline_ai:
             errors.append("GEMINI_API_KEY environment variable is required")
         
         # Validate RRF weights sum to 1.0
         total_weight = self.w_vec + self.w_fts + self.w_alias
-        if not abs(total_weight - 1.0) < 0.001:
+        if not abs(total_weight - 1.0) < 1e-6:
             errors.append(f"RRF weights (w_vec + w_fts + w_alias) must sum to 1.0, got {total_weight}")
         
         if errors:

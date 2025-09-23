@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-File Processing - CVE Creator Support
-Processes uploaded files (PDFs, text documents) for vulnerability information extraction.
+File Processing - Evidence ingestion for all personas
+Processes uploaded files (PDF, text/markdown/JSON) for vulnerability information extraction.
+Particularly helpful for CVE Creator, but available to every persona.
 """
 
 import logging
@@ -18,16 +19,18 @@ logger = logging.getLogger(__name__)
 
 class FileProcessor:
     """
-    Processes uploaded files for CVE Creator persona.
-
-    Handles PDF extraction, text file reading, and content preparation
-    for vulnerability analysis and CVE description creation.
+    Processes uploaded files for all personas (CVE Creator, Developer, PSIRT, etc.).
+    Handles PDF & text extraction and content preparation for vulnerability analysis
+    and CWE/CVE-focused responses.
     """
 
     def __init__(self) -> None:
-        """Initialize file processor - PDF only for CVE Creator."""
+        """Initialize file processor - supports PDF & text; usable by all personas."""
         self.supported_types = [
-            'application/pdf'
+            'application/pdf',
+            'text/plain',
+            'text/markdown',
+            'application/json'
         ]
         # Maximum file size: 10MB for PDF documents
         self.max_file_size_mb = 10
@@ -62,11 +65,11 @@ class FileProcessor:
                     logger.warning(f"File too large: {element.name} ({file_size_mb:.1f}MB)")
                     continue
 
-                # Check if file type is supported (PDF only)
+                # Check if file type is supported (PDF or common text types)
                 mime_type = getattr(element, 'mime', 'application/octet-stream')
                 if mime_type not in self.supported_types:
                     file_info = f"\n--- File: {element.name} (Unsupported Format) ---\n"
-                    extracted_content.append(file_info + f"Only PDF files up to {self.max_file_size_mb}MB are supported. Found: {mime_type}\nPlease upload a PDF file containing your vulnerability research, security advisory, or technical documentation.\n")
+                    extracted_content.append(file_info + f"Only PDF or text files (plain/markdown/JSON) up to {self.max_file_size_mb}MB are supported. Found: {mime_type}\nPlease upload a PDF/text file containing your vulnerability research, security advisory, or technical documentation.\n")
                     logger.warning(f"Unsupported file type: {element.name} ({mime_type})")
                     continue
 
@@ -110,6 +113,9 @@ class FileProcessor:
             if mime_type == 'application/pdf':
                 return await asyncio.to_thread(self._extract_pdf_content, file_content)
             elif mime_type.startswith('text/'):
+                return self._extract_text_content(file_content)
+            elif mime_type == 'application/json':
+                # Treat JSON as text for our purposes
                 return self._extract_text_content(file_content)
             else:
                 # Try to treat as text first

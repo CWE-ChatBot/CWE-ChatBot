@@ -180,13 +180,7 @@ class RolePromptTemplates:
                 # Replace with safe placeholder
                 text = re.sub(pattern, '[BLOCKED-CONTENT]', text, flags=re.IGNORECASE)
         
-        # Additional safety measures
-        # Remove potential instruction separators
-        dangerous_chars = ['###', '---', '```', '<|', '|>', '\n\n###', '\n---']
-        for char_seq in dangerous_chars:
-            if char_seq in text:
-                text = text.replace(char_seq, ' ')
-                logger.debug(f"Removed potential instruction separator: {char_seq}")
+        # Prefer isolation over mutation: do not remove common separators/code fences
         
         # Log if modifications were made
         if text != original_text:

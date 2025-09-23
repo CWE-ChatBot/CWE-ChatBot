@@ -16,6 +16,8 @@ from src.input_security import InputSanitizer, SecurityValidator
 from src.query_handler import CWEQueryHandler
 from src.response_generator import ResponseGenerator
 from src.security.secure_logging import get_secure_logger
+from src.processing.query_processor import QueryProcessor
+from src.utils.session import get_user_context
 
 logger = get_secure_logger(__name__)
 
@@ -65,6 +67,7 @@ class ConversationManager:
             self.security_validator = SecurityValidator()
             self.query_handler = CWEQueryHandler(database_url, gemini_api_key)
             self.response_generator = ResponseGenerator(gemini_api_key)
+            self.query_processor = QueryProcessor()
 
             # No local message storage; rely on Chainlit's built-in persistence
 
@@ -78,18 +81,19 @@ class ConversationManager:
     # Per-user context via cl.user_session
     # -----------------------------
     def _get_or_create_user_context(self, session_id: str) -> UserContext:
-        """
-        Retrieve the UserContext from cl.user_session, creating it if missing.
-        Always binds the provided Chainlit session_id onto the context.
-        """
-        ctx: Optional[UserContext] = cl.user_session.get("user_context")
-        if not ctx:
-            ctx = UserContext()
+        """Back-compat shim: use central session helper and bind session id if missing."""
+        ctx = get_user_context()
+        if not getattr(ctx, "session_id", None):
             ctx.session_id = session_id
-            cl.user_session.set("user_context", ctx)
-            logger.info(f"Created new UserContext in user_session for session {session_id}")
-        else:
-            ctx.update_activity()
+        # Seed persona from stored UI settings if available (first touch only)
+        try:
+            ui_settings = cl.user_session.get("ui_settings") or {}
+            persona = ui_settings.get("persona")
+            if persona and ctx.persona != persona:
+                ctx.persona = persona
+        except Exception:
+            pass
+        ctx.update_activity()
         return ctx
 
     async def process_user_message_streaming(
@@ -99,15 +103,7 @@ class ConversationManager:
         message_id: str
     ) -> Dict[str, Any]:
         """
-        Process user message and generate streaming response.
-
-        Args:
-            session_id: Chainlit session ID
-            message_content: User's message content
-            message_id: Unique message identifier
-
-        Returns:
-            Dictionary containing response metadata and message reference
+        Streaming wrapper that delegates core logic to a single path.
         """
         try:
             logger.info(f"Processing streaming message for session {session_id}")
@@ -120,31 +116,20 @@ class ConversationManager:
                 message_id=message_id,
                 session_id=session_id,
                 content=message_content,
-                message_type="user"
+                message_type="user",
             )
             self._add_message(session_id, user_message)
 
-            # Sanitize input (pass persona for context-specific handling)
-            sanitization_result = self.input_sanitizer.sanitize_input(message_content, context.persona)
+            core = await self._process_message_core(message_content)
+            if core.get("status") == "blocked":
+                flags = core.get("reasons", [])
+                fallback_response = self.input_sanitizer.generate_fallback_message(flags, context.persona)
 
-            if not sanitization_result["is_safe"]:
-                # Generate fallback response for unsafe input
-                fallback_response = self.input_sanitizer.generate_fallback_message(
-                    sanitization_result["security_flags"],
-                    context.persona
-                )
-
-                # Log security event
                 self.security_validator.log_security_event(
                     "unsafe_input_detected",
-                    {
-                        "session_id": session_id,
-                        "security_flags": sanitization_result["security_flags"],
-                        "persona": context.persona
-                    }
+                    {"session_id": session_id, "security_flags": flags, "persona": context.persona},
                 )
 
-                # Send non-streaming fallback
                 msg = cl.Message(content=fallback_response)
                 await msg.send()
 
@@ -152,113 +137,30 @@ class ConversationManager:
                     "response": fallback_response,
                     "session_id": session_id,
                     "is_safe": False,
-                    "security_flags": sanitization_result["security_flags"],
-                    "message": msg
+                    "security_flags": flags,
+                    "retrieved_cwes": [],
+                    "chunk_count": 0,
+                    "retrieved_chunks": [],
+                    "persona": context.persona,
+                    "message": msg,
                 }
 
-            sanitized_query = sanitization_result["sanitized_input"]
+            retrieved_chunks = list(core.get("retrieval") or [])
+            response = core.get("response", "")
 
-            # Validate CWE relevance (pass persona for context-specific validation)
-            if not self.input_sanitizer.validate_cwe_context(sanitized_query, context.persona):
-                fallback_response = self.input_sanitizer.generate_fallback_message(
-                    ["non_cwe_query"],
-                    context.persona
-                )
-
-                msg = cl.Message(content=fallback_response)
-                await msg.send()
-
-                return {
-                    "response": fallback_response,
-                    "session_id": session_id,
-                    "is_safe": True,
-                    "is_cwe_relevant": False,
-                    "message": msg
-                }
-
-            # Handle CVE Creator differently - it doesn't need CWE database retrieval
-            if context.persona == "CVE Creator":
-                # CVE Creator works directly with user-provided vulnerability information
-                async with cl.Step(name="Generate CVE Response", type="llm") as generate_step:
-                    generate_step.input = f"Generating CVE analysis for: {sanitized_query[:100]}..."
-
-                    # Create streaming message
-                    msg = cl.Message(content="")
-                    await msg.send()
-
-                    response = await self.response_generator.generate_response_streaming(
-                        sanitized_query,
-                        [],  # Empty chunks - CVE Creator doesn't use CWE database
-                        context.persona,
-                        msg
-                    )
-
-                    generate_step.output = f"Generated CVE response ({len(response)} characters)"
-
-                retrieved_chunks = []
-            else:
-                # Process query using hybrid retrieval for other personas
-                async with cl.Step(name="Retrieve CWE Information", type="retrieval") as retrieval_step:
-                    retrieval_step.input = f"Searching CWE database for: {sanitized_query[:100]}..."
-
-                    user_context_data = context.get_persona_preferences()
-                    retrieved_chunks = await self.query_handler.process_query(
-                        sanitized_query,
-                        user_context_data
-                    )
-
-                    if retrieved_chunks:
-                        retrieved_cwes = list(set(chunk["metadata"]["cwe_id"] for chunk in retrieved_chunks))
-                        retrieval_step.output = f"Found {len(retrieved_chunks)} relevant chunks from CWEs: {', '.join(retrieved_cwes[:5])}{'...' if len(retrieved_cwes) > 5 else ''}"
-                    else:
-                        retrieval_step.output = "No relevant CWE information found"
-
-                if not retrieved_chunks:
-                    # No relevant information found
-                    fallback_response = self.response_generator._generate_fallback_response(
-                        sanitized_query,
-                        context.persona
-                    )
-
-                    msg = cl.Message(content=fallback_response)
-                    await msg.send()
-
-                    return {
-                        "response": fallback_response,
-                        "session_id": session_id,
-                        "is_safe": True,
-                        "retrieved_chunks": 0,
-                        "message": msg
-                    }
-
-                # Generate persona-specific response with streaming
-                async with cl.Step(name="Generate Response", type="llm") as generate_step:
-                    generate_step.input = f"Generating {context.persona} response using {len(retrieved_chunks)} CWE chunks"
-
-                    # Create streaming message
-                    msg = cl.Message(content="")
-                    await msg.send()
-
-                    response = await self.response_generator.generate_response_streaming(
-                        sanitized_query,
-                        retrieved_chunks,
-                        context.persona,
-                        msg
-                    )
-
-                    generate_step.output = f"Generated response ({len(response)} characters) for {context.persona}"
-
-            # Validate response security
+            # Validate and send once
             validation_result = self.security_validator.validate_response(response)
-            final_response = validation_result["validated_response"]
+            final_response = validation_result["validated_response"] if validation_result["is_safe"] else response
 
-            # Extract CWEs for context tracking
+            msg = cl.Message(content=final_response)
+            await msg.send()
+
             retrieved_cwes = list(set(
-                chunk["metadata"]["cwe_id"] for chunk in retrieved_chunks
-            ))
+                ch.get("metadata", {}).get("cwe_id") for ch in (retrieved_chunks or [])
+            )) if retrieved_chunks else []
 
             # Record interaction directly on the per-user context
-            context.add_conversation_entry(sanitized_query, final_response, retrieved_cwes)
+            context.add_conversation_entry(message_content, final_response, retrieved_cwes)
 
             # Store assistant message
             assistant_message = ConversationMessage(
@@ -270,8 +172,8 @@ class ConversationManager:
                     "retrieved_cwes": retrieved_cwes,
                     "chunk_count": len(retrieved_chunks),
                     "persona": context.persona,
-                    "security_validated": validation_result["is_safe"]
-                }
+                    "security_validated": validation_result["is_safe"],
+                },
             )
             self._add_message(session_id, assistant_message)
 
@@ -281,11 +183,11 @@ class ConversationManager:
                 "is_safe": validation_result["is_safe"],
                 "retrieved_cwes": retrieved_cwes,
                 "chunk_count": len(retrieved_chunks),
-                "retrieved_chunks": retrieved_chunks,  # Include chunks for source elements
+                "retrieved_chunks": retrieved_chunks,
                 "persona": context.persona,
-                "message": msg
+                "message": msg,
             }
-
+        
         except Exception as e:
             logger.log_exception("Error processing streaming message", e)
             error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
@@ -308,15 +210,7 @@ class ConversationManager:
         message_id: str
     ) -> Dict[str, Any]:
         """
-        Process user message and generate response.
-
-        Args:
-            session_id: Chainlit session ID
-            message_content: User's message content
-            message_id: Unique message identifier
-
-        Returns:
-            Dictionary containing response and metadata
+        Non-streaming wrapper that delegates to the core path.
         """
         try:
             logger.info(f"Processing message for session {session_id}")
@@ -329,151 +223,44 @@ class ConversationManager:
                 message_id=message_id,
                 session_id=session_id,
                 content=message_content,
-                message_type="user"
+                message_type="user",
             )
             self._add_message(session_id, user_message)
 
-            # Sanitize input (pass persona for context-specific handling)
-            sanitization_result = self.input_sanitizer.sanitize_input(message_content, context.persona)
-
-            if not sanitization_result["is_safe"]:
-                # Generate fallback response for unsafe input
-                fallback_response = self.input_sanitizer.generate_fallback_message(
-                    sanitization_result["security_flags"],
-                    context.persona
-                )
-
-                # Log security event
-                self.security_validator.log_security_event(
-                    "unsafe_input_detected",
-                    {
-                        "session_id": session_id,
-                        "security_flags": sanitization_result["security_flags"],
-                        "persona": context.persona
-                    }
-                )
-
+            core = await self._process_message_core(message_content)
+            if core.get("status") == "blocked":
+                flags = core.get("reasons", [])
+                fallback_response = self.input_sanitizer.generate_fallback_message(flags, context.persona)
                 return {
                     "response": fallback_response,
                     "session_id": session_id,
                     "is_safe": False,
-                    "security_flags": sanitization_result["security_flags"]
+                    "security_flags": flags,
                 }
 
-            sanitized_query = sanitization_result["sanitized_input"]
-
-            # Validate CWE relevance (pass persona for context-specific validation)
-            if not self.input_sanitizer.validate_cwe_context(sanitized_query, context.persona):
-                fallback_response = self.input_sanitizer.generate_fallback_message(
-                    ["non_cwe_query"],
-                    context.persona
-                )
-                return {
-                    "response": fallback_response,
-                    "session_id": session_id,
-                    "is_safe": True,
-                    "is_cwe_relevant": False
-                }
-
-            # Handle CVE Creator differently - it doesn't need CWE database retrieval
-            if context.persona == "CVE Creator":
-                # CVE Creator works directly with user-provided vulnerability information
-                async with cl.Step(name="Generate CVE Response", type="llm") as generate_step:
-                    generate_step.input = f"Generating CVE analysis for: {sanitized_query[:100]}..."
-
-                    response = await self.response_generator.generate_response(
-                        sanitized_query,
-                        [],  # Empty chunks - CVE Creator doesn't use CWE database
-                        context.persona
-                    )
-
-                    generate_step.output = f"Generated CVE response ({len(response)} characters)"
-
-                retrieved_chunks = []
-            else:
-                # Process query using hybrid retrieval for other personas
-                async with cl.Step(name="Retrieve CWE Information", type="retrieval") as retrieval_step:
-                    retrieval_step.input = f"Searching CWE database for: {sanitized_query[:100]}..."
-
-                    user_context_data = context.get_persona_preferences()
-                    retrieved_chunks = await self.query_handler.process_query(
-                        sanitized_query,
-                        user_context_data
-                    )
-
-                    if retrieved_chunks:
-                        retrieved_cwes = list(set(chunk["metadata"]["cwe_id"] for chunk in retrieved_chunks))
-                        retrieval_step.output = f"Found {len(retrieved_chunks)} relevant chunks from CWEs: {', '.join(retrieved_cwes[:5])}{'...' if len(retrieved_cwes) > 5 else ''}"
-                    else:
-                        retrieval_step.output = "No relevant CWE information found"
-
-                if not retrieved_chunks:
-                    # No relevant information found
-                    fallback_response = self.response_generator._generate_fallback_response(
-                        sanitized_query,
-                        context.persona
-                    )
-                    return {
-                        "response": fallback_response,
-                        "session_id": session_id,
-                        "is_safe": True,
-                        "retrieved_chunks": 0
-                    }
-
-                # Generate persona-specific response
-                async with cl.Step(name="Generate Response", type="llm") as generate_step:
-                    generate_step.input = f"Generating {context.persona} response using {len(retrieved_chunks)} CWE chunks"
-
-                    response = await self.response_generator.generate_response(
-                        sanitized_query,
-                        retrieved_chunks,
-                        context.persona
-                    )
-
-                    generate_step.output = f"Generated response ({len(response)} characters) for {context.persona}"
+            response = core.get("response", "")
+            retrieved_chunks = list(core.get("retrieval") or [])
 
             # Validate response security
             validation_result = self.security_validator.validate_response(response)
             final_response = validation_result["validated_response"]
-            # If validation altered the streamed content, update the message with the final text
-            try:
-                if 'msg' in locals() and final_response != response:
-                    msg.content = final_response
-                    await msg.update()
-            except Exception as upd_err:
-                logger.log_exception("Failed to update streamed message after validation", upd_err)
 
             # Extract CWEs for context tracking
             retrieved_cwes = list(set(
-                chunk["metadata"]["cwe_id"] for chunk in retrieved_chunks
-            ))
+                ch.get("metadata", {}).get("cwe_id") for ch in (retrieved_chunks or [])
+            )) if retrieved_chunks else []
 
             # Record interaction directly on the per-user context
-            context.add_conversation_entry(sanitized_query, final_response, retrieved_cwes)
-
-            # Store assistant message
-            assistant_message = ConversationMessage(
-                message_id=f"{message_id}_response",
-                session_id=session_id,
-                content=final_response,
-                message_type="assistant",
-                metadata={
-                    "retrieved_cwes": retrieved_cwes,
-                    "chunk_count": len(retrieved_chunks),
-                    "persona": context.persona,
-                    "security_validated": validation_result["is_safe"]
-                }
-            )
-            self._add_message(session_id, assistant_message)
+            context.add_conversation_entry(message_content, final_response, retrieved_cwes)
 
             return {
                 "response": final_response,
                 "session_id": session_id,
                 "is_safe": validation_result["is_safe"],
                 "retrieved_cwes": retrieved_cwes,
-                "chunk_count": len(retrieved_chunks),
+                "chunk_count": len(retrieved_chunks) if retrieved_chunks else 0,
                 "retrieved_chunks": retrieved_chunks,  # Include chunks for source elements
-                "persona": context.persona
+                "persona": context.persona,
             }
 
         except Exception as e:
@@ -484,7 +271,7 @@ class ConversationManager:
                 "response": error_response,
                 "session_id": session_id,
                 "is_safe": True,
-                "error": str(e)
+                "error": str(e),
             }
 
     async def update_user_persona(self, session_id: str, new_persona: str) -> bool:
@@ -600,3 +387,50 @@ class ConversationManager:
     def _add_message(self, session_id: str, message: ConversationMessage) -> None:
         """No-op for local storage; Chainlit persists messages in its data layer."""
         logger.debug(f"Message recorded (type={message.message_type}) for session {session_id}")
+
+    async def _process_message_core(self, message_content: str) -> Dict[str, Any]:
+        """
+        Unified core logic for processing a user message. Handles:
+        - Input sanitization via QueryProcessor
+        - Retrieval via QueryHandler
+        - Optional evidence pseudo-chunk
+        - Non-stream generation via ResponseGenerator
+        Returns a normalized dict for both streaming and non-streaming wrappers.
+        """
+        ctx = get_user_context()
+        processed = self.query_processor.process_with_context(
+            message_content, ctx.get_session_context_for_processing()
+        )
+
+        sec = processed.get("security_check", {})
+        is_safe = not sec.get("is_potentially_malicious", False)
+        reasons = sec.get("detected_patterns", [])
+        if not is_safe:
+            return {"status": "blocked", "reasons": reasons}
+
+        q = processed.get("sanitized_query", message_content)
+        retrieval = await self.query_handler.process_query(q, ctx.get_persona_preferences())
+
+        # Attach evidence pseudo-chunk if present
+        file_ctx = cl.user_session.get("uploaded_file_context")
+        evidence_chunk = None
+        if file_ctx:
+            file_ctx = f"<<FILE_CONTEXT_START>>\n{file_ctx}\n<<FILE_CONTEXT_END>>"
+            evidence_chunk = {
+                "document": file_ctx,
+                "metadata": {"cwe_id": "EVIDENCE", "name": "Uploaded Evidence", "section": "Evidence"},
+                "scores": {"hybrid": 0.01},
+            }
+        if not retrieval and evidence_chunk:
+            retrieval = [evidence_chunk]
+        elif retrieval and evidence_chunk:
+            retrieval = list(retrieval) + [evidence_chunk]
+
+        # Generate once (non-stream) for core path
+        gen_text = await self.response_generator.generate_response(q, retrieval or [], ctx.persona)
+        return {
+            "status": "ok",
+            "retrieval": retrieval or [],
+            "response": gen_text,
+            "meta": {"sanitized_query": q},
+        }

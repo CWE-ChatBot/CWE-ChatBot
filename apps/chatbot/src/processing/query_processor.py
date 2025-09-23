@@ -120,9 +120,11 @@ class QueryProcessor:
         # Direct CWE lookup for explicit CWE references
         if cwe_analysis.get('has_direct_cwe'):
             return "direct_lookup"
-        
+
         # Hybrid search for complex security queries
         query_type = cwe_analysis['query_type']
+        if query_type == 'direct_cwe_lookup':
+            return "direct_lookup"
         if query_type in ['vulnerability_inquiry', 'prevention_guidance']:
             return "hybrid_search"
         
