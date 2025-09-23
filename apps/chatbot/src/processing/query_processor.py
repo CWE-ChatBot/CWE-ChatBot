@@ -73,6 +73,7 @@ class QueryProcessor:
             
             # Step 3: CWE extraction and analysis
             cwe_analysis = self.cwe_extractor.enhance_query_for_search(sanitized_query)
+            has_direct = self.cwe_extractor.has_direct_cwe_reference(sanitized_query)
             
             # Step 4: Build comprehensive result
             result = {
@@ -91,7 +92,8 @@ class QueryProcessor:
                 "cwe_ids": cwe_analysis['cwe_ids'],
                 "keyphrases": cwe_analysis['keyphrases'],
                 "query_type": cwe_analysis['query_type'],
-                "has_direct_cwe": cwe_analysis['has_direct_cwe'],
+                "has_direct_cwe": has_direct,
+                "enhanced_query": cwe_analysis['enhanced_query'],
                 
                 # Query routing information
                 "search_strategy": self._determine_search_strategy(cwe_analysis),
@@ -116,7 +118,7 @@ class QueryProcessor:
             Recommended search strategy
         """
         # Direct CWE lookup for explicit CWE references
-        if cwe_analysis['has_direct_cwe']:
+        if cwe_analysis.get('has_direct_cwe'):
             return "direct_lookup"
         
         # Hybrid search for complex security queries
