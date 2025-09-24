@@ -5,7 +5,9 @@ User Query: {user_query}
 CWE Context:
 {cwe_context}
 
+User-Provided Evidence:
+{user_evidence}
+
 Instructions:
-- Map to CWEs with rationale and confidence (0-100).
-- Provide key indicators and relationships.
+- Map to CWEs with confidence and rationale.
 Response:

@@ -5,8 +5,11 @@ User Query: {user_query}
 CWE Context:
 {cwe_context}
 
+User-Provided Evidence:
+{user_evidence}
+
 Instructions:
 - Provide remediation steps and code-level guidance.
-- Include practical prevention examples.
-- Cite specific CWE IDs.
+- Include practical mitigation or prevention examples.
+- Cite CWE IDs. Keep it actionable.
 Response:

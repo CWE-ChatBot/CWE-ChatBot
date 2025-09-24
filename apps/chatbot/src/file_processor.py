@@ -9,7 +9,6 @@ import logging
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 import chainlit as cl
-import PyPDF2
 import io
 import tempfile
 import asyncio
@@ -133,6 +132,8 @@ class FileProcessor:
     def _extract_pdf_content(self, pdf_content: bytes) -> str:
         """Extract text from PDF content."""
         try:
+            # Lazy import to avoid hard dependency if PDFs aren't used
+            import PyPDF2  # type: ignore
             if not pdf_content or len(pdf_content) == 0:
                 return "[Empty PDF file - no content to extract]"
 

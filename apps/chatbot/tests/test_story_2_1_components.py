@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
 Unit tests for Story 2.1 components.
-Tests the new components created for Core NLU and Query Matching:
-- security.py (InputSanitizer, SecurityValidator)
-- user_context.py (UserContext, UserContextManager, UserPersona)
-- conversation.py (ConversationManager)
-- query_handler.py (CWEQueryHandler)
-- response_generator.py (ResponseGenerator)
+Tests the components after refactoring for Chainlit integration:
+- input_security.py (InputSanitizer, SecurityValidator)
+- user_context.py (UserContext, UserPersona)
+- Basic integration testing for security pipeline
 """
 
 import unittest
@@ -19,7 +17,7 @@ from unittest.mock import Mock, patch, AsyncMock
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from input_security import InputSanitizer, SecurityValidator
-from user_context import UserContext, UserContextManager, UserPersona
+from user_context import UserContext, UserPersona
 
 
 class TestInputSanitizer(unittest.TestCase):
@@ -170,87 +168,6 @@ class TestUserContext(unittest.TestCase):
         self.assertEqual(context.last_cwes_discussed, ["CWE-79"])
 
 
-class TestUserContextManager(unittest.TestCase):
-    """Test cases for Story 2.1 UserContextManager."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.manager = UserContextManager()
-
-    def test_session_creation(self):
-        """Test creating new sessions."""
-        context = self.manager.create_session(UserPersona.DEVELOPER.value)
-        
-        self.assertIsNotNone(context.session_id)
-        self.assertEqual(context.persona, UserPersona.DEVELOPER.value)
-        self.assertIn(context.session_id, self.manager.active_sessions)
-
-    def test_session_retrieval(self):
-        """Test retrieving existing sessions."""
-        context = self.manager.create_session()
-        session_id = context.session_id
-        
-        retrieved = self.manager.get_session(session_id)
-        self.assertIsNotNone(retrieved)
-        self.assertEqual(retrieved.session_id, session_id)
-
-    def test_persona_update(self):
-        """Test updating session persona."""
-        context = self.manager.create_session(UserPersona.DEVELOPER.value)
-        session_id = context.session_id
-        
-        success = self.manager.update_persona(session_id, UserPersona.PSIRT_MEMBER.value)
-        self.assertTrue(success)
-        
-        updated_context = self.manager.get_session(session_id)
-        self.assertEqual(updated_context.persona, UserPersona.PSIRT_MEMBER.value)
-
-    def test_invalid_persona_rejected(self):
-        """Test that invalid personas are rejected."""
-        context = self.manager.create_session()
-        session_id = context.session_id
-        
-        success = self.manager.update_persona(session_id, "Invalid Persona")
-        self.assertFalse(success)
-
-    def test_interaction_recording(self):
-        """Test recording user interactions."""
-        context = self.manager.create_session()
-        session_id = context.session_id
-        
-        success = self.manager.record_interaction(
-            session_id,
-            "What is CWE-79?",
-            "CWE-79 is cross-site scripting...",
-            ["CWE-79"],
-            feedback_rating=4
-        )
-        
-        self.assertTrue(success)
-        updated_context = self.manager.get_session(session_id)
-        self.assertEqual(updated_context.query_count, 1)
-        self.assertEqual(len(updated_context.feedback_ratings), 1)
-        self.assertEqual(updated_context.feedback_ratings[0], 4)
-
-    def test_session_analytics(self):
-        """Test session analytics generation."""
-        context = self.manager.create_session()
-        session_id = context.session_id
-        
-        # Record some interactions
-        self.manager.record_interaction(
-            session_id, "Query 1", "Response 1", ["CWE-79"], 5
-        )
-        self.manager.record_interaction(
-            session_id, "Query 2", "Response 2", ["CWE-89"], 4
-        )
-        
-        analytics = self.manager.get_session_analytics(session_id)
-        
-        self.assertEqual(analytics["session_id"], session_id)
-        self.assertEqual(analytics["query_count"], 2)
-        self.assertEqual(analytics["average_feedback_rating"], 4.5)
-        self.assertGreater(analytics["session_duration_minutes"], 0)
 
 
 class TestUserPersona(unittest.TestCase):
@@ -261,9 +178,11 @@ class TestUserPersona(unittest.TestCase):
         expected_personas = [
             "PSIRT Member",
             "Developer",
-            "Academic Researcher", 
+            "Academic Researcher",
             "Bug Bounty Hunter",
-            "Product Manager"
+            "Product Manager",
+            "CWE Analyzer",
+            "CVE Creator"
         ]
         
         all_personas = UserPersona.get_all_personas()

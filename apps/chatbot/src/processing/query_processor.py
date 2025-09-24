@@ -76,7 +76,7 @@ class QueryProcessor:
             has_direct = self.cwe_extractor.has_direct_cwe_reference(sanitized_query)
             
             # Step 4: Build comprehensive result
-            result = {
+            analysis = {
                 # Original and processed queries
                 "original_query": query,
                 "sanitized_query": sanitized_query,
@@ -94,20 +94,20 @@ class QueryProcessor:
                 "query_type": cwe_analysis['query_type'],
                 "has_direct_cwe": has_direct,
                 "enhanced_query": cwe_analysis['enhanced_query'],
-                
-                # Query routing information
-                "search_strategy": self._determine_search_strategy(cwe_analysis),
-                "boost_factors": self._calculate_boost_factors(cwe_analysis)
             }
-            
-            logger.debug(f"Query preprocessing completed: {result['query_type']}")
-            return result
+
+            # Query routing information based on the assembled analysis dict
+            analysis["search_strategy"] = self._determine_search_strategy(analysis)
+            analysis["boost_factors"] = self._calculate_boost_factors(analysis)
+
+            logger.debug(f"Query preprocessing completed: {analysis['query_type']}")
+            return analysis
             
         except Exception as e:
             logger.error(f"Query preprocessing failed: {e}")
             raise
     
-    def _determine_search_strategy(self, cwe_analysis: Dict[str, Any]) -> str:
+    def _determine_search_strategy(self, analysis: Dict[str, Any]) -> str:
         """
         Determine the optimal search strategy based on query analysis.
         
@@ -118,11 +118,11 @@ class QueryProcessor:
             Recommended search strategy
         """
         # Direct CWE lookup for explicit CWE references
-        if cwe_analysis.get('has_direct_cwe'):
+        if analysis.get('has_direct_cwe'):
             return "direct_lookup"
 
         # Hybrid search for complex security queries
-        query_type = cwe_analysis['query_type']
+        query_type = analysis['query_type']
         if query_type == 'direct_cwe_lookup':
             return "direct_lookup"
         if query_type in ['vulnerability_inquiry', 'prevention_guidance']:
@@ -133,13 +133,13 @@ class QueryProcessor:
             return "dense_search"
         
         # Sparse search for keyword-heavy queries
-        if cwe_analysis['keyphrases']:
+        if analysis['keyphrases']:
             return "sparse_search"
         
         # Default to hybrid for unknown query types
         return "hybrid_search"
     
-    def _calculate_boost_factors(self, cwe_analysis: Dict[str, Any]) -> Dict[str, float]:
+    def _calculate_boost_factors(self, analysis: Dict[str, Any]) -> Dict[str, float]:
         """
         Calculate boost factors for different retrieval methods.
         
@@ -152,12 +152,12 @@ class QueryProcessor:
         boost_factors = {"dense": 1.0, "sparse": 1.0}
         
         # Boost sparse search for keyword-rich queries
-        if cwe_analysis['keyphrases']:
-            keyphrase_count = sum(len(phrases) for phrases in cwe_analysis['keyphrases'].values())
+        if analysis['keyphrases']:
+            keyphrase_count = sum(len(phrases) for phrases in analysis['keyphrases'].values())
             boost_factors["sparse"] = 1.0 + (keyphrase_count * 0.1)
         
         # Boost dense search for conceptual queries
-        query_type = cwe_analysis['query_type']
+        query_type = analysis['query_type']
         if query_type in ['general_security', 'prevention_guidance']:
             boost_factors["dense"] = 1.2
         
@@ -252,8 +252,14 @@ class QueryProcessor:
             
             # Add context-aware processing
             context_cwe = None
-            if session_context and session_context.get('current_cwe'):
-                context_cwe = session_context['current_cwe'].get('cwe_id')
+            if session_context:
+                # Prefer explicit current_cwe if present; otherwise use the most recently discussed CWE
+                if isinstance(session_context.get('current_cwe'), dict):
+                    context_cwe = session_context['current_cwe'].get('cwe_id')
+                elif session_context.get('last_cwes'):
+                    last = session_context.get('last_cwes') or []
+                    if isinstance(last, list) and last:
+                        context_cwe = last[-1]
             
             # Detect follow-up intent
             followup_intent = self.followup_processor.detect_followup_intent(query)

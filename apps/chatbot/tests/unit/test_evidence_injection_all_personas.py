@@ -64,6 +64,10 @@ class DummyRG:
         # Simple echo to allow validation step to proceed
         return f"ok: {user_persona}: {query[:10]} ({len(retrieved_chunks)} chunks)"
 
+    async def generate_response_streaming(self, query, retrieved_chunks, user_persona, *, user_evidence=None):
+        # Simulate streaming; record shape if needed
+        yield f"ok: {user_persona}: {query[:10]}"
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("persona", PERSONAS)
@@ -100,23 +104,22 @@ async def test_evidence_pseudo_chunk_injected_for_every_persona(monkeypatch, per
     # Provide uploaded evidence via session
     cl_session.set("uploaded_file_context", "Evidence: reflected XSS in search param")
 
-    # Spy on generate_response to capture retrieval passed from core path
+    # Spy on streaming to capture retrieval and evidence passing
     calls = {}
 
-    async def spy_generate_response(query, retrieved_chunks, user_persona):
+    async def spy_generate_response_streaming(query, retrieved_chunks, user_persona, *, user_evidence=None):
         calls["retrieved_chunks"] = list(retrieved_chunks)
-        return await DummyRG().generate_response(query, retrieved_chunks, user_persona)
+        calls["user_evidence"] = user_evidence
+        async for t in DummyRG().generate_response_streaming(query, retrieved_chunks, user_persona, user_evidence=user_evidence):
+            yield t
 
-    monkeypatch.setattr(cm.response_generator, "generate_response", spy_generate_response, raising=True)
+    monkeypatch.setattr(cm.response_generator, "generate_response_streaming", spy_generate_response_streaming, raising=True)
 
     # Execute streaming path (wrapper around core)
     result = await cm.process_user_message_streaming(session_id, "Explain the risk of XSS", "msg-1")
 
-    # Ensure response returned and our spy captured retrieval
+    # Ensure response returned and our spy captured retrieval and evidence
     assert "response" in result
     retrieved = calls.get("retrieved_chunks")
-    assert retrieved is not None, "generate_response should have been called with retrieval"
-
-    # Evidence pseudo-chunk is appended; look for marker
-    sources = [ch.get("metadata", {}).get("cwe_id") for ch in retrieved]
-    assert "EVIDENCE" in sources, "Expected user evidence pseudo-chunk to be injected for all personas"
+    assert retrieved is not None, "streaming should have been called with retrieval"
+    assert calls.get("user_evidence"), "Expected user evidence to be passed via user_evidence for all personas"

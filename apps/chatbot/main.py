@@ -35,10 +35,6 @@ logger = get_secure_logger(__name__)
 
 # Pydantic Chat Settings for native UI
 class UISettings(BaseModel):
-    persona: Literal["PSIRT Member", "Developer", "Academic Researcher", "Bug Bounty Hunter", "Product Manager", "CWE Analyzer", "CVE Creator"] = Field(
-        default="Developer",
-        description="Your cybersecurity role - determines response focus and depth"
-    )
     detail_level: Literal["basic", "standard", "detailed"] = Field(
         default="standard",
         description="Level of detail in responses"
@@ -137,13 +133,13 @@ async def start():
 
     # Initialize default settings and expose a Settings panel
     default_settings = UISettings()
-
-    # If a chat profile (top bar) is selected, use it as the persona
-    selected_profile = cl.user_session.get("chat_profile")
-    if isinstance(selected_profile, str) and selected_profile in UserPersona.get_all_personas():
-        default_settings.persona = selected_profile
-
     cl.user_session.set("ui_settings", default_settings.dict())
+    selected_profile = cl.user_session.get("chat_profile")
+    persona = (
+        selected_profile
+        if isinstance(selected_profile, str) and selected_profile in UserPersona.get_all_personas()
+        else UserPersona.DEVELOPER.value
+    )
 
     # Build and display the Chainlit settings panel
     try:
@@ -187,7 +183,7 @@ async def start():
 
     # Initialize per-user context in Chainlit with default persona
     session_id = cl.context.session.id
-    await conversation_manager.update_user_persona(session_id, default_settings.persona)
+    await conversation_manager.update_user_persona(session_id, persona)
 
     # Welcome message that guides users to the settings panel
     welcome_message = """Welcome to the CWE ChatBot! 🛡️
@@ -246,10 +242,12 @@ async def main(message: cl.Message):
         ui_settings = default_settings.dict()
         cl.user_session.set("ui_settings", ui_settings)
 
-    # Ensure conversation context exists with current persona (settings panel drives persona)
+    # Ensure persona follows the top-bar ChatProfile (not settings)
     context = conversation_manager.get_session_context(session_id)
-    if not context or context.persona != ui_settings["persona"]:
-        await conversation_manager.update_user_persona(session_id, ui_settings["persona"])
+    selected_profile = cl.user_session.get("chat_profile")
+    if isinstance(selected_profile, str) and selected_profile in UserPersona.get_all_personas():
+        if not context or context.persona != selected_profile:
+            await conversation_manager.update_user_persona(session_id, selected_profile)
 
     try:
         # Prevent accidental double-send with a 1s debounce
@@ -269,12 +267,13 @@ async def main(message: cl.Message):
             cl.user_session.set("uploaded_file_context", pending_upload)
             cl.user_session.set("uploaded_file_content", None)
 
-        # Process file attachments if present (especially for CVE Creator)
+        # Process file attachments if present
         if hasattr(message, 'elements') and message.elements and file_processor:
             async with cl.Step(name="Process file attachments", type="tool") as file_step:
-                file_step.input = f"Processing {len(message.elements)} file(s) for {ui_settings['persona']}"
-
-                logger.info(f"Processing {len(message.elements)} file attachments for {ui_settings['persona']}")
+                current_ctx = conversation_manager.get_session_context(session_id)
+                current_persona = (current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value)
+                file_step.input = f"Processing {len(message.elements)} file(s) for {current_persona}"
+                logger.info(f"Processing {len(message.elements)} file attachments for {current_persona}")
                 file_content = await file_processor.process_attachments(message)
 
                 if file_content:
@@ -286,9 +285,11 @@ async def main(message: cl.Message):
                     file_step.output = "No content extracted from file(s)"
                     logger.warning("File attachments found but no content extracted")
 
-        logger.info(f"Processing user query: '{user_query[:100]}...' for persona: {ui_settings['persona']}")
+        current_ctx = conversation_manager.get_session_context(session_id)
+        current_persona = (current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value)
+        logger.info(f"Processing user query: '{user_query[:100]}...' for persona: {current_persona}")
 
-        # Process message using conversation manager with streaming
+        # Process message using conversation manager with streaming (true streaming)
         result = await conversation_manager.process_user_message_streaming(
             session_id=session_id,
             message_content=user_query,
@@ -365,12 +366,13 @@ async def main(message: cl.Message):
             result["message"].elements = elements
             await result["message"].update()
 
-        # Clear file context after use to avoid unbounded growth
+        # Clear file context after use to avoid unbounded growth (ConversationManager clears its own context copy)
         if file_ctx:
             cl.user_session.set("uploaded_file_context", None)
 
         # Log successful interaction
-        current_persona = ui_settings["persona"]
+        current_ctx = conversation_manager.get_session_context(session_id)
+        current_persona = current_ctx.persona if current_ctx else persona
         logger.info(f"Successfully processed query for {current_persona}, retrieved {result.get('chunk_count', 0)} chunks")
 
     except Exception as e:
@@ -399,20 +401,11 @@ async def on_settings_update(settings: Dict[str, Any]):
         model = UISettings(**merged)
         cl.user_session.set("ui_settings", model.dict())
 
-        # Update persona in conversation manager if it changed
-        current_context = conversation_manager.get_session_context(session_id)
-        if current_context and current_context.persona != model.persona:
-            success = await conversation_manager.update_user_persona(session_id, model.persona)
-            if success:
-                logger.info(f"Updated persona to {model.persona} for session {session_id}")
-
-                # Send confirmation message
-                await cl.Message(
-                    content=f"✅ Settings updated! Now responding as **{model.persona}** with **{model.detail_level}** detail level.",
-                    author="System"
-                ).send()
-            else:
-                logger.error(f"Failed to update persona to {model.persona}")
+        # Acknowledge settings update (persona is driven by ChatProfile, not settings)
+        await cl.Message(
+            content=f"✅ Settings updated! Detail level: **{model.detail_level}**; Examples: **{'on' if model.include_examples else 'off'}**; Mitigations: **{'on' if model.include_mitigations else 'off'}**.",
+            author="System",
+        ).send()
 
     except Exception as e:
         logger.log_exception("Settings update failed", e)

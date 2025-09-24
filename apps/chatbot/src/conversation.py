@@ -19,6 +19,8 @@ from src.security.secure_logging import get_secure_logger
 from src.processing.query_processor import QueryProcessor
 from src.utils.session import get_user_context
 
+from src.app_config_extended import config
+
 logger = get_secure_logger(__name__)
 
 
@@ -46,12 +48,7 @@ class ConversationManager:
     - Error handling and graceful degradation
     """
 
-    def __init__(
-        self,
-        database_url: str,
-        gemini_api_key: str,
-        context_manager: Optional[Any] = None  # kept for backward-compat; no longer used
-    ):
+    def __init__(self, database_url: str, gemini_api_key: str):
         """
         Initialize conversation manager with required components.
 
@@ -62,7 +59,7 @@ class ConversationManager:
         """
         try:
             # Initialize core components
-            self.context_manager = context_manager  # deprecated; state now in cl.user_session
+            # no local context manager; state now lives in cl.user_session
             self.input_sanitizer = InputSanitizer()
             self.security_validator = SecurityValidator()
             self.query_handler = CWEQueryHandler(database_url, gemini_api_key)
@@ -85,12 +82,12 @@ class ConversationManager:
         ctx = get_user_context()
         if not getattr(ctx, "session_id", None):
             ctx.session_id = session_id
-        # Seed persona from stored UI settings if available (first touch only)
+        # Seed persona from top-bar ChatProfile if available (first touch only)
         try:
-            ui_settings = cl.user_session.get("ui_settings") or {}
-            persona = ui_settings.get("persona")
-            if persona and ctx.persona != persona:
-                ctx.persona = persona
+            selected_profile = cl.user_session.get("chat_profile")
+            if isinstance(selected_profile, str) and selected_profile in UserPersona.get_all_personas():
+                if ctx.persona != selected_profile:
+                    ctx.persona = selected_profile
         except Exception:
             pass
         ctx.update_activity()
@@ -120,9 +117,11 @@ class ConversationManager:
             )
             self._add_message(session_id, user_message)
 
-            core = await self._process_message_core(message_content)
-            if core.get("status") == "blocked":
-                flags = core.get("reasons", [])
+            processed = self.query_processor.process_with_context(
+                message_content, context.get_session_context_for_processing()
+            )
+            if processed.get("security_check", {}).get("is_potentially_malicious", False):
+                flags = processed.get("security_check", {}).get("detected_patterns", [])
                 fallback_response = self.input_sanitizer.generate_fallback_message(flags, context.persona)
 
                 self.security_validator.log_security_event(
@@ -145,22 +144,63 @@ class ConversationManager:
                     "message": msg,
                 }
 
-            retrieved_chunks = list(core.get("retrieval") or [])
-            response = core.get("response", "")
+            # Evidence
+            file_ctx = cl.user_session.get("uploaded_file_context")
+            if file_ctx and isinstance(file_ctx, str) and file_ctx.strip():
+                context.set_evidence(file_ctx[:config.max_file_evidence_length])
 
-            # Validate and send once
-            validation_result = self.security_validator.validate_response(response)
-            final_response = validation_result["validated_response"] if validation_result["is_safe"] else response
+            # Merge a brief attachment summary into the query to aid retrieval
+            sanitized_q = processed.get("sanitized_query", message_content)
+            combined_query = sanitized_q
+            attachment_snippet = None
+            if context.file_evidence:
+                attachment_snippet = self._summarize_attachment(context.file_evidence)
+                combined_query = f"{sanitized_q}\n\n[Attachment Summary]\n{attachment_snippet}"
 
-            msg = cl.Message(content=final_response)
+            # Retrieve with combined query
+            user_context_data = context.get_persona_preferences()
+            retrieved_chunks = await self.query_handler.process_query(
+                combined_query, user_context_data
+            )
+
+            # Create message and stream tokens
+            msg = cl.Message(content="")
             await msg.send()
+            collected = ""
+            try:
+                async for token in self.response_generator.generate_response_streaming(
+                    combined_query,
+                    retrieved_chunks or [],
+                    context.persona,
+                    user_evidence=context.file_evidence,
+                ):
+                    if token:  # Ensure token is not None or empty
+                        try:
+                            await msg.stream_token(token)
+                            collected += str(token)  # Ensure token is string
+                        except Exception as e:
+                            logger.warning(f"Failed to stream token: {e}")
+                            collected += str(token)  # Still collect token for processing
+            except Exception as e:
+                logger.error(f"Streaming generation failed: {e}")
+                # Fallback to basic error response if streaming completely fails
+                if not collected:
+                    collected = self.response_generator._generate_error_response(context.persona)
+
+            # Validate final and update if masked
+            validation_result = self.security_validator.validate_response(collected)
+            final_response = validation_result["validated_response"]
+            if final_response != collected:
+                msg.content = final_response
+                await msg.update()
 
             retrieved_cwes = list(set(
                 ch.get("metadata", {}).get("cwe_id") for ch in (retrieved_chunks or [])
             )) if retrieved_chunks else []
 
             # Record interaction directly on the per-user context
-            context.add_conversation_entry(message_content, final_response, retrieved_cwes)
+            context.add_conversation_entry(combined_query, final_response, retrieved_cwes)
+            context.clear_evidence()
 
             # Store assistant message
             assistant_message = ConversationMessage(
@@ -189,90 +229,9 @@ class ConversationManager:
             }
         
         except Exception as e:
-            logger.log_exception("Error processing streaming message", e)
-            error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
+            return await self._handle_processing_error(session_id, e)
 
-            msg = cl.Message(content=error_response)
-            await msg.send()
-
-            return {
-                "response": error_response,
-                "session_id": session_id,
-                "is_safe": True,
-                "error": str(e),
-                "message": msg
-            }
-
-    async def process_user_message(
-        self,
-        session_id: str,
-        message_content: str,
-        message_id: str
-    ) -> Dict[str, Any]:
-        """
-        Non-streaming wrapper that delegates to the core path.
-        """
-        try:
-            logger.info(f"Processing message for session {session_id}")
-
-            # Get or create user context in cl.user_session
-            context = self._get_or_create_user_context(session_id)
-
-            # Store user message
-            user_message = ConversationMessage(
-                message_id=message_id,
-                session_id=session_id,
-                content=message_content,
-                message_type="user",
-            )
-            self._add_message(session_id, user_message)
-
-            core = await self._process_message_core(message_content)
-            if core.get("status") == "blocked":
-                flags = core.get("reasons", [])
-                fallback_response = self.input_sanitizer.generate_fallback_message(flags, context.persona)
-                return {
-                    "response": fallback_response,
-                    "session_id": session_id,
-                    "is_safe": False,
-                    "security_flags": flags,
-                }
-
-            response = core.get("response", "")
-            retrieved_chunks = list(core.get("retrieval") or [])
-
-            # Validate response security
-            validation_result = self.security_validator.validate_response(response)
-            final_response = validation_result["validated_response"]
-
-            # Extract CWEs for context tracking
-            retrieved_cwes = list(set(
-                ch.get("metadata", {}).get("cwe_id") for ch in (retrieved_chunks or [])
-            )) if retrieved_chunks else []
-
-            # Record interaction directly on the per-user context
-            context.add_conversation_entry(message_content, final_response, retrieved_cwes)
-
-            return {
-                "response": final_response,
-                "session_id": session_id,
-                "is_safe": validation_result["is_safe"],
-                "retrieved_cwes": retrieved_cwes,
-                "chunk_count": len(retrieved_chunks) if retrieved_chunks else 0,
-                "retrieved_chunks": retrieved_chunks,  # Include chunks for source elements
-                "persona": context.persona,
-            }
-
-        except Exception as e:
-            logger.log_exception("Error processing message", e)
-            error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
-
-            return {
-                "response": error_response,
-                "session_id": session_id,
-                "is_safe": True,
-                "error": str(e),
-            }
+    # Non-streaming path removed (streaming-only)
 
     async def update_user_persona(self, session_id: str, new_persona: str) -> bool:
         """
@@ -388,49 +347,31 @@ class ConversationManager:
         """No-op for local storage; Chainlit persists messages in its data layer."""
         logger.debug(f"Message recorded (type={message.message_type}) for session {session_id}")
 
-    async def _process_message_core(self, message_content: str) -> Dict[str, Any]:
-        """
-        Unified core logic for processing a user message. Handles:
-        - Input sanitization via QueryProcessor
-        - Retrieval via QueryHandler
-        - Optional evidence pseudo-chunk
-        - Non-stream generation via ResponseGenerator
-        Returns a normalized dict for both streaming and non-streaming wrappers.
-        """
-        ctx = get_user_context()
-        processed = self.query_processor.process_with_context(
-            message_content, ctx.get_session_context_for_processing()
-        )
+    def _summarize_attachment(self, text: str, *, limit: int = None) -> str:
+        """Create a brief, safe attachment summary for retrieval/context."""
+        if not text:
+            return ""
+        if limit is None:
+            limit = config.max_attachment_summary_length
+        t = text.strip()
+        if len(t) > limit:
+            t = t[:limit] + "..."
+        return t
 
-        sec = processed.get("security_check", {})
-        is_safe = not sec.get("is_potentially_malicious", False)
-        reasons = sec.get("detected_patterns", [])
-        if not is_safe:
-            return {"status": "blocked", "reasons": reasons}
+    async def _handle_processing_error(self, session_id: str, error: Exception) -> Dict[str, Any]:
+        """Handle processing errors with consistent response pattern."""
+        logger.log_exception("Error processing message", error)
+        error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
 
-        q = processed.get("sanitized_query", message_content)
-        retrieval = await self.query_handler.process_query(q, ctx.get_persona_preferences())
+        msg = cl.Message(content=error_response)
+        await msg.send()
 
-        # Attach evidence pseudo-chunk if present
-        file_ctx = cl.user_session.get("uploaded_file_context")
-        evidence_chunk = None
-        if file_ctx:
-            file_ctx = f"<<FILE_CONTEXT_START>>\n{file_ctx}\n<<FILE_CONTEXT_END>>"
-            evidence_chunk = {
-                "document": file_ctx,
-                "metadata": {"cwe_id": "EVIDENCE", "name": "Uploaded Evidence", "section": "Evidence"},
-                "scores": {"hybrid": 0.01},
-            }
-        if not retrieval and evidence_chunk:
-            retrieval = [evidence_chunk]
-        elif retrieval and evidence_chunk:
-            retrieval = list(retrieval) + [evidence_chunk]
-
-        # Generate once (non-stream) for core path
-        gen_text = await self.response_generator.generate_response(q, retrieval or [], ctx.persona)
         return {
-            "status": "ok",
-            "retrieval": retrieval or [],
-            "response": gen_text,
-            "meta": {"sanitized_query": q},
+            "response": error_response,
+            "session_id": session_id,
+            "is_safe": True,
+            "error": str(error),
+            "message": msg
         }
+
+    # _process_message_core removed; streaming and non-stream paths call shared components directly

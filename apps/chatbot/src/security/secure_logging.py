@@ -159,7 +159,7 @@ class SecureLogger:
     def _hash_sensitive_value(self, value: str) -> str:
         """Hash a sensitive value for safe logging."""
         import hashlib
-        return hashlib.md5(value.encode()).hexdigest()[:16]
+        return hashlib.sha256(value.encode()).hexdigest()[:16]
     
     # Convenience methods that delegate to the underlying logger
     def debug(self, message: str, *args: Any, **kwargs: Any) -> None:

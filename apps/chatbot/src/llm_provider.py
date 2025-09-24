@@ -32,7 +32,28 @@ class GoogleProvider(LLMProvider):
         self._genai.configure(api_key=api_key)
         self._model = genai.GenerativeModel(model_name)
         self._gen_cfg = generation_config or {}
-        self._safety = safety_settings or {}
+
+        # Build explicit Gemini safety settings with a correct shape.
+        # Use permissive thresholds for security content by default.
+        self._safety = None
+        try:  # Prefer official enums when available
+            from google.generativeai.types import HarmCategory, HarmBlockThreshold  # type: ignore
+
+            default_safety = [
+                {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                {"category": HarmCategory.HARM_CATEGORY_SEXUAL_AND_MINORS, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+            ]
+            self._safety = safety_settings or default_safety
+        except Exception:
+            # Fallback to string-based categories (older SDKs may accept these)
+            self._safety = safety_settings or [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUAL_AND_MINORS", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            ]
 
     async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
         stream = await self._model.generate_content_async(

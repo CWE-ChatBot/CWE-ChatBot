@@ -5,11 +5,14 @@ Generates context-aware responses using retrieved CWE content and persona-specif
 """
 
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, AsyncGenerator
 import os
 import re
+import sys
 from pathlib import Path
 from .llm_provider import get_llm_provider
+
+from .app_config_extended import config
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +43,7 @@ class ResponseGenerator:
             # Configure generation for factual, security-focused responses
             self.generation_config = {
                 "temperature": 0.1,  # Low temperature for factual responses
-                "max_output_tokens": 2048,
+                "max_output_tokens": config.max_output_tokens,
                 "top_p": 0.9,
                 "top_k": 40,
             }
@@ -98,6 +101,9 @@ User Query: {user_query}
 CWE Context:
 {cwe_context}
 
+User-Provided Evidence:
+{user_evidence}
+
 Instructions:
 - Emphasize impact, severity, and advisory guidance.
 - Cite CWE IDs. Be precise and factual.
@@ -110,6 +116,9 @@ User Query: {user_query}
 
 CWE Context:
 {cwe_context}
+
+User-Provided Evidence:
+{user_evidence}
 
 Instructions:
 - Provide remediation steps and code-level guidance.
@@ -124,6 +133,9 @@ User Query: {user_query}
 CWE Context:
 {cwe_context}
 
+User-Provided Evidence:
+{user_evidence}
+
 Instructions:
 - Analyze relationships and taxonomies; cite CWEs.
 Response:""",
@@ -135,6 +147,9 @@ User Query: {user_query}
 
 CWE Context:
 {cwe_context}
+
+User-Provided Evidence:
+{user_evidence}
 
 Instructions:
 - Highlight exploitation patterns, detection and testing methods.
@@ -148,6 +163,9 @@ User Query: {user_query}
 CWE Context:
 {cwe_context}
 
+User-Provided Evidence:
+{user_evidence}
+
 Instructions:
 - Focus on risk, prioritization, and prevention strategies.
 Response:""",
@@ -160,6 +178,9 @@ User Query: {user_query}
 CWE Context:
 {cwe_context}
 
+User-Provided Evidence:
+{user_evidence}
+
 Instructions:
 - Map to CWEs with confidence and rationale.
 Response:""",
@@ -168,6 +189,9 @@ Response:""",
             "CVE Creator",
             """You create structured CVE descriptions from provided info.
 User Query: {user_query}
+
+User-Provided Evidence:
+{user_evidence}
 
 Instructions:
 - Use the standardized CVE format; note missing info.
@@ -181,130 +205,39 @@ Response:""",
         query: str,
         retrieved_chunks: List[Dict[str, Any]],
         user_persona: str,
-        message: Any  # Chainlit message for streaming
-    ) -> str:
+        *,
+        user_evidence: Optional[str] = None,
+    ) -> Any:
         """
-        Generate contextual response using retrieved CWE data with streaming.
-
-        Args:
-            query: User query string
-            retrieved_chunks: Retrieved chunks from hybrid search
-            user_persona: User persona for response adaptation
-            message: Chainlit message object for streaming
-
-        Returns:
-            Generated response string
+        Async generator yielding response tokens for streaming.
         """
         try:
             logger.info(f"Generating streaming response for persona: {user_persona}")
 
-            # Offline handled by provider adapter
+            context = self._build_context(retrieved_chunks or [])
+            if not context and not (user_evidence and user_evidence.strip()):
+                yield self._generate_fallback_response(query, user_persona)
+                return
 
-            # Handle empty retrieval results uniformly for all personas
-            if not retrieved_chunks:
-                fallback = self._generate_fallback_response(query, user_persona)
-                await message.stream_token(fallback)
-                return fallback
-
-            # Build structured context from retrieved chunks
-            context = self._build_context(retrieved_chunks)
-
-            # Select persona-specific prompt template
             prompt_template = self.persona_prompts.get(user_persona, self.persona_prompts["Developer"])
-
-            # Generate response using provider with RAG context
             prompt = prompt_template.format(
                 user_query=query,
-                cwe_context=context
+                cwe_context=context,
+                user_evidence=(user_evidence or "No additional evidence provided."),
             )
 
-            # Use streaming generation via provider
-            full_response = ""
             async for chunk_text in self.provider.generate_stream(prompt):
                 cleaned_chunk = self._clean_response_chunk(chunk_text)
                 if cleaned_chunk:
-                    await message.stream_token(cleaned_chunk)
-                    full_response += cleaned_chunk
-
-            # Validate and clean final response
-            cleaned_response = self._clean_response(full_response)
-
-            # CVE Creator formatting: convert [segments] to **bold** (avoid markdown links)
-            if user_persona == "CVE Creator":
-                formatted = self._format_cve_creator(cleaned_response)
-                if formatted != cleaned_response:
-                    try:
-                        # Update streamed message with final formatted text
-                        message.content = formatted
-                        await message.update()
-                    except Exception:
-                        pass
-                cleaned_response = formatted
-            logger.info(f"Generated streaming response length: {len(cleaned_response)} characters")
-
-            return cleaned_response
+                    yield cleaned_chunk
 
         except Exception as e:
             logger.error(f"Streaming response generation failed: {e}")
-            error_response = self._generate_error_response(user_persona)
-            await message.stream_token(error_response)
-            return error_response
+            yield self._generate_error_response(user_persona)
 
-    async def generate_response(
-        self,
-        query: str,
-        retrieved_chunks: List[Dict[str, Any]],
-        user_persona: str
-    ) -> str:
-        """
-        Generate contextual response using retrieved CWE data.
+    # removed non-streaming generate_response (streaming-only)
 
-        Args:
-            query: User query string
-            retrieved_chunks: Retrieved chunks from hybrid search
-            user_persona: User persona for response adaptation
-
-        Returns:
-            Generated response string
-        """
-        try:
-            logger.info(f"Generating response for persona: {user_persona}")
-
-            if getattr(self, "offline", False):
-                return f"[offline-mode] {user_persona} response for: " + query[:120]
-
-            # Handle empty retrieval results uniformly for all personas
-            if not retrieved_chunks:
-                return self._generate_fallback_response(query, user_persona)
-
-            # Build structured context from retrieved chunks
-            context = self._build_context(retrieved_chunks)
-
-            # Select persona-specific prompt template
-            prompt_template = self.persona_prompts.get(user_persona, self.persona_prompts["Developer"])
-
-            # Generate response using provider with RAG context
-            prompt = prompt_template.format(
-                user_query=query,
-                cwe_context=context
-            )
-
-            generated_text = await self.provider.generate(prompt)
-            cleaned_response = self._clean_response(generated_text)
-
-            # CVE Creator formatting: convert [segments] to **bold** (avoid markdown links)
-            if user_persona == "CVE Creator":
-                cleaned_response = self._format_cve_creator(cleaned_response)
-
-            logger.info(f"Generated response length: {len(cleaned_response)} characters")
-
-            return cleaned_response
-
-        except Exception as e:
-            logger.error(f"Response generation failed: {e}")
-            return self._generate_error_response(user_persona)
-
-    def _build_context(self, chunks: List[Dict[str, Any]]) -> str:
+    def _build_context(self, chunks: Optional[List[Dict[str, Any]]]) -> str:
         """
         Build structured context from retrieved CWE chunks.
 
@@ -314,6 +247,9 @@ Response:""",
         Returns:
             Formatted context string
         """
+        if not chunks:
+            return "No relevant CWE information found."
+
         context_parts: List[str] = []
 
         # Group chunks by CWE ID safely
@@ -333,8 +269,8 @@ Response:""",
                 md = (ch.get("metadata") or {})
                 section = md.get("section", "Content")
                 doc = ch.get("document", "")
-                snippet = doc[:1000]
-                suffix = "..." if len(doc) > 1000 else ""
+                snippet = doc[:config.max_document_snippet_length]
+                suffix = "..." if len(doc) > config.max_document_snippet_length else ""
                 context_parts.append(f"\n{section}:\n{snippet}{suffix}")
                 # Cap sections per CWE when accumulating many parts
                 if section != "Content" and len(context_parts) > 12:
@@ -342,7 +278,7 @@ Response:""",
 
         # Hard cap overall context size by characters to keep prompt size safe
         context_text = "\n".join(context_parts)
-        return context_text[:16000]
+        return context_text[:config.max_context_length]
 
     def _clean_response_chunk(self, chunk: str) -> str:
         """
@@ -399,11 +335,12 @@ Response:""",
 
     def _format_cve_creator(self, text: str) -> str:
         """
-        For CVE Creator persona, replace bracketed segments with bold for easy copy-paste.
-        Avoid altering markdown links of the form [label](url).
+        Legacy helper retained for compatibility with tests.
+        Replace [segments] with **bold** unless part of a markdown link.
         """
-        # Replace [foo] with **foo** when not followed by '(' (to avoid links)
         try:
             return re.sub(r"\[([^\[\]]+)\](?!\()", r"**\1**", text)
         except Exception:
             return text
+
+    # Removed persona-specific formatting; rely on persona templates only

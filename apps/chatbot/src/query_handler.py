@@ -5,37 +5,23 @@ Integrates with existing production hybrid retrieval system from Story 1.5.
 """
 
 import asyncio
-import sys
-import os
-from pathlib import Path
-from typing import Dict, List, Any, Optional
 import logging
+from typing import Dict, List, Any, Optional
 from src.security.secure_logging import get_secure_logger
 
-# Prefer package import; allow override via CWE_INGESTION_PATH
-try:
-    # If the repo is run from root, this works without hacks
-    from apps.cwe_ingestion.pg_chunk_store import PostgresChunkStore  # type: ignore
-    from apps.cwe_ingestion.embedder import GeminiEmbedder  # type: ignore
-except Exception:
+# Prefer a clean package import; fall back to legacy path if package is unavailable
+try:  # minimal path when cwe_ingestion is installed
+    from cwe_ingestion.pg_chunk_store import PostgresChunkStore  # type: ignore
+    from cwe_ingestion.embedder import GeminiEmbedder  # type: ignore
+except Exception:  # fallback to legacy repo layout/env var
+    import os, sys
     ingestion_path = os.getenv("CWE_INGESTION_PATH")
     if ingestion_path and os.path.isdir(ingestion_path):
         sys.path.insert(0, ingestion_path)
-        try:
-            # Support pointing directly at the cwe_ingestion folder
-            from pg_chunk_store import PostgresChunkStore  # type: ignore
-            from embedder import GeminiEmbedder  # type: ignore
-        except Exception as e:  # pragma: no cover
-            logging.error(f"Failed to import ingestion modules from CWE_INGESTION_PATH={ingestion_path}: {e}")
-            raise ImportError(
-                "Unable to import ingestion modules. Set CWE_INGESTION_PATH to the 'apps/cwe_ingestion' directory, "
-                "or install the ingestion package so 'apps.cwe_ingestion' can be imported."
-            ) from e
+        from pg_chunk_store import PostgresChunkStore  # type: ignore
+        from embedder import GeminiEmbedder  # type: ignore
     else:  # pragma: no cover
-        raise ImportError(
-            "Ingestion modules not found. Either install the project so 'apps.cwe_ingestion' is importable, or set "
-            "CWE_INGESTION_PATH environment variable to point at the 'apps/cwe_ingestion' directory."
-        )
+        raise
 
 logger = get_secure_logger(__name__)
 

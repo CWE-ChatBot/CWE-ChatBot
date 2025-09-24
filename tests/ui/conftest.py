@@ -13,19 +13,24 @@ import os
 # Add the source directory to the Python path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'apps', 'chatbot', 'src'))
 
-# Import user roles for testing
+# Import user personas for testing
 try:
-    from user.role_manager import UserRole
+    from user_context import UserPersona
+    # Create role mapping for backward compatibility
+    class UserRole:
+        PSIRT = UserPersona.PSIRT_MEMBER.value
+        DEVELOPER = UserPersona.DEVELOPER.value
+        ACADEMIC = UserPersona.ACADEMIC_RESEARCHER.value
+        BUG_BOUNTY = UserPersona.BUG_BOUNTY_HUNTER.value
+        PRODUCT_MANAGER = UserPersona.PRODUCT_MANAGER.value
 except ImportError:
-    # Fallback if role manager isn't available yet
-    from enum import Enum
-    
-    class UserRole(Enum):
-        PSIRT = "psirt"
-        DEVELOPER = "developer"
-        ACADEMIC = "academic"
-        BUG_BOUNTY = "bug_bounty"
-        PRODUCT_MANAGER = "product_manager"
+    # Fallback if user_context isn't available yet
+    class UserRole:
+        PSIRT = "PSIRT Member"
+        DEVELOPER = "Developer"
+        ACADEMIC = "Academic Researcher"
+        BUG_BOUNTY = "Bug Bounty Hunter"
+        PRODUCT_MANAGER = "Product Manager"
 
 
 @pytest.fixture(scope="session")

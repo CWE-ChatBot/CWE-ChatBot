@@ -43,6 +43,13 @@ class Config:
     # Security Configuration
     max_input_length: int = int(os.getenv("MAX_INPUT_LENGTH", "1000"))
     enable_strict_sanitization: bool = os.getenv("ENABLE_STRICT_SANITIZATION", "true").lower() == "true"
+
+    # Content Processing Limits
+    max_file_evidence_length: int = int(os.getenv("MAX_FILE_EVIDENCE_LENGTH", "16000"))
+    max_attachment_summary_length: int = int(os.getenv("MAX_ATTACHMENT_SUMMARY_LENGTH", "1200"))
+    max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "2048"))
+    max_document_snippet_length: int = int(os.getenv("MAX_DOCUMENT_SNIPPET_LENGTH", "1000"))
+    max_context_length: int = int(os.getenv("MAX_CONTEXT_LENGTH", "16000"))
     
     # Application Configuration
     enable_debug_logging: bool = os.getenv("DEBUG", "false").lower() == "true"
