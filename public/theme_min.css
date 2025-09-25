@@ -1,0 +1,31 @@
+/* Minimal, safe branding overrides (no generic color resets) */
+
+:root {
+  --brand-primary: #4169E1;   /* CWE blue */
+  --brand-secondary: #8B0000; /* CWE maroon */
+  --brand-accent: #FFA500;    /* CVE orange */
+  --header-fg: #ffffff;
+}
+
+/* Header/app bar branding only */
+header, .MuiAppBar-root {
+  background-color: var(--brand-primary) !important;
+  color: var(--header-fg) !important;
+}
+header *, .MuiAppBar-root * {
+  color: var(--header-fg) !important;
+}
+
+/* Send action accent (scoped by intent attributes) */
+button[aria-label*="Send"], button[title*="Send"], [aria-label*="send"], [title*="send"] {
+  background-color: var(--brand-accent) !important;
+  color: #111 !important;
+}
+
+/* Persona chip accent (non-invasive) */
+[data-testid*="profile"] .MuiChip-root {
+  background-color: var(--brand-primary) !important;
+  color: #fff !important;
+}
+
+/* Keep dialogs/menus untouched to avoid text visibility issues */

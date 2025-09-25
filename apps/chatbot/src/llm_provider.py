@@ -7,7 +7,10 @@ Falls back to offline mode if explicitly configured.
 from __future__ import annotations
 
 import os
+import logging
 from typing import AsyncGenerator, Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider:
@@ -33,46 +36,66 @@ class GoogleProvider(LLMProvider):
         self._model = genai.GenerativeModel(model_name)
         self._gen_cfg = generation_config or {}
 
-        # Build explicit Gemini safety settings with a correct shape.
-        # Use permissive thresholds for security content by default.
-        self._safety = None
-        try:  # Prefer official enums when available
+        # AGGRESSIVE: Properly disable safety settings for Gemini 2.5 Flash Lite cybersecurity content
+        # Use the correct safety category names from official docs
+        try:
             from google.generativeai.types import HarmCategory, HarmBlockThreshold  # type: ignore
 
-            default_safety = [
+            # Official safety settings for Gemini 2.5 Flash Lite - BLOCK_NONE for all categories
+            self._safety = [
                 {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
                 {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.BLOCK_NONE},
-                {"category": HarmCategory.HARM_CATEGORY_SEXUAL_AND_MINORS, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.BLOCK_NONE},
                 {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
             ]
-            self._safety = safety_settings or default_safety
-        except Exception:
-            # Fallback to string-based categories (older SDKs may accept these)
-            self._safety = safety_settings or [
+            logger.info("GoogleProvider configured with BLOCK_NONE for all safety categories (Gemini 2.5 Flash Lite)")
+        except ImportError:
+            # Fallback using string names
+            self._safety = [
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
                 {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUAL_AND_MINORS", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
                 {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
             ]
+            logger.info("GoogleProvider configured with BLOCK_NONE using string fallback")
+
+        # If user explicitly provides safety settings, respect them
+        if safety_settings is not None:
+            self._safety = safety_settings
+            logger.info(f"GoogleProvider using explicit safety_settings: {safety_settings}")
 
     async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
-        stream = await self._model.generate_content_async(
-            prompt,
-            generation_config=self._gen_cfg,
-            safety_settings=self._safety,
-            stream=True,
-        )
-        async for chunk in stream:
-            if getattr(chunk, "text", None):
-                yield chunk.text
+        logger.debug(f"Starting streaming generation with safety_settings: {self._safety}")
+        try:
+            stream = await self._model.generate_content_async(
+                prompt,
+                generation_config=self._gen_cfg,
+                safety_settings=self._safety,
+                stream=True,
+            )
+            logger.debug("Streaming generation started successfully")
+            async for chunk in stream:
+                if getattr(chunk, "text", None):
+                    yield chunk.text
+        except Exception as e:
+            logger.error(f"Gemini generation failed with error: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            raise e
 
     async def generate(self, prompt: str) -> str:
-        resp = await self._model.generate_content_async(
-            prompt,
-            generation_config=self._gen_cfg,
-            safety_settings=self._safety,
-        )
-        return resp.text or ""
+        logger.debug(f"Starting non-streaming generation with safety_settings: {self._safety}")
+        try:
+            resp = await self._model.generate_content_async(
+                prompt,
+                generation_config=self._gen_cfg,
+                safety_settings=self._safety,
+            )
+            logger.debug("Non-streaming generation completed successfully")
+            return resp.text or ""
+        except Exception as e:
+            logger.error(f"Gemini generation failed with error: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            raise e
 
 
 class VertexProvider(LLMProvider):

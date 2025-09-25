@@ -28,7 +28,7 @@ class ResponseGenerator:
     - Source attribution and confidence indicators
     """
 
-    def __init__(self, gemini_api_key: str, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, gemini_api_key: str, model_name: str = "gemini-2.5-flash-lite"):
         """
         Initialize response generator with Gemini model.
 
@@ -48,12 +48,8 @@ class ResponseGenerator:
                 "top_k": 40,
             }
             # Permissive safety settings for security content (explicitly logged)
-            self.safety_settings = {
-                "HARASSMENT": "BLOCK_NONE",
-                "HATE_SPEECH": "BLOCK_NONE",
-                "SEXUAL": "BLOCK_NONE",
-                "DANGEROUS_CONTENT": "BLOCK_NONE",
-            }
+            # Use None to let GoogleProvider apply its default permissive settings
+            self.safety_settings = None
 
             # Load persona-specific prompt templates
             self.persona_prompts = self._load_persona_prompts()
