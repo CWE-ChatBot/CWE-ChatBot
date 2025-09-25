@@ -120,6 +120,35 @@ class ConversationManager:
             processed = self.query_processor.process_with_context(
                 message_content, context.get_session_context_for_processing()
             )
+
+            # NEW: Handle off-topic queries before processing
+            if processed.get("query_type") == "off_topic":
+                off_topic_response = (
+                    "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. "
+                    "Your question doesn't appear to be related to cybersecurity topics. "
+                    "I can help you with:\n\n"
+                    "• **CWE Analysis**: Understanding specific weaknesses like CWE-79 (XSS)\n"
+                    "• **Vulnerability Assessment**: Mapping CVEs to CWEs\n"
+                    "• **Security Best Practices**: Prevention and mitigation strategies\n"
+                    "• **Threat Modeling**: Risk assessment and security guidance\n\n"
+                    "What cybersecurity topic can I help you with today?"
+                )
+
+                msg = cl.Message(content=off_topic_response)
+                await msg.send()
+
+                return {
+                    "response": off_topic_response,
+                    "session_id": session_id,
+                    "is_safe": True,
+                    "retrieved_cwes": [],
+                    "chunk_count": 0,
+                    "retrieved_chunks": [],
+                    "persona": context.persona,
+                    "message": msg,
+                    "query_type": "off_topic"
+                }
+
             if processed.get("security_check", {}).get("is_potentially_malicious", False):
                 flags = processed.get("security_check", {}).get("detected_patterns", [])
                 fallback_response = self.input_sanitizer.generate_fallback_message(flags, context.persona)
@@ -218,6 +247,19 @@ class ConversationManager:
             retrieved_cwes = list(set(
                 ch.get("metadata", {}).get("cwe_id") for ch in (retrieved_chunks or [])
             )) if retrieved_chunks else []
+
+            # FIX: Prioritize directly requested CWE in context storage
+            # If user asked for a specific CWE, put it first in the context list
+            direct_cwe_ids = processed.get("cwe_ids", set())
+            if direct_cwe_ids and retrieved_cwes:
+                # Put directly requested CWEs first, then others
+                prioritized_cwes = []
+                for cwe_id in direct_cwe_ids:
+                    if cwe_id in retrieved_cwes:
+                        prioritized_cwes.append(cwe_id)
+                        retrieved_cwes.remove(cwe_id)
+                prioritized_cwes.extend(retrieved_cwes)
+                retrieved_cwes = prioritized_cwes
 
             # Record interaction directly on the per-user context
             context.add_conversation_entry(combined_query, final_response, retrieved_cwes)

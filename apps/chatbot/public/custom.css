@@ -1,4 +1,578 @@
-/* Custom CSS to replace Chainlit logo with CWE logo */
+/* CWE ChatBot - Comprehensive UI Design Implementation */
+/* Story 3.4: Typography System, Color Palette, and Professional Branding */
+
+/* ===== TYPOGRAPHY SYSTEM ===== */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ===== SEMANTIC COLOR SYSTEM (Shadcn/ui Inspired) ===== */
+:root {
+  /* CWE/CVE Brand Colors - Base Values */
+  --cwe-primary-hue: 225;          /* CWE Blue hue */
+  --cwe-secondary-hue: 0;          /* CWE Maroon hue */
+  --cve-accent-hue: 39;            /* CVE Orange hue */
+
+  /* Semantic Color Variables - Light Mode */
+  --background: hsl(210, 20%, 98%);
+  --foreground: hsl(220, 10%, 10%);
+
+  --primary: hsl(var(--cwe-primary-hue), 72%, 56%);     /* #4169E1 CWE Blue */
+  --primary-foreground: hsl(0, 0%, 100%);
+
+  --secondary: hsl(var(--cwe-secondary-hue), 100%, 27%); /* #8B0000 CWE Maroon */
+  --secondary-foreground: hsl(0, 0%, 100%);
+
+  --accent: hsl(var(--cve-accent-hue), 100%, 50%);      /* #FFA500 CVE Orange */
+  --accent-foreground: hsl(0, 0%, 0%);
+
+  --muted: hsl(210, 20%, 96%);
+  --muted-foreground: hsl(215, 16%, 47%);
+
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(220, 10%, 10%);
+
+  --border: hsl(214, 32%, 91%);
+  --input: hsl(214, 32%, 91%);
+  --ring: var(--primary);
+
+  /* Status Colors */
+  --success: hsl(142, 76%, 36%);
+  --warning: hsl(48, 96%, 53%);
+  --error: var(--secondary);
+
+  /* Brand alias variables expected by docs and selectors */
+  --cwe-primary: var(--primary);
+  --cwe-secondary: var(--secondary);
+  --cve-accent: var(--accent);
+
+  /* Neutral text colors used throughout */
+  --neutral-text: #333333;
+  --neutral-secondary: #6c757d;
+}
+
+/* Dark Mode Variables */
+:root.dark,
+:root[data-theme='dark'],
+html.dark,
+body.dark,
+html[data-theme='dark'],
+body[data-theme='dark'],
+[data-theme='dark'] {
+  --background: hsl(220, 13%, 9%);
+  --foreground: hsl(210, 20%, 98%);
+
+  --primary: hsl(var(--cwe-primary-hue), 82%, 66%);     /* Lighter CWE Blue */
+  --primary-foreground: hsl(220, 13%, 9%);
+
+  --secondary: hsl(var(--cwe-secondary-hue), 85%, 45%); /* Lighter CWE Maroon */
+  --secondary-foreground: hsl(210, 20%, 98%);
+
+  --accent: hsl(var(--cve-accent-hue), 95%, 60%);       /* Lighter CVE Orange */
+  --accent-foreground: hsl(220, 13%, 9%);
+
+  --muted: hsl(217, 33%, 17%);
+  --muted-foreground: hsl(215, 20%, 65%);
+
+  --card: hsl(217, 33%, 13%);
+  --card-foreground: hsl(210, 20%, 98%);
+
+  --border: hsl(217, 33%, 17%);
+  --input: hsl(217, 33%, 17%);
+  --ring: var(--primary);
+
+  /* Status Colors for Dark Mode */
+  --success: hsl(142, 70%, 45%);
+  --warning: hsl(48, 90%, 60%);
+  --error: var(--secondary);
+
+  /* Keep brand alias variables in sync in dark mode */
+  --cwe-primary: var(--primary);
+  --cwe-secondary: var(--secondary);
+  --cve-accent: var(--accent);
+  --neutral-text: #EDEDED;
+  --neutral-secondary: #BDBDBD;
+}
+
+/* ===== SEMANTIC COLOR APPLICATIONS ===== */
+
+/* Base color applications using semantic variables */
+body {
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
+}
+
+/* Header and navigation - Primary */
+header, .MuiAppBar-root, [class*="MuiToolbar"],
+.cl-header, [class*="cl-header"] {
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+}
+
+/* Primary buttons and actions */
+.MuiButton-containedPrimary, .MuiButton-root[color="primary"],
+button[type="submit"], .primary-button {
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  border-color: var(--primary) !important;
+}
+
+.MuiButton-containedPrimary:hover {
+  background-color: hsl(var(--cwe-primary-hue), 72%, 46%) !important;
+}
+
+/* Secondary buttons - Accent (CVE Orange) */
+.MuiButton-containedSecondary, .MuiButton-root[color="secondary"],
+.secondary-button, .accent-button {
+  background-color: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+  border-color: var(--accent) !important;
+}
+
+.MuiButton-containedSecondary:hover {
+  background-color: hsl(var(--cve-accent-hue), 100%, 45%) !important;
+}
+
+/* Send button and primary actions - Accent */
+button[aria-label*="Send"], button[title*="Send"],
+.MuiIconButton-root[color="primary"] {
+  background-color: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+}
+
+/* Links and accents */
+a, .MuiLink-root, .link-text {
+  color: var(--primary) !important;
+}
+
+a:hover, .MuiLink-root:hover {
+  color: var(--secondary) !important;
+}
+
+/* Focus indicators */
+*:focus, button:focus, input:focus {
+  outline: 2px solid var(--ring) !important;
+  outline-offset: 2px !important;
+}
+
+/* Progress indicators and loading */
+.MuiCircularProgress-root, .MuiLinearProgress-root,
+.loading-spinner, [class*="progress"] {
+  color: var(--accent) !important;
+}
+
+.MuiLinearProgress-bar {
+  background-color: var(--accent) !important;
+}
+
+/* Tabs and navigation items */
+.MuiTab-root, .MuiTabs-indicator {
+  color: var(--primary) !important;
+}
+
+.MuiTabs-indicator {
+  background-color: var(--primary) !important;
+}
+
+/* Chips and badges */
+.MuiChip-colorPrimary {
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+}
+
+.MuiChip-colorSecondary {
+  background-color: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+}
+
+/* Cards and panels */
+.MuiDrawer-paper, .MuiDialog-paper,
+.cl-sidebar, [class*="cl-sidebar"] {
+  background-color: var(--card) !important;
+  color: var(--card-foreground) !important;
+  border-left: 3px solid var(--primary) !important;
+}
+
+/* Input fields */
+.MuiOutlinedInput-root, .MuiTextField-root input {
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
+  border-color: var(--border) !important;
+}
+
+.MuiOutlinedInput-root:focus-within {
+  border-color: var(--ring) !important;
+  box-shadow: 0 0 0 2px hsla(var(--cve-accent-hue), 100%, 50%, 0.2) !important;
+}
+
+/* ===== IMMEDIATE VISIBLE BRANDING ===== */
+
+/* Force visible colors on common elements you should see RIGHT NOW */
+
+/* Message input area - CVE Orange accent */
+.MuiOutlinedInput-root:focus-within,
+.MuiTextField-root .MuiOutlinedInput-root:focus-within {
+  border-color: var(--cve-accent) !important;
+  box-shadow: 0 0 0 2px rgba(255, 165, 0, 0.2) !important;
+}
+
+/* Input area bottom border - CVE Orange */
+.MuiOutlinedInput-notchedOutline {
+  border-color: var(--cve-accent) !important;
+}
+
+/* Persona dropdown - CWE Blue background */
+.MuiSelect-root, .MuiFormControl-root {
+  background-color: hsl(var(--cwe-primary-hue), 72%, 56%, 0.1) !important;
+}
+
+/* Selected persona chip - CWE Blue */
+.MuiChip-filled, [data-testid*="profile"] .MuiChip-root {
+  background-color: var(--primary) !important;
+  color: white !important;
+}
+
+/* Message send button - CVE Orange (most visible) */
+button[type="submit"], .send-button,
+[aria-label*="Send"] {
+  background-color: var(--accent) !important;
+  color: white !important;
+  border-radius: 8px !important;
+  padding: 8px 16px !important;
+}
+
+button[type="submit"]:hover, [aria-label*="Send"]:hover {
+  background-color: hsl(var(--cve-accent-hue), 100%, 40%) !important;
+  transform: scale(1.05) !important;
+}
+
+/* Settings gear icon - CWE Blue */
+[aria-label*="Settings"], [title*="Settings"],
+.settings-button, .gear-icon {
+  color: var(--primary) !important;
+  background-color: hsl(var(--cwe-primary-hue), 72%, 56%, 0.1) !important;
+  border-radius: 50% !important;
+}
+
+/* App title/logo area - CWE Blue background */
+[class*="MuiToolbar"] h1, [class*="MuiToolbar"] .MuiTypography-h1,
+.app-title, .logo-area {
+  background-color: var(--primary) !important;
+  color: white !important;
+  padding: 8px 16px !important;
+  border-radius: 4px !important;
+}
+
+/* Quick visual test - add colored borders to major sections */
+body {
+  border-top: 4px solid var(--accent) !important;
+}
+
+/* Message bubbles accent */
+.cl-message, [class*="cl-message"] {
+  border-left: 4px solid var(--primary) !important;
+  background-color: hsl(var(--cwe-primary-hue), 72%, 56%, 0.02) !important;
+}
+
+/* User messages */
+.cl-user-message, [data-author="user"] {
+  border-left: 4px solid var(--accent) !important;
+  background-color: hsl(var(--cve-accent-hue), 100%, 50%, 0.02) !important;
+}
+
+/* ===== TYPOGRAPHY IMPLEMENTATION ===== */
+/* Override Chainlit default fonts - SAFER APPROACH */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  color: var(--neutral-text) !important;
+}
+
+/* Specific typography overrides */
+.MuiTypography-root, [class*="MuiTypography"] {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  color: inherit !important;
+}
+
+.cl-message, .cl-chat-input, .cl-settings {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  color: var(--neutral-text) !important;
+}
+
+/* Code elements */
+code, pre, .code-block, [class*="code"],
+.hljs, .language-*, [data-language] {
+  font-family: 'JetBrains Mono', 'Monaco', 'Menlo', monospace !important;
+}
+
+/* Responsive type scale */
+h1, [class*="MuiTypography-h1"] { font-size: 36px !important; font-weight: 600 !important; }
+h2, [class*="MuiTypography-h2"] { font-size: 28px !important; font-weight: 500 !important; }
+h3, [class*="MuiTypography-h3"] { font-size: 22px !important; font-weight: 500 !important; }
+body, [class*="MuiTypography-body"] { font-size: 16px !important; line-height: 1.5 !important; }
+small, [class*="MuiTypography-caption"] { font-size: 14px !important; }
+
+/* ===== UI COMPONENT TEXT VISIBILITY FIXES ===== */
+
+/* Ensure all UI text is visible and properly styled */
+.MuiButton-root, .MuiMenuItem-root, .MuiListItem-root,
+.MuiChip-root, .MuiTab-root, .MuiAccordion-root,
+[class*="MuiButton"], [class*="MuiMenuItem"], [class*="MuiListItem"],
+[class*="MuiChip"], [class*="MuiTab"], [class*="MuiAccordion"] {
+  color: var(--foreground) !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+}
+
+/* Settings panel and modal text visibility */
+.MuiDialog-root, .MuiPopover-root, .MuiDrawer-root,
+[class*="MuiDialog"], [class*="MuiPopover"], [class*="MuiDrawer"] {
+  color: var(--foreground) !important;
+}
+
+.MuiDialog-root .MuiTypography-root,
+.MuiPopover-root .MuiTypography-root,
+.MuiDrawer-root .MuiTypography-root {
+  color: var(--foreground) !important;
+  font-size: 16px !important;
+}
+
+/* Form labels and input text */
+.MuiFormLabel-root, .MuiInputLabel-root, .MuiFormHelperText-root,
+[class*="MuiFormLabel"], [class*="MuiInputLabel"], [class*="MuiFormHelperText"] {
+  color: var(--neutral-secondary) !important;
+  font-size: 14px !important;
+}
+
+/* Switch and checkbox labels */
+.MuiFormControlLabel-root .MuiTypography-root {
+  color: var(--neutral-text) !important;
+  font-size: 16px !important;
+}
+
+/* Dropdown menu items */
+.MuiSelect-root, .MuiMenuItem-root, .MuiListItem-root {
+  color: var(--foreground) !important;
+  background-color: var(--card) !important;
+}
+
+/* Ensure header buttons/links are readable on primary background */
+header .MuiButton-root, .MuiAppBar-root .MuiButton-root, [class*="cl-header"] .MuiButton-root {
+  color: var(--primary-foreground) !important;
+}
+header a, .MuiAppBar-root a, [class*="cl-header"] a {
+  color: var(--primary-foreground) !important;
+}
+
+/* Strengthen header descendant text visibility */
+header *, .MuiAppBar-root *, [class*="cl-header"] * {
+  color: var(--primary-foreground) !important;
+  -webkit-text-fill-color: var(--primary-foreground) !important;
+}
+
+/* Specific for README/Readme button label in header */
+header .MuiButton-root span, .MuiAppBar-root .MuiButton-root span, [class*="cl-header"] .MuiButton-root span {
+  color: var(--primary-foreground) !important;
+}
+
+/* Dialog action buttons at bottom of settings window */
+.MuiDialogActions-root .MuiButton-root {
+  color: var(--foreground) !important;
+}
+.MuiDialogActions-root .MuiButton-root * {
+  color: var(--foreground) !important;
+  -webkit-text-fill-color: var(--foreground) !important;
+}
+
+/* Theme toggle button text */
+[aria-label*="theme"], [title*="theme"], [data-testid*="theme"],
+button[class*="theme"], .theme-toggle {
+  color: var(--foreground) !important;
+  font-size: 14px !important;
+}
+
+/* Chainlit specific UI components */
+.cl-header, .cl-sidebar, .cl-modal, .cl-popover,
+[class*="cl-header"], [class*="cl-sidebar"], [class*="cl-modal"], [class*="cl-popover"] {
+  color: var(--neutral-text) !important;
+}
+
+/* Profile selector and settings text */
+[data-testid*="profile"], [data-testid*="settings"],
+.profile-selector, .settings-panel {
+  color: var(--neutral-text) !important;
+  font-size: 14px !important;
+}
+
+/* Ensure all text elements have proper contrast */
+* {
+  color: inherit;
+}
+
+/* Dark theme text adjustments */
+[data-theme="dark"] {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .MuiButton-root,
+[data-theme="dark"] .MuiMenuItem-root,
+[data-theme="dark"] .MuiTypography-root {
+  color: #ffffff !important;
+}
+
+/* ===== CHAINLIT SPECIFIC TEXT FIXES ===== */
+
+/* Footer and status text visibility */
+.chainlit-footer, .cl-footer, [class*="footer"],
+.status-text, .powered-by, [class*="status"],
+[class*="powered"], small, .small-text {
+  color: var(--neutral-secondary) !important;
+  font-size: 12px !important;
+  opacity: 0.8 !important;
+}
+
+/* Input area and surrounding text */
+.cl-input-container, .cl-composer,
+[class*="cl-input"], [class*="cl-composer"] {
+  color: var(--neutral-text) !important;
+}
+
+/* All text in input area */
+.cl-input-container *, .cl-composer *,
+[class*="cl-input"] *, [class*="cl-composer"] * {
+  color: var(--neutral-text) !important;
+}
+
+/* Message input placeholder and helper text */
+textarea, input[type="text"], .MuiTextField-root input,
+.MuiOutlinedInput-input, .MuiInputBase-input {
+  color: var(--neutral-text) !important;
+  font-size: 16px !important;
+}
+
+::placeholder, .MuiInputBase-input::placeholder {
+  color: var(--neutral-secondary) !important;
+  opacity: 0.7 !important;
+}
+
+/* Chat message text */
+.cl-message .cl-message-content,
+[class*="cl-message"] [class*="content"] {
+  color: var(--neutral-text) !important;
+}
+
+/* Ensure all interactive elements have visible text */
+button, a, span, div, p, label,
+.MuiButton-label, .MuiIconButton-label {
+  color: inherit !important;
+}
+
+/* Override any transparent or invisible text */
+[style*="color: transparent"],
+[style*="color: rgba(0,0,0,0)"],
+[style*="opacity: 0"] {
+  color: var(--neutral-text) !important;
+  opacity: 1 !important;
+}
+
+/* Specific fix for empty content issues */
+.MuiDialogContent-root:empty::before {
+  content: "Settings panel loading..." !important;
+  color: var(--neutral-secondary) !important;
+  font-style: italic !important;
+}
+
+/* Ensure settings panel content is visible */
+.MuiDialogContent-root, .MuiDialogTitle-root {
+  min-height: 50px !important;
+  color: var(--foreground) !important;
+}
+
+/* Ensure dialog text inherits readable foreground color */
+.MuiDialog-paper, .MuiPopover-paper, .MuiDrawer-paper, .MuiMenu-paper, .MuiPaper-root {
+  background-color: var(--card) !important;
+  color: var(--foreground) !important;
+}
+
+/* Ensure common MUI text components inherit readable color inside overlays */
+.MuiDialog-paper .MuiTypography-root,
+.MuiPopover-paper .MuiTypography-root,
+.MuiMenu-paper .MuiTypography-root,
+.MuiDrawer-paper .MuiTypography-root,
+.MuiPaper-root .MuiTypography-root {
+  color: var(--foreground) !important;
+}
+
+/* Global safety net: ensure non-header buttons and typography use readable text */
+body :not(header) .MuiButton-root,
+body :not(header) .MuiButton-root *,
+body :not(header) .MuiTypography-root {
+  color: var(--foreground) !important;
+  -webkit-text-fill-color: var(--foreground) !important;
+}
+
+/* Menu/List items in overlays */
+.MuiMenuItem-root,
+.MuiListItemButton-root,
+.MuiListItem-root,
+.MuiMenuItem-root *,
+.MuiListItemText-primary,
+.MuiListItemText-secondary {
+  color: var(--foreground) !important;
+}
+
+/* Form controls and labels in dialogs/popovers */
+.MuiFormLabel-root,
+.MuiInputLabel-root,
+.MuiFormControlLabel-label,
+.MuiFormHelperText-root {
+  color: var(--foreground) !important;
+}
+
+.MuiInputBase-input,
+.MuiOutlinedInput-input,
+.MuiSelect-select {
+  color: var(--foreground) !important;
+}
+
+/* Icons in menus/dialogs */
+.MuiSvgIcon-root {
+  color: var(--foreground) !important;
+  fill: currentColor !important;
+}
+
+/* Theme selector and menus: enforce readable text */
+[role='menu'], [role='menu'] *,
+li[role='menuitem'], li[role='menuitem'] *,
+.MuiMenuItem-root, .MuiMenuItem-root *,
+.MuiListItemButton-root, .MuiListItemButton-root *,
+.MuiListItem-root, .MuiListItem-root * {
+  color: var(--foreground) !important;
+  -webkit-text-fill-color: var(--foreground) !important;
+}
+.MuiDialog-paper * {
+  color: inherit !important;
+  font-size: 16px !important;
+}
+
+/* Settings dialog specific fixes */
+.MuiDialog-paper .MuiDialogTitle-root {
+  font-size: 20px !important;
+  font-weight: 600 !important;
+  color: var(--neutral-text) !important;
+}
+
+/* Ensure profile selector text is visible */
+.MuiSelect-select, .MuiInputBase-input, .MuiMenuItem-root {
+  color: var(--neutral-text) !important;
+  font-size: 14px !important;
+}
+
+/* Force visibility on all UI components */
+.MuiButton-root:empty::before {
+  content: attr(aria-label) !important;
+  color: var(--neutral-text) !important;
+}
+
+/* ===== BRANDING AND LOGO REPLACEMENT ===== */
 
 /* Replace ALL avatar elements with CWE logo - simplified approach */
 [class*="MuiAvatar-root"] {
@@ -61,4 +635,239 @@ header [class*="MuiToolbar-root"] [class*="MuiAvatar-root"] {
     background-repeat: no-repeat !important;
     background-position: center !important;
     background-color: transparent !important;
+}
+
+/* ===== ACCESSIBILITY COMPLIANCE (WCAG 2.1 AA) ===== */
+
+/* Focus indicators for keyboard navigation */
+button:focus, input:focus, textarea:focus, [tabindex]:focus,
+.MuiButton-root:focus, .MuiInput-root:focus, .MuiTextField-root:focus {
+  outline: 2px solid var(--cwe-primary) !important;
+  outline-offset: 2px !important;
+}
+
+/* Skip navigation for screen readers */
+.skip-nav {
+  position: absolute !important;
+  top: -40px !important;
+  left: 6px !important;
+  background: var(--cwe-primary) !important;
+  color: white !important;
+  padding: 8px !important;
+  text-decoration: none !important;
+  z-index: 9999 !important;
+  border-radius: 4px !important;
+  transition: top 0.3s !important;
+}
+.skip-nav:focus {
+  top: 6px !important;
+}
+
+/* Semantic HTML and ARIA enhancements */
+[role="main"] {
+  outline: none !important;
+}
+
+[role="navigation"] {
+  border-bottom: 1px solid var(--neutral-secondary) !important;
+  padding-bottom: var(--spacing-sm) !important;
+}
+
+/* Screen reader specific improvements */
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* Focus management for complex components */
+.cl-settings [role="tabpanel"]:focus,
+.cl-message-container:focus,
+[data-testid*="message"]:focus {
+  outline: 2px solid var(--cwe-primary) !important;
+  outline-offset: 2px !important;
+  border-radius: 4px !important;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --cwe-primary: #0000FF;
+    --cwe-secondary: #CC0000;
+    --neutral-text: #000000;
+    --background: #FFFFFF;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ===== ROLE-BASED UI ADAPTATIONS ===== */
+
+/* Role indicators in chat profiles */
+[data-profile="PSIRT Member"] .MuiChip-root,
+[data-role="psirt"] {
+  background-color: var(--cwe-secondary) !important;
+  color: white !important;
+}
+
+[data-profile="Developer"] .MuiChip-root,
+[data-role="developer"] {
+  background-color: var(--cwe-primary) !important;
+  color: white !important;
+}
+
+[data-profile="Academic Researcher"] .MuiChip-root,
+[data-role="academic"] {
+  background-color: var(--cve-accent) !important;
+  color: white !important;
+}
+
+/* ===== PROGRESSIVE DISCLOSURE SUPPORT ===== */
+
+/* Expandable content styling */
+.cl-expandable-summary {
+  border-left: 3px solid var(--cwe-primary) !important;
+  padding-left: 12px !important;
+  margin: 8px 0 !important;
+}
+
+.cl-expandable-content {
+  padding: 12px !important;
+  background-color: rgba(65, 105, 225, 0.05) !important;
+  border-radius: 4px !important;
+  margin: 8px 0 !important;
+}
+
+/* ===== ENHANCED USER FEEDBACK ===== */
+
+/* Status indicators */
+.status-success { color: var(--success) !important; }
+.status-warning { color: var(--warning) !important; }
+.status-error { color: var(--error) !important; }
+
+/* Loading states */
+.loading-indicator {
+  border: 2px solid var(--background) !important;
+  border-top: 2px solid var(--cwe-primary) !important;
+  border-radius: 50% !important;
+  animation: spin 1s linear infinite !important;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ===== DESIGN SYSTEM STANDARDS ===== */
+
+/* 8-pixel spacing unit system for visual rhythm */
+:root {
+  --spacing-xs: 4px;   /* 0.5 units */
+  --spacing-sm: 8px;   /* 1 unit */
+  --spacing-md: 16px;  /* 2 units */
+  --spacing-lg: 24px;  /* 3 units */
+  --spacing-xl: 32px;  /* 4 units */
+  --spacing-xxl: 40px; /* 5 units */
+}
+
+/* Apply systematic spacing to common elements */
+.cl-message, [class*="message"] {
+  margin-bottom: var(--spacing-md) !important;
+  padding: var(--spacing-sm) var(--spacing-md) !important;
+}
+
+.cl-expandable-summary, .cl-expandable-content {
+  margin: var(--spacing-sm) 0 !important;
+  padding: var(--spacing-sm) var(--spacing-md) !important;
+}
+
+/* Chainlit component spacing optimization */
+[class*="MuiButton"] {
+  margin: var(--spacing-xs) var(--spacing-sm) !important;
+}
+
+[class*="MuiTextField"], [class*="MuiSelect"] {
+  margin: var(--spacing-sm) 0 !important;
+}
+
+/* File upload/download component styling */
+.cl-file-upload, [class*="file-upload"] {
+  border: 2px dashed var(--cwe-primary) !important;
+  border-radius: 8px !important;
+  padding: var(--spacing-lg) !important;
+  margin: var(--spacing-md) 0 !important;
+  background-color: rgba(65, 105, 225, 0.05) !important;
+  transition: all 0.3s ease !important;
+}
+
+.cl-file-upload:hover, [class*="file-upload"]:hover {
+  background-color: rgba(65, 105, 225, 0.1) !important;
+  border-color: var(--cwe-secondary) !important;
+}
+
+/* Icon styling system for consistent visual hierarchy */
+.persona-icon, .action-icon {
+  display: inline-block !important;
+  margin-right: var(--spacing-xs) !important;
+  font-size: 1.2em !important;
+  vertical-align: middle !important;
+}
+
+/* Chat action buttons enhancement */
+[class*="MuiButton"][class*="action"] {
+  border-radius: 8px !important;
+  padding: var(--spacing-sm) var(--spacing-md) !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+}
+
+/* ===== RESPONSIVE DESIGN ENHANCEMENTS ===== */
+
+/* Mobile-first responsive adjustments */
+@media (max-width: 768px) {
+  h1 { font-size: 28px !important; }
+  h2 { font-size: 24px !important; }
+  h3 { font-size: 20px !important; }
+
+  .MuiAvatar-root {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+  }
+}
+
+/* Text scaling support up to 200% */
+@media (max-resolution: 2dppx) and (min-resolution: 1.5dppx) {
+  body, .MuiTypography-root {
+    font-size: calc(16px * 1.25) !important;
+  }
+}
+
+/* ===== ULTIMATE SAFETY NET FOR TEXT VISIBILITY ===== */
+/* Ensure all non-header text renders with the theme foreground color. */
+html body {
+  color: var(--foreground) !important;
+}
+html body * {
+  color: var(--foreground) !important;
+  -webkit-text-fill-color: var(--foreground) !important;
+}
+/* Header overrides stay on top of the safety net */
+header *, .MuiAppBar-root *, [class*="cl-header"] * {
+  color: var(--primary-foreground) !important;
+  -webkit-text-fill-color: var(--primary-foreground) !important;
 }

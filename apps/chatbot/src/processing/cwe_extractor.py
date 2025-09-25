@@ -130,44 +130,94 @@ class CWEExtractor:
     def classify_query_type(self, text: str) -> str:
         """
         Classify the type of security query based on content.
-        
+
         Args:
             text: Input text to classify
-            
+
         Returns:
             String classification of query type
         """
         if not isinstance(text, str) or not text.strip():
             return "unknown"
-        
+
         text_lower = text.lower()
-        
+
         # Check for direct CWE reference
         if self.has_direct_cwe_reference(text):
             return "direct_cwe_lookup"
-        
+
         # Check for prevention/mitigation queries FIRST (higher priority)
         prevention_terms = ['prevent', 'avoid', 'mitigate', 'fix', 'secure', 'protection']
         if any(term in text_lower for term in prevention_terms):
             return "prevention_guidance"
-        
+
         # Check for specific vulnerability types
         vuln_keywords = self.SECURITY_KEYWORDS['vulnerability_types']
         for keyword in vuln_keywords:
             if keyword in text_lower:
                 return "vulnerability_inquiry"
-        
+
         # Check if it's about programming (more specific, higher priority)
         prog_terms = self.SECURITY_KEYWORDS['programming_contexts']
         if any(term in text_lower for term in prog_terms):
             return "programming_security"
-        
+
         # Check for general security terms
         security_terms = self.SECURITY_KEYWORDS['security_terms']
         if any(term in text_lower for term in security_terms):
             return "general_security"
-        
+
+        # NEW: Check if query is completely off-topic before defaulting
+        if self._is_off_topic_query(text_lower):
+            return "off_topic"
+
         return "general_query"
+
+    def _is_off_topic_query(self, text_lower: str) -> bool:
+        """
+        Detect queries that are completely unrelated to cybersecurity.
+
+        Args:
+            text_lower: Lowercase text to analyze
+
+        Returns:
+            True if query appears to be off-topic
+        """
+        # Common non-security topics that should be redirected
+        off_topic_indicators = [
+            # Animals
+            'dog', 'cat', 'animal', 'pet', 'puppy', 'kitten',
+            # Food
+            'recipe', 'cooking', 'food', 'meal', 'restaurant',
+            # Weather
+            'weather', 'rain', 'sunny', 'temperature', 'climate',
+            # Sports
+            'football', 'soccer', 'basketball', 'baseball', 'game',
+            # Entertainment
+            'movie', 'film', 'music', 'song', 'tv show', 'celebrity',
+            # General knowledge
+            'what is a', 'who is', 'where is', 'when did', 'how tall',
+            # Geography
+            'country', 'city', 'capital', 'mountain', 'ocean',
+            # Basic math/science (unless security-related)
+            'add', 'subtract', 'multiply', 'divide', 'equation',
+        ]
+
+        # Count off-topic indicators
+        off_topic_count = sum(1 for indicator in off_topic_indicators if indicator in text_lower)
+
+        # If multiple off-topic terms or very obvious patterns
+        if off_topic_count >= 2:
+            return True
+
+        # Check for very obvious non-security patterns
+        obvious_patterns = [
+            'what is a dog', 'what is a cat', 'what is an animal',
+            'how to cook', 'recipe for', 'weather today',
+            'who is the president', 'capital of', 'movie about'
+        ]
+
+        return any(pattern in text_lower for pattern in obvious_patterns)
     
     def enhance_query_for_search(self, text: str) -> Dict[str, Any]:
         """
@@ -190,6 +240,7 @@ class CWEExtractor:
             "programming_security": "general_security",
             "general_security": "general_security",
             "general_query": "general_security",
+            "off_topic": "off_topic",  # NEW: Handle off-topic queries
             "unknown": "general_security"
         }
 

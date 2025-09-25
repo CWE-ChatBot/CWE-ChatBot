@@ -1,20 +1,42 @@
-# Welcome to CWE ChatBot
+# Welcome to CWE ChatBot! 🛡️
 
-This is a basic deployment test of the CWE ChatBot infrastructure.
+AI-powered assistant for MITRE Common Weakness Enumeration (CWE) analysis and cybersecurity guidance.
 
-## Features
+## 🎯 Quick Start
 
-- Basic conversational interface
-- Secure deployment on Google Cloud Run
-- Ready for CWE corpus integration
+1. **Choose Your Role**: Select your cybersecurity persona from the dropdown above
+2. **Customize Settings**: Click the gear icon to adjust detail level and preferences
+3. **Ask Questions**: Try queries like *"What is CWE-79?"* or *"How do I prevent SQL injection?"*
 
-## Configuration
+## 🔧 Available Personas
 
-- Persona (top bar): Use the header dropdown to select your role (PSIRT Member, Developer, Academic Researcher, Bug Bounty Hunter, Product Manager, CWE Analyzer, CVE Creator). This changes how answers are framed.
-- Settings (gear in input area): Click the gear icon next to the message composer to adjust detail level, include code examples, and include mitigations.
+- **PSIRT Member** 🛡️ - Security incident response and advisory creation
+- **Developer** 💻 - Secure coding practices and remediation steps
+- **Academic Researcher** 🎓 - Comprehensive analysis and CWE relationships
+- **Bug Bounty Hunter** 🔍 - Vulnerability discovery and exploitation patterns
+- **Product Manager** 📊 - Business impact and prevention strategies
+- **CWE Analyzer** 🔬 - CVE-to-CWE mapping with confidence scoring
+- **CVE Creator** 📝 - Structured vulnerability descriptions
 
-Once configured, ask a question about a CWE or security topic to get a tailored response.
+## 📚 Key Features
 
-### File Uploads
+- **RAG-powered Search**: Semantic search across the complete MITRE CWE corpus (969 CWEs, 7,913 chunks)
+- **Role-based Responses**: Tailored information for your specific cybersecurity role
+- **Progressive Disclosure**: Adjustable detail levels to prevent information overload
+- **File Upload**: Attach vulnerability reports for analysis (PDF, text, JSON supported)
+- **Accessibility**: WCAG 2.1 AA compliant interface with keyboard navigation
 
-- Use the paperclip icon next to the input to attach PDFs, or click the "Attach Files (PDF)" action shown at start. Uploaded content is incorporated into your next message automatically.
+## ⚙️ Configuration
+
+**Persona Selection**: Use the header dropdown to select your cybersecurity role. This changes how responses are framed and what information is emphasized.
+
+**Settings Panel**: Click the gear icon next to the message input to adjust:
+- Detail level (Basic, Standard, Detailed)
+- Include code examples
+- Include mitigation guidance
+
+## 📎 File Uploads
+
+Use the paperclip icon or "Attach Evidence" action to upload vulnerability reports. Supported formats: PDF, text, markdown, JSON. Content is analyzed and incorporated into responses.
+
+Start by selecting your role and asking your first question!

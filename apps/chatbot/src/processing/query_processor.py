@@ -259,7 +259,8 @@ class QueryProcessor:
                 elif session_context.get('last_cwes'):
                     last = session_context.get('last_cwes') or []
                     if isinstance(last, list) and last:
-                        context_cwe = last[-1]
+                        # Use most relevant/most recent CWE first (ConversationManager prioritizes direct requests first)
+                        context_cwe = last[0]
             
             # Detect follow-up intent
             followup_intent = self.followup_processor.detect_followup_intent(query)

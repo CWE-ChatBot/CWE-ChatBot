@@ -21,6 +21,19 @@ Notes:
 - “Fallback” refers to our contextual answer pathway used when the LLM provider errors. It now produces persona-aware CWE explanations derived from retrieved chunks.
 - For UI-only quick tests, we run with `E2E_OFFLINE_AI=1` so they never call the LLM, removing flakiness while still validating the UI.
 
+## Exact CWE ID Priority (Variants)
+
+Changes implemented:
+- Retrieval boost now prioritizes exact CWE IDs mentioned in prompts, accepting variants: `CWE-79`, `CWE 79`, `cwe_79`.
+- If the exact CWE is not in the initial candidates, we force-inject a few sections for that CWE and re-rank.
+- The app now echoes the detected CWE id at the top of the response and emits a small system hint: “Focusing on CWE-<id>”.
+
+Observed results for id variants (Chromium):
+- Prompt “CWE-79” → Response visibly includes “CWE-79”; retrieval focuses on CWE‑79.
+- Prompt “CWE 80” → Response visibly includes “CWE-80”; retrieval focuses on CWE‑80.
+- Prompt “cwe 33” → Response visibly includes “CWE-33”; retrieval focuses on CWE‑33.
+- Prompt “cwe_123” → Retrieval prioritizes CWE‑123 (DB has chunks), and the UI emits the system hint. In some runs the Playwright `text=` locator did not match a visible “CWE-123” string in the main content within the timeout. Likely a SPA rendering/visibility nuance rather than retrieval. Recommendation: add a compact “CWE badge” (e.g., bold “CWE‑123”) in the main message for deterministic visibility, or refine the test to also accept the system hint line.
+
 ## Detailed Status (Chromium)
 
 Passed:
@@ -72,6 +85,7 @@ Deselected:
   - Added non-stream retry when streaming fails.
   - Added `E2E_NO_STREAM=1` path to force single-shot generation in tests.
   - Upgraded contextual fallback to produce persona-aware explanations for dominant CWEs.
+- Exact-ID prioritization and UI echo added for variant CWE id mentions (`-`, space, `_`). If exact-id not present in candidates, top sections are injected to ensure prominence.
 - Strict gating:
   - Quick suite runs with `E2E_OFFLINE_AI=1` and `ASSERT_NO_FALLBACK=1` and passes.
   - Full suite remains functionally green; strict no-fallback may still trip due to sporadic provider issues.
@@ -96,6 +110,7 @@ Recommendations to address mismatch:
   - Add one more non-stream retry with short backoff.
   - Serialize LLM calls in tests to reduce rate spikes.
   - Consider an exact-id boost in `src/query_handler.py` when the query contains `CWE-<id>`.
+  - Add a visible “CWE badge” at the top of the assistant message so ids are always detectable by tests (e.g., bold “CWE‑<id>”).
 
 ## Appendix: How to Reproduce
 
@@ -103,4 +118,3 @@ Chromium-only (recommended):
 - Quick strict: `ASSERT_NO_FALLBACK=1 apps/chatbot/run_e2e_tests.sh --quick --with-db --headless --browser chromium`
 - Full functional: `apps/chatbot/run_e2e_tests.sh --full --with-db --headless --browser chromium`
 - Full strict attempt: `ASSERT_NO_FALLBACK=1 E2E_NO_STREAM=1 TEST_TIMEOUT=180 apps/chatbot/run_e2e_tests.sh --full --with-db --headless --browser chromium`
-

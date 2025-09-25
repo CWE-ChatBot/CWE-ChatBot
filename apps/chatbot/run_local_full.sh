@@ -17,6 +17,8 @@
 
 set -e  # Exit on any error
 
+ps aux | rg -i 'chainlit|apps/chatbot/main.py' | rg -v rg || true
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'

@@ -15,7 +15,7 @@ import time
 
 import chainlit as cl
 from chainlit.input_widget import Select, Switch
-from chainlit import ChatProfile, AskFileMessage
+from chainlit import ChatProfile
 from pydantic import BaseModel, Field
 
 from src.user_context import UserPersona, UserContext
@@ -55,6 +55,29 @@ input_sanitizer: Optional[InputSanitizer] = None
 security_validator: Optional[SecurityValidator] = None
 file_processor: Optional[FileProcessor] = None
 _init_ok: bool = False
+
+
+def create_progressive_response(content: str, detail_level: str) -> list:
+    """
+    Create progressive disclosure response based on detail level setting.
+    Story 3.4: Progressive Disclosure Implementation
+    """
+    if detail_level == "basic" and len(content) > 300:
+        # Create summary with expandable details
+        summary = content[:300] + "..."
+        remaining = content[300:]
+
+        # Use Chainlit's Text element with expandable content
+        return [
+            cl.Text(name="Summary", content=summary, display="inline"),
+            cl.Text(name="Detailed Information", content=remaining, display="side")
+        ]
+    elif detail_level == "detailed":
+        # Show full content with additional context
+        return [cl.Text(name="Detailed Response", content=content, display="inline")]
+    else:
+        # Standard level - show full content normally
+        return [cl.Text(name="Response", content=content, display="inline")]
 
 
 def initialize_components() -> bool:
@@ -186,42 +209,57 @@ async def start():
     session_id = cl.context.session.id
     await conversation_manager.update_user_persona(session_id, persona)
 
-    # Welcome message that guides users to the settings panel
+    # Enhanced onboarding welcome message with progressive introduction
     welcome_message = """Welcome to the CWE ChatBot! 🛡️
 
-I'm here to help you with Common Weakness Enumeration (CWE) information.
+I'm here to help you with Common Weakness Enumeration (CWE) information. Let me guide you through getting started:
 
-**Configure your experience using the top Persona selector** (header dropdown) and the Settings panel (gear icon in the input area) to:
-• Select your cybersecurity role/persona (top dropdown)
-• Adjust detail level and preferences
-• Customize response format
+**🎯 Step 1: Choose Your Role**
+Use the Persona selector in the top bar to select your cybersecurity role for tailored responses.
 
-**Available Personas:**
-• **PSIRT Member** - Impact assessment and advisory creation
-• **Developer** - Remediation steps and code examples
-• **Academic Researcher** - Comprehensive analysis and relationships
-• **Bug Bounty Hunter** - Exploitation patterns and testing techniques
-• **Product Manager** - Business impact and prevention strategies
-• **CWE Analyzer** - CVE-to-CWE mapping analysis with confidence scoring
-• **CVE Creator** - Structured CVE vulnerability descriptions
-
-Once configured, ask me anything about cybersecurity weaknesses!"""
+**⚙️ Step 2: Customize Settings**
+Click the gear icon next to the input to adjust:
+• **Detail Level**: Basic (summaries), Standard (balanced), or Detailed (comprehensive)
+• **Examples**: Toggle code examples and demonstrations
+• **Mitigations**: Include/exclude prevention guidance"""
 
     await cl.Message(content=welcome_message).send()
 
-    # Provide a quick action to attach files (useful for CVE Creator)
-    try:
-        attach_action = [
-            cl.Action(
-                name="attach_files",
-                value="attach_files",
-                label="Attach Evidence",
-                payload={"source": "welcome"}
-            )
-        ]
-        await cl.Message(content="You can attach relevant documents if needed.", actions=attach_action, author="System").send()
-    except Exception as e:
-        logger.log_exception("Failed to render attach files action", e)
+    # Send persona information as a separate expandable message
+    persona_info = """**Available Personas:**
+
+• **PSIRT Member** 🛡️ - Impact assessment and security advisory creation
+• **Developer** 💻 - Remediation steps and secure coding examples
+• **Academic Researcher** 🎓 - Comprehensive analysis and CWE relationships
+• **Bug Bounty Hunter** 🔍 - Exploitation patterns and testing techniques
+• **Product Manager** 📊 - Business impact and prevention strategies
+• **CWE Analyzer** 🔬 - CVE-to-CWE mapping analysis with confidence scoring
+• **CVE Creator** 📝 - Structured CVE vulnerability descriptions
+
+Each persona provides responses tailored to your specific needs and expertise level."""
+
+    # Create expandable element for persona details
+    persona_element = cl.Text(
+        name="Persona Guide",
+        content=persona_info,
+        display="side"
+    )
+
+    # Send example queries as a third guided step
+    examples_message = """**🚀 Step 3: Try Example Queries**
+
+Here are some questions to get you started:
+
+• *"What is CWE-79 and how do I prevent it?"*
+• *"Map this vulnerability to appropriate CWEs"*
+• *"Show me SQL injection prevention techniques"*
+• *"Analyze the security impact of buffer overflows"*
+
+**Ready to begin!** Select your persona above and ask your first question."""
+
+    await cl.Message(content=examples_message, elements=[persona_element]).send()
+
+    # Users can upload files via Chainlit's spontaneous file upload feature (config.toml)
 
 
 @cl.on_message
@@ -362,10 +400,33 @@ async def main(message: cl.Message):
         if not result.get("is_safe", True):
             logger.warning(f"Security flags detected: {result.get('security_flags', [])}")
 
-        # The response was already streamed, just update the message with elements if needed
-        if elements and result.get("message"):
-            result["message"].elements = elements
-            await result["message"].update()
+        # Apply progressive disclosure based on UI settings and update message with elements
+        if result.get("message"):
+            # Apply progressive disclosure if configured
+            detail_level = ui_settings.get("detail_level", "standard")
+            if detail_level == "basic" and hasattr(result["message"], 'content'):
+                # Create progressive disclosure for long responses
+                content = result["message"].content
+                if len(content) > 300:
+                    # Split into summary and details
+                    summary = content[:300] + "..."
+                    details = content[300:]
+
+                    # Update the main message to show summary
+                    result["message"].content = summary
+
+                    # Add detailed content as a side element
+                    detail_element = cl.Text(
+                        name="Detailed Information",
+                        content=details,
+                        display="side"
+                    )
+                    elements.append(detail_element)
+
+            # Update message with all elements
+            if elements:
+                result["message"].elements = elements
+                await result["message"].update()
 
         # Clear file context after use to avoid unbounded growth (ConversationManager clears its own context copy)
         if file_ctx:
@@ -412,9 +473,40 @@ async def on_settings_update(settings: Dict[str, Any]):
         logger.log_exception("Settings update failed", e)
 
 
+async def collect_detailed_feedback():
+    """
+    Collect detailed feedback from user using Chainlit's native components.
+    Story 3.4: Enhanced Feedback Integration
+    """
+    try:
+        # Use Chainlit's AskUserMessage for structured feedback collection
+        feedback_prompt = await cl.AskUserMessage(
+            content="**Help us improve! 🚀** Please share your feedback about this response:\n\n• Was the information accurate and helpful?\n• Did the detail level match your needs?\n• Any suggestions for improvement?",
+            timeout=60,
+        ).send()
+
+        if feedback_prompt:
+            # Store detailed feedback for analysis
+            session_id = cl.context.session.id
+            cl.user_session.set("detailed_feedback", {
+                "timestamp": time.time(),
+                "content": feedback_prompt.content,
+                "session_id": session_id
+            })
+
+            # Send acknowledgment
+            await cl.Message(
+                content="🙏 Thank you for your detailed feedback! Your input helps us improve the CWE ChatBot experience.",
+                author="System"
+            ).send()
+
+    except Exception as e:
+        logger.log_exception("Detailed feedback collection failed", e)
+
+
 @cl.on_feedback
 async def on_feedback(feedback):
-    """Handle user feedback on messages."""
+    """Enhanced feedback handler with detailed feedback collection option."""
     global conversation_manager
 
     if not conversation_manager:
@@ -425,7 +517,6 @@ async def on_feedback(feedback):
         session_id = cl.context.session.id
 
         # Get message ID from feedback object
-        # In current Chainlit, feedback has 'forId' attribute pointing to the message
         message_id = getattr(feedback, 'forId', getattr(feedback, 'for_id', None))
 
         if not message_id:
@@ -433,7 +524,6 @@ async def on_feedback(feedback):
             return
 
         # Convert Chainlit feedback to our rating system (1-5 scale)
-        # Chainlit feedback.value is typically 1 (thumbs up) or 0 (thumbs down)
         feedback_value = getattr(feedback, 'value', None)
         if feedback_value is None:
             logger.error("Feedback received but no value found")
@@ -446,55 +536,43 @@ async def on_feedback(feedback):
 
         if success:
             logger.info(f"Recorded feedback for message {message_id}: rating {rating} (feedback value: {feedback_value})")
-            # Optional: Send a brief acknowledgment (disabled to avoid noise)
-            # await cl.Message(
-            #     content="👍 Thank you for your feedback!",
-            #     author="System"
-            # ).send()
+
+            # For negative feedback, offer detailed feedback collection
+            if feedback_value == 0:  # thumbs down
+                # Create action for detailed feedback
+                detailed_feedback_action = cl.Action(
+                    name="detailed_feedback",
+                    value="collect",
+                    label="💬 Share Details",
+                    description="Tell us how we can improve"
+                )
+
+                await cl.Message(
+                    content="Sorry this response wasn't helpful. Would you like to share more details?",
+                    actions=[detailed_feedback_action],
+                    author="System"
+                ).send()
+            else:
+                # Brief positive acknowledgment
+                await cl.Message(
+                    content="✅ Thanks for the positive feedback!",
+                    author="System"
+                ).send()
+
         else:
             logger.error(f"Failed to record feedback for message {message_id}")
 
     except Exception as e:
         logger.log_exception("Error processing feedback", e)
-        # Log feedback object structure for debugging
         logger.debug(f"Feedback object attributes: {dir(feedback) if feedback else 'None'}")
 
 
-# Action: Attach Files
-@cl.action_callback("attach_files")
-async def on_attach_files(action):
-    """Handle file attachment via a guided prompt; stores extracted content for next message."""
-    global file_processor
-    try:
-        # Prompt the user to upload PDF files (up to 10MB each, max 3)
-        ask = AskFileMessage(
-            content="Upload PDF or text files with vulnerability details (max 3 files, 10MB each).",
-            accept=["application/pdf", "text/plain", "text/markdown", "application/json"],
-            max_files=3,
-            max_size_mb=10,
-            timeout=600,
-        )
-        files = await ask.send()
+# Action: Detailed Feedback Collection
+@cl.action_callback("detailed_feedback")
+async def on_detailed_feedback(action):
+    """Handle detailed feedback collection action."""
+    await collect_detailed_feedback()
 
-        if not files:
-            await cl.Message(content="No files uploaded.", author="System").send()
-            return
-
-        # Reuse FileProcessor on a temporary message wrapper to extract content
-        class _Tmp:
-            pass
-        tmp = _Tmp()
-        tmp.elements = files
-
-        content = await file_processor.process_attachments(tmp) if file_processor else None
-        if content:
-            cl.user_session.set("uploaded_file_content", content)
-            await cl.Message(content="📎 Files received. I will use them in your next prompt.", author="System").send()
-        else:
-            await cl.Message(content="Unable to extract text from the uploaded files. Please ensure they are text-based PDFs.", author="System").send()
-    except Exception as e:
-        logger.log_exception("Attach files flow failed", e)
-        await cl.Message(content="File upload failed. Please try again or use smaller PDFs.", author="System").send()
 
 
 

@@ -1,0 +1,55 @@
+[
+  {
+    "category": "Off-Topic Handling",
+    "test_name": "Animal Query",
+    "input": "what is a dog?",
+    "response": "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. Your question doesn't appear to be related to cybersecurity topics. I can help you with:\n\n\u2022 CWE Analysis: Und...",
+    "passed": true
+  },
+  {
+    "category": "Off-Topic Handling",
+    "test_name": "Cooking Query",
+    "input": "how do I cook pasta?",
+    "response": "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. Your question doesn't appear to be related to cybersecurity topics. I can help you with:\n\n\u2022 CWE Analysis: Und...",
+    "passed": true
+  },
+  {
+    "category": "Off-Topic Handling",
+    "test_name": "Weather Query",
+    "input": "what's the weather today?",
+    "response": "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. Your question doesn't appear to be related to cybersecurity topics. I can help you with:\n\n\u2022 CWE Analysis: Und...",
+    "passed": true
+  },
+  {
+    "category": "Follow-up Context",
+    "test_name": "CWE-79 Follow-up Sequence",
+    "input": "what is CWE-79? -> tell me more",
+    "response1": "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting') Cross-site scripting (XSS) occurs when web applications i...",
+    "response2": "Additional details about CWE-79 Cross-site Scripting: XSS vulnerabilities are classified into three main types: 1. Stored (Persistent) XSS - malicious...",
+    "passed": true,
+    "context_maintained": true
+  },
+  {
+    "category": "Follow-up Context",
+    "test_name": "Context Switching",
+    "input": "what about CWE-89? -> tell me more",
+    "response3": "CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection') SQL injection occurs when an application uses user input ...",
+    "response4": "Additional details about CWE-79 Cross-site Scripting: XSS vulnerabilities are classified into three main types: 1. Stored (Persistent) XSS - malicious...",
+    "passed": false,
+    "context_switched": false
+  },
+  {
+    "category": "Security Topic Processing",
+    "test_name": "Firewall Query",
+    "input": "what is a firewall?",
+    "response": "A firewall is a network security system that monitors and controls incoming and outgoing network traffic based on predetermined security rules. Firewalls establish a barrier between trusted internal n...",
+    "passed": true
+  },
+  {
+    "category": "Security Topic Processing",
+    "test_name": "SQL Injection",
+    "input": "explain SQL injection",
+    "response": "CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection') SQL injection occurs when an application uses user input to construct SQL queries without proper sanitizati...",
+    "passed": true
+  }
+]

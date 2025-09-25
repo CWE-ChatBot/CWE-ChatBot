@@ -1,0 +1,171 @@
+[
+  {
+    "category": "Off-Topic Handling",
+    "test_name": "Animal Query",
+    "passed": false,
+    "details": {
+      "input": "what is a dog?",
+      "response": "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. Your question doesn't appear to be related to cybersecurity topics. I can help you with: \u2022 CWE Analysis: Understanding specific weaknesses like CWE-79 (XSS) \u2022 Vulnerability Assessment: Mapping CVEs to CWEs \u2022 Security Best Practices: Prevention and mitigation strategies \u2022 Threat Modeling: Risk assessment and security guidance What cybersecurity topic can I help you with today?",
+      "passed": false,
+      "expected_keywords": [
+        "cybersecurity",
+        "security topics",
+        "CWE",
+        "redirect"
+      ],
+      "should_not_contain": [
+        "animal",
+        "mammal",
+        "pet"
+      ]
+    }
+  },
+  {
+    "category": "Off-Topic Handling",
+    "test_name": "Cooking Query",
+    "passed": true,
+    "details": {
+      "input": "how do I cook pasta?",
+      "response": "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. Your question doesn't appear to be related to cybersecurity topics. I can help you with: \u2022 CWE Analysis: Understanding specific weaknesses like CWE-79 (XSS) \u2022 Vulnerability Assessment: Mapping CVEs to CWEs \u2022 Security Best Practices: Prevention and mitigation strategies \u2022 Threat Modeling: Risk assessment and security guidance What cybersecurity topic can I help you with today?",
+      "passed": true,
+      "expected_keywords": [
+        "cybersecurity",
+        "security topics",
+        "CWE"
+      ],
+      "should_not_contain": [
+        "recipe",
+        "cooking",
+        "boil"
+      ]
+    }
+  },
+  {
+    "category": "Off-Topic Handling",
+    "test_name": "Weather Query",
+    "passed": true,
+    "details": {
+      "input": "what's the weather today?",
+      "response": "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. Your question doesn't appear to be related to cybersecurity topics. I can help you with: \u2022 CWE Analysis: Understanding specific weaknesses like CWE-79 (XSS) \u2022 Vulnerability Assessment: Mapping CVEs to CWEs \u2022 Security Best Practices: Prevention and mitigation strategies \u2022 Threat Modeling: Risk assessment and security guidance What cybersecurity topic can I help you with today?",
+      "passed": true,
+      "expected_keywords": [
+        "cybersecurity",
+        "security topics",
+        "CWE"
+      ],
+      "should_not_contain": [
+        "temperature",
+        "rain",
+        "sunny"
+      ]
+    }
+  },
+  {
+    "category": "Follow-up Context",
+    "test_name": "CWE-79 Follow-up",
+    "passed": true,
+    "details": [
+      {
+        "input": "what is CWE-79?",
+        "response": "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting') \u2014 Cross-site scripting (XSS) vulnerabilities occur when applications include untrusted data in web pages without proper validation or escaping...",
+        "passed": true,
+        "expected_keywords": [
+          "cross-site scripting",
+          "XSS",
+          "CWE-79"
+        ],
+        "should_not_contain": []
+      },
+      {
+        "input": "tell me more",
+        "response": "CWE-79 Cross-site Scripting additional details: XSS attacks can be stored, reflected, or DOM-based. Prevention includes input validation, output encoding, and Content Security Policy...",
+        "passed": true,
+        "expected_keywords": [
+          "cross-site scripting",
+          "XSS",
+          "CWE-79"
+        ],
+        "should_not_contain": [
+          "CWE-401",
+          "CWE-84",
+          "memory",
+          "SQL"
+        ]
+      }
+    ]
+  },
+  {
+    "category": "Follow-up Context",
+    "test_name": "SQL Injection Follow-up",
+    "passed": false,
+    "details": [
+      {
+        "input": "explain CWE-89",
+        "response": "Generic security response about the query topic.",
+        "passed": false,
+        "expected_keywords": [
+          "SQL injection",
+          "CWE-89",
+          "database"
+        ],
+        "should_not_contain": []
+      },
+      {
+        "input": "what are the consequences?",
+        "response": "Generic security response about the query topic.",
+        "passed": false,
+        "expected_keywords": [
+          "SQL",
+          "database",
+          "CWE-89"
+        ],
+        "should_not_contain": [
+          "XSS",
+          "cross-site",
+          "CWE-79"
+        ]
+      }
+    ]
+  },
+  {
+    "category": "Security Topic Handling",
+    "test_name": "Firewall Query (should be processed)",
+    "passed": false,
+    "details": {
+      "input": "what is a firewall?",
+      "response": "Generic security response about the query topic.",
+      "passed": false,
+      "expected_keywords": [
+        "network",
+        "security",
+        "protection"
+      ],
+      "should_not_contain": [
+        "cybersecurity assistant",
+        "redirect",
+        "not related"
+      ]
+    }
+  },
+  {
+    "category": "Security Topic Handling",
+    "test_name": "Buffer Overflow",
+    "passed": false,
+    "details": {
+      "input": "explain buffer overflow",
+      "response": "Generic security response about the query topic.",
+      "passed": false,
+      "expected_keywords": [
+        "buffer",
+        "overflow",
+        "memory",
+        "CWE"
+      ],
+      "should_not_contain": [
+        "cybersecurity assistant",
+        "redirect",
+        "not related"
+      ]
+    }
+  }
+]
