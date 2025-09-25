@@ -51,8 +51,8 @@ class CWEQueryHandler:
 
             # Store hybrid weights (use provided weights or fall back to config defaults)
             if hybrid_weights is None:
-                # Import config here to avoid circular imports
-                from .app_config import config
+                # Import extended config (auto-loads env); avoid circular imports
+                from .app_config_extended import config
                 self.hybrid_weights = config.get_hybrid_weights()
             else:
                 self.hybrid_weights = hybrid_weights
@@ -115,6 +115,36 @@ class CWEQueryHandler:
             # Execute hybrid search using Story 1.5 production system
             results = await asyncio.to_thread(self.store.query_hybrid, **query_params)
 
+            # If the query explicitly mentions a CWE ID, boost exact matches post-retrieval
+            try:
+                import re
+                # Accept variants like CWE-79, cwe 79, cwe_79
+                m = re.search(r"\bCWE[-_\s]?(\d{1,5})\b", query, flags=re.IGNORECASE)
+                if m and results:
+                    exact_id = f"CWE-{m.group(1)}".upper()
+                    boost_value = 2.0  # strong but bounded boost to prioritize exact ID
+                    for r in results:
+                        md = r.get("metadata") or {}
+                        rid = str(md.get("cwe_id", "")).upper()
+                        if rid == exact_id:
+                            sc = r.get("scores") or {}
+                            sc["hybrid"] = float(sc.get("hybrid", 0.0)) + boost_value
+                            r["scores"] = sc
+                    # If the exact CWE id is missing from candidate set, force-inject a few sections
+                    if not any((r.get("metadata") or {}).get("cwe_id", "").upper() == exact_id for r in results):
+                        forced = self._fetch_cwe_sections(exact_id, limit=3)
+                        if forced:
+                            for ch in forced:
+                                sc = ch.get("scores") or {}
+                                sc["hybrid"] = float(sc.get("hybrid", 0.0)) + boost_value + 1.0
+                                ch["scores"] = sc
+                            results.extend(forced)
+                    # Re-sort after boosting
+                    results.sort(key=lambda x: float((x.get("scores") or {}).get("hybrid", 0.0)), reverse=True)
+            except Exception:
+                # Never fail the query due to boost logic
+                pass
+
             logger.info(f"Retrieved {len(results)} chunks")
 
             # Log top results for debugging
@@ -167,3 +197,39 @@ class CWEQueryHandler:
                     conn.close()
         except Exception as e:
             logger.log_exception("Error closing QueryHandler resources", e)
+
+    def _fetch_cwe_sections(self, cwe_id: str, *, limit: int = 3) -> List[Dict[str, Any]]:
+        """Fetch top sections for a given CWE ID directly from the store.
+        Returns chunks shaped like query_hybrid outputs.
+        """
+        rows: List[Dict[str, Any]] = []
+        try:
+            conn = getattr(self.store, "conn", None)
+            if conn is None:
+                return rows
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, cwe_id, section, section_rank, name, full_text
+                    FROM cwe_chunks
+                    WHERE UPPER(cwe_id) = %s
+                    ORDER BY section_rank ASC
+                    LIMIT %s
+                    """,
+                    (cwe_id.upper(), int(limit)),
+                )
+                for (chunk_id, cid, section, section_rank, name, full_text) in cur.fetchall():
+                    rows.append({
+                        "chunk_id": str(chunk_id),
+                        "metadata": {
+                            "cwe_id": cid,
+                            "section": section,
+                            "section_rank": section_rank,
+                            "name": name,
+                        },
+                        "document": full_text,
+                        "scores": {"vec": 0.0, "fts": 0.0, "alias": 0.0, "hybrid": 0.0},
+                    })
+        except Exception as e:
+            logger.log_exception("Forced CWE section fetch failed", e)
+        return rows

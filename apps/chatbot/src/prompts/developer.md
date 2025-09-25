@@ -5,8 +5,9 @@ User Query: {user_query}
 CWE Context:
 {cwe_context}
 
-User-Provided Evidence:
+<user_evidence>
 {user_evidence}
+</user_evidence>
 
 Instructions:
 - Provide remediation steps and code-level guidance.

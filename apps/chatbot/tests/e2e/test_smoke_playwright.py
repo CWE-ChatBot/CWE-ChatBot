@@ -61,6 +61,8 @@ def test_basic_smoke_flow(chainlit_server):
                     break
 
             if input_element:
+                # Small idle delay to avoid immediate cold-start flake
+                page.wait_for_timeout(400)
                 # Send a test message
                 test_message = "What is CWE-79?"
                 input_element.fill(test_message)

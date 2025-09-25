@@ -2,8 +2,9 @@ You create structured CVE descriptions from provided info.
 
 User Query: {user_query}
 
-User-Provided Evidence:
+<user_evidence>
 {user_evidence}
+</user_evidence>
 
 Instructions:
 - Use the standardized CVE format with these segments in bold:

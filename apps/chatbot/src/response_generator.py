@@ -225,14 +225,53 @@ Response:""",
                 cwe_context=context,
                 user_evidence=(user_evidence or "No additional evidence provided."),
             )
-
-            async for chunk_text in self.provider.generate_stream(prompt):
-                cleaned_chunk = self._clean_response_chunk(chunk_text)
-                if cleaned_chunk:
-                    yield cleaned_chunk
+            # Allow tests to force non-stream path for stability
+            if os.getenv("E2E_NO_STREAM") == "1":
+                try:
+                    final = await self.provider.generate(prompt)
+                    final = self._clean_response(final)
+                    if final and final.strip():
+                        yield final
+                        return
+                except Exception as e2:
+                    logger.error(f"Non-stream generation failed (E2E_NO_STREAM): {e2}")
+                    raise
+            else:
+                try:
+                    async for chunk_text in self.provider.generate_stream(prompt):
+                        cleaned_chunk = self._clean_response_chunk(chunk_text)
+                        if cleaned_chunk:
+                            yield cleaned_chunk
+                except Exception as gen_err:
+                    logger.warning(f"Primary streaming failed, retrying once non-streaming: {gen_err}")
+                    try:
+                        final = await self.provider.generate(prompt)
+                        final = self._clean_response(final)
+                        if final and final.strip():
+                            yield final
+                            return
+                    except Exception as e2:
+                        logger.error(f"Retry generation failed: {e2}")
+                        raise
 
         except Exception as e:
             logger.error(f"Streaming response generation failed: {e}")
+            # Provide a contextual, non-AI fallback derived from retrieved chunks when available
+            try:
+                # Record a fallback marker for diagnostics if configured
+                self._record_llm_fallback_marker()
+                fallback = self._generate_contextual_fallback_answer(
+                    query=query,
+                    retrieved_chunks=retrieved_chunks or [],
+                    user_persona=user_persona,
+                    user_evidence=user_evidence,
+                )
+                if fallback and fallback.strip():
+                    yield fallback
+                    return
+            except Exception:
+                pass
+            # Final safety-net
             yield self._generate_error_response(user_persona)
 
     # removed non-streaming generate_response (streaming-only)
@@ -332,6 +371,163 @@ Response:""",
     def _generate_error_response(self, user_persona: str) -> str:
         """Generate safe error response without exposing system details."""
         return "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment. I'm here to help with Common Weakness Enumeration (CWE) topics."
+
+    def _generate_contextual_fallback_answer(
+        self,
+        *,
+        query: str,
+        retrieved_chunks: List[Dict[str, Any]],
+        user_persona: str,
+        user_evidence: Optional[str] = None,
+        max_cwes: int = 3,
+    ) -> str:
+        """
+        Build a concise, deterministic answer from retrieved chunks when the LLM is unavailable.
+        If a single CWE is dominant (or explicitly requested), provide a short explanation
+        tailored to the persona; otherwise provide a brief multi-CWE summary.
+        """
+        if not retrieved_chunks:
+            return self._generate_fallback_response(query, user_persona)
+
+        # Group by CWE and pick the best chunk per CWE by hybrid score
+        by_cwe: Dict[str, Dict[str, Any]] = {}
+        for ch in retrieved_chunks:
+            md = (ch.get("metadata") or {})
+            cid = md.get("cwe_id", "CWE-UNKNOWN")
+            cur = by_cwe.get(cid)
+            if not cur:
+                by_cwe[cid] = ch
+            else:
+                prev_score = float((cur.get("scores") or {}).get("hybrid", 0.0))
+                score = float((ch.get("scores") or {}).get("hybrid", 0.0))
+                if score > prev_score:
+                    by_cwe[cid] = ch
+
+        # Order CWEs by the chosen best chunk score
+        ranked = sorted(
+            by_cwe.items(),
+            key=lambda kv: float((kv[1].get("scores") or {}).get("hybrid", 0.0)),
+            reverse=True,
+        )[:max_cwes]
+
+        # Detect explicit CWE mention in the query
+        mention = None
+        try:
+            m = re.search(r"\bCWE[-\s]?(\d{1,5})\b", query, flags=re.IGNORECASE)
+            if m:
+                mention = f"CWE-{m.group(1)}"
+        except Exception:
+            pass
+
+        dominant_id, dominant_chunk = ranked[0]
+        if mention and any(cid == mention for cid, _ in ranked):
+            # Prioritize explicitly requested CWE if present in results
+            for cid, ch in ranked:
+                if cid == mention:
+                    dominant_id, dominant_chunk = cid, ch
+                    break
+
+        # If a single CWE stands out or was requested, produce a brief explanation
+        try:
+            # Gather top sections for the dominant CWE from available chunks
+            group_chunks = [
+                ch for ch in retrieved_chunks
+                if (ch.get("metadata") or {}).get("cwe_id") == dominant_id
+            ]
+            # Prefer key sections
+            preferred_order = [
+                "Abstract", "Extended Description", "Description", "Details", "Examples", "Mitigations"
+            ]
+            section_map: Dict[str, str] = {}
+            for ch in group_chunks:
+                md = ch.get("metadata") or {}
+                sec = md.get("section", "Content")
+                doc = (ch.get("document") or "").strip()
+                if not doc:
+                    continue
+                # Keep the best (longest) snippet per section
+                prev = section_map.get(sec, "")
+                candidate = doc if len(doc) > len(prev) else prev
+                section_map[sec] = candidate
+
+            md = (dominant_chunk.get("metadata") or {})
+            name = md.get("name", "")
+
+            lines: List[str] = []
+            header = f"{dominant_id}: {name} — {('Developer' if user_persona == 'Developer' else user_persona)} perspective"
+            lines.append(header)
+            lines.append("")
+
+            # Compose short explanation (~2-4 lines) + mitigations if available
+            def pick(sec_names: List[str]) -> Optional[str]:
+                for s in sec_names:
+                    if s in section_map:
+                        return section_map[s]
+                return None
+
+            expl = pick(["Abstract", "Extended Description", "Description"])
+            if expl:
+                expl_snippet = expl[:500].replace("\n", " ") + ("..." if len(expl) > 500 else "")
+                lines.append(expl_snippet)
+                lines.append("")
+
+            if user_persona in ("Developer", "PSIRT Member", "Product Manager"):
+                mit = pick(["Mitigations", "Details"])
+                if mit:
+                    mit_snippet = mit[:400].replace("\n", " ") + ("..." if len(mit) > 400 else "")
+                    lines.append("Key Mitigations:")
+                    lines.append(mit_snippet)
+
+            # Add a small tail for guidance
+            tail = {
+                "Developer": "Emphasize input validation, output encoding, and safe framework APIs.",
+                "PSIRT Member": "Use this to inform severity, impact, and advisory guidance.",
+                "Product Manager": "Prioritize fixes based on exposure and business impact.",
+            }.get(user_persona, "Consult official CWE documentation for further details.")
+            lines.append("")
+            lines.append(tail)
+            return "\n".join(lines)
+        except Exception:
+            pass
+
+        # Otherwise, provide a concise multi-CWE summary
+        lines: List[str] = []
+        lines.append("Here are the most relevant CWE findings based on your query:")
+        for cid, ch in ranked:
+            md = (ch.get("metadata") or {})
+            name = md.get("name", "")
+            section = md.get("section", "Content")
+            doc = (ch.get("document") or "").strip()
+            snippet = doc[:280].replace("\n", " ") + ("..." if len(doc) > 280 else "")
+            lines.append(f"- {cid}: {name}")
+            if section:
+                lines.append(f"  Section: {section}")
+            if snippet:
+                lines.append(f"  Snippet: {snippet}")
+
+        persona_tail = {
+            "Developer": "Focus on input validation, output encoding, and safe APIs.",
+            "PSIRT Member": "Use this to inform impact assessment and advisories.",
+            "Academic Researcher": "Consider taxonomy relationships across the listed CWEs.",
+            "Bug Bounty Hunter": "Adapt tests to the attack surface suggested by these CWEs.",
+            "Product Manager": "Prioritize mitigations according to risk and exposure.",
+        }.get(user_persona, "Consult the referenced CWEs for details and mitigations.")
+        lines.append("")
+        lines.append(persona_tail)
+        return "\n".join(lines)
+
+    def _record_llm_fallback_marker(self) -> None:
+        """Create a marker file indicating an LLM fallback occurred (for e2e diagnostics)."""
+        try:
+            marker_path = os.getenv("LLM_FALLBACK_MARKER_PATH") or "test-results/llm_fallback_marker"
+            marker_dir = os.path.dirname(marker_path) or "."
+            os.makedirs(marker_dir, exist_ok=True)
+            with open(marker_path, "a", encoding="utf-8") as f:
+                from time import time as _now
+                f.write(f"fallback:{int(_now())}\n")
+        except Exception:
+            # Do not let diagnostics interfere with normal operation
+            pass
 
     def _format_cve_creator(self, text: str) -> str:
         """

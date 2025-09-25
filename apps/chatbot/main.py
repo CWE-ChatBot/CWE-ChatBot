@@ -23,7 +23,8 @@ from src.conversation import ConversationManager
 from src.input_security import InputSanitizer, SecurityValidator
 from src.file_processor import FileProcessor
 from src.security.secure_logging import get_secure_logger
-from src.app_config import config as app_config
+# Use the extended config which loads from environment files automatically
+from src.app_config_extended import config as app_config
 
 
 # Configure logging

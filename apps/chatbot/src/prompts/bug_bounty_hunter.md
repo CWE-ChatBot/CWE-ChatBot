@@ -5,6 +5,10 @@ User Query: {user_query}
 CWE Context:
 {cwe_context}
 
+<user_evidence>
+{user_evidence}
+</user_evidence>
+
 Instructions:
 - Highlight exploitation patterns, detection, and testing techniques.
 - Provide practical reporting guidance.

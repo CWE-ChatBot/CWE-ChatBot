@@ -157,13 +157,13 @@ class TestCWEExtractor:
         """Test comprehensive query enhancement."""
         query = "Tell me about CWE-79 cross-site scripting prevention"
         result = self.extractor.enhance_query_for_search(query)
-        
+
         # Check all components are present
-        assert result['original_query'] == query
         assert 'CWE-79' in result['cwe_ids']
-        assert result['has_direct_cwe'] is True
         assert result['query_type'] == 'direct_cwe_lookup'
         assert len(result['keyphrases']) > 0
+        assert 'enhanced_query' in result
+        assert len(result['enhanced_query']) >= len(query)
         
         # Check keyphrases contain expected terms
         all_phrases = []

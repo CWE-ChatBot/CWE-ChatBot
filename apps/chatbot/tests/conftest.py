@@ -74,6 +74,9 @@ def chainlit_server(env_ready):
         # Ensure clean test environment
         env["CHAINLIT_HOST"] = host
         env["CHAINLIT_PORT"] = str(port)
+        # Allow UI-only smoke tests to run without live LLM by honoring E2E_OFFLINE_AI
+        if os.getenv("E2E_OFFLINE_AI") == "1":
+            env["DISABLE_AI"] = "1"
         # Provide a dummy GEMINI key and enable offline mode to avoid startup errors
         # Do not override AI behavior; tests will use real GEMINI_API_KEY if present.
         # To load from a specific .env file (e.g., ~/work/env/.env_cwe_chatbot),

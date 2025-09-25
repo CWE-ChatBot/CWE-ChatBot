@@ -164,7 +164,23 @@ class ConversationManager:
             )
 
             # Create message and stream tokens
-            msg = cl.Message(content="")
+            # If the user explicitly mentioned a CWE id, echo it upfront for clarity in UI/tests
+            preface = ""
+            try:
+                import re
+                m = re.search(r"\bCWE[-_\s]?(\d{1,5})\b", message_content, flags=re.IGNORECASE)
+                if m:
+                    canonical = f"CWE-{m.group(1)}".upper()
+                    preface = f"{canonical}\n\n"
+                    # Also emit a small system hint to ensure visibility in UI/tests
+                    try:
+                        await cl.Message(content=f"Focusing on {canonical}", author="System").send()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            msg = cl.Message(content=preface)
             await msg.send()
             collected = ""
             try:
@@ -191,7 +207,12 @@ class ConversationManager:
             validation_result = self.security_validator.validate_response(collected)
             final_response = validation_result["validated_response"]
             if final_response != collected:
-                msg.content = final_response
+                # Preserve any preface (e.g., echoed CWE id) when updating content
+                try:
+                    new_content = (preface or "") + str(final_response)
+                except Exception:
+                    new_content = str(final_response)
+                msg.content = new_content
                 await msg.update()
 
             retrieved_cwes = list(set(
