@@ -18,8 +18,8 @@ class CWEExtractor:
     for hybrid retrieval systems.
     """
     
-    # Regex pattern for CWE IDs (CWE-XXX format) - allow start/whitespace/punctuation but not after dash or alphanumeric
-    CWE_PATTERN = re.compile(r'(?:^|(?<=\s)|(?<=[(,.:;!?]))CWE-(\d+)', re.IGNORECASE)
+    # Regex pattern for CWE IDs - matches both CWE-XXX and CWE XXX formats
+    CWE_PATTERN = re.compile(r'(?:^|(?<=\s)|(?<=[(,.:;!?]))CWE[-\s](\d+)', re.IGNORECASE)
     
     # Security-related keywords for keyphrase extraction
     SECURITY_KEYWORDS = {

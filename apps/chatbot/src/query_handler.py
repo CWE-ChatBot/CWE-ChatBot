@@ -8,6 +8,7 @@ import asyncio
 import logging
 from typing import Dict, List, Any, Optional
 from src.security.secure_logging import get_secure_logger
+from src.processing.query_processor import QueryProcessor
 
 # Prefer a clean package import; fall back to legacy path if package is unavailable
 try:  # minimal path when cwe_ingestion is installed
@@ -49,6 +50,9 @@ class CWEQueryHandler:
             self.store = PostgresChunkStore(dims=3072, database_url=database_url)
             self.embedder = GeminiEmbedder(api_key=gemini_api_key)
 
+            # Initialize query processor for proper CWE extraction and query analysis
+            self.query_processor = QueryProcessor()
+
             # Store hybrid weights (use provided weights or fall back to config defaults)
             if hybrid_weights is None:
                 # Import extended config (auto-loads env); avoid circular imports
@@ -85,6 +89,11 @@ class CWEQueryHandler:
         try:
             logger.info(f"Processing query: '{query[:50]}...' for persona: {user_context.get('persona', 'unknown')}")
 
+            # Use QueryProcessor to properly extract CWE IDs and analyze query
+            query_analysis = self.query_processor.preprocess_query(query)
+            extracted_cwe_ids = query_analysis.get('cwe_ids', set())
+            logger.debug(f"Extracted CWE IDs: {extracted_cwe_ids}")
+
             # Generate embedding using existing Gemini embedder from Story 1.5 (non-blocking)
             query_embedding = await asyncio.to_thread(self.embedder.embed_text, query)
             logger.debug(f"Generated {len(query_embedding)}D embedding")
@@ -115,35 +124,45 @@ class CWEQueryHandler:
             # Execute hybrid search using Story 1.5 production system
             results = await asyncio.to_thread(self.store.query_hybrid, **query_params)
 
-            # If the query explicitly mentions a CWE ID, boost exact matches post-retrieval
-            try:
-                import re
-                # Accept variants like CWE-79, cwe 79, cwe_79
-                m = re.search(r"\bCWE[-_\s]?(\d{1,5})\b", query, flags=re.IGNORECASE)
-                if m and results:
-                    exact_id = f"CWE-{m.group(1)}".upper()
-                    boost_value = 2.0  # strong but bounded boost to prioritize exact ID
+            # Handle multiple CWE IDs for comparison/analysis queries
+            if extracted_cwe_ids and results:
+                boost_value = 2.0  # strong but bounded boost to prioritize exact IDs
+                cwe_ids_list = list(extracted_cwe_ids)
+
+                # Boost all mentioned CWE IDs in results
+                for cwe_id in cwe_ids_list:
                     for r in results:
                         md = r.get("metadata") or {}
                         rid = str(md.get("cwe_id", "")).upper()
-                        if rid == exact_id:
+                        if rid == cwe_id.upper():
                             sc = r.get("scores") or {}
                             sc["hybrid"] = float(sc.get("hybrid", 0.0)) + boost_value
                             r["scores"] = sc
-                    # If the exact CWE id is missing from candidate set, force-inject a few sections
-                    if not any((r.get("metadata") or {}).get("cwe_id", "").upper() == exact_id for r in results):
-                        forced = self._fetch_cwe_sections(exact_id, limit=3)
+
+                # For each missing CWE ID, force-inject sections to ensure comprehensive coverage
+                present_cwes = set()
+                for r in results:
+                    md = r.get("metadata") or {}
+                    if md.get("cwe_id"):
+                        present_cwes.add(str(md.get("cwe_id", "")).upper())
+
+                forced_chunks = []
+                for cwe_id in cwe_ids_list:
+                    if cwe_id.upper() not in present_cwes:
+                        forced = self._fetch_cwe_sections(cwe_id, limit=3)
                         if forced:
                             for ch in forced:
                                 sc = ch.get("scores") or {}
                                 sc["hybrid"] = float(sc.get("hybrid", 0.0)) + boost_value + 1.0
                                 ch["scores"] = sc
-                            results.extend(forced)
-                    # Re-sort after boosting
-                    results.sort(key=lambda x: float((x.get("scores") or {}).get("hybrid", 0.0)), reverse=True)
-            except Exception:
-                # Never fail the query due to boost logic
-                pass
+                            forced_chunks.extend(forced)
+                            logger.info(f"Force-injected sections for missing CWE: {cwe_id}")
+
+                if forced_chunks:
+                    results.extend(forced_chunks)
+
+                # Re-sort after boosting to ensure best results first
+                results.sort(key=lambda x: float((x.get("scores") or {}).get("hybrid", 0.0)), reverse=True)
 
             logger.info(f"Retrieved {len(results)} chunks")
 
