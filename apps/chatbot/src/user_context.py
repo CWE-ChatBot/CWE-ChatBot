@@ -63,6 +63,12 @@ class UserContext:
     # User-provided evidence (short-lived; cleared after each answer)
     file_evidence: Optional[str] = None
 
+    # OAuth authentication data
+    oauth_provider: Optional[str] = None  # "google" or "github"
+    user_email: Optional[str] = None
+    user_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
     # Analytics and preferences
     query_count: int = 0
     preferred_cwe_categories: List[str] = field(default_factory=list)
@@ -71,6 +77,19 @@ class UserContext:
     def update_activity(self) -> None:
         """Update last activity timestamp."""
         self.last_active = datetime.now(timezone.utc)
+
+    def set_oauth_data(self, provider: str, email: str, name: str, avatar_url: Optional[str] = None) -> None:
+        """Set OAuth authentication data from provider."""
+        self.oauth_provider = provider
+        self.user_email = email
+        self.user_name = name
+        self.avatar_url = avatar_url
+        logger.info(f"OAuth data set for user {email} via {provider}")
+
+    @property
+    def is_authenticated(self) -> bool:
+        """Check if user is authenticated via OAuth."""
+        return bool(self.oauth_provider and self.user_email)
 
     def add_conversation_entry(self, query: str, response: str, retrieved_cwes: List[str]) -> None:
         """Add conversation entry to history."""

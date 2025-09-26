@@ -157,6 +157,87 @@ def set_profiles():
     return profiles
 
 
+@cl.oauth_callback
+def oauth_callback(
+    provider_id: str,
+    token: str,
+    raw_user_data: Dict[str, str],
+    default_user: cl.User,
+) -> Optional[cl.User]:
+    """
+    Handle OAuth callback for Google and GitHub providers.
+
+    Args:
+        provider_id: OAuth provider ("google" or "github")
+        token: OAuth access token
+        raw_user_data: Raw user data from OAuth provider
+        default_user: Default user object from Chainlit
+
+    Returns:
+        cl.User object with provider-specific metadata or None
+    """
+    try:
+        logger.info(f"OAuth callback for provider: {provider_id}")
+
+        # Extract user info based on provider
+        if provider_id == "google":
+            email = raw_user_data.get("email")
+            name = raw_user_data.get("name")
+            avatar_url = raw_user_data.get("picture")
+        elif provider_id == "github":
+            email = raw_user_data.get("email")
+            name = raw_user_data.get("name") or raw_user_data.get("login")
+            avatar_url = raw_user_data.get("avatar_url")
+        else:
+            logger.warning(f"Unsupported OAuth provider: {provider_id}")
+            return None
+
+        if not email:
+            logger.warning(f"No email found in OAuth data for provider: {provider_id}")
+            return None
+
+        # Check if the user is in the whitelist
+        allowed_users_str = os.getenv("ALLOWED_USERS")
+        if allowed_users_str:
+            allowed_users = [user.strip() for user in allowed_users_str.split(",")]
+            
+            is_allowed = False
+            for allowed_user in allowed_users:
+                if allowed_user.startswith("@"):
+                    # Domain-based check
+                    if email.endswith(allowed_user):
+                        is_allowed = True
+                        break
+                else:
+                    # Email-based check
+                    if email == allowed_user:
+                        is_allowed = True
+                        break
+            
+            if not is_allowed:
+                logger.warning(f"Unauthorized user: {email}")
+                return None
+
+        # Create user with provider-specific data
+        user = cl.User(
+            identifier=f"{provider_id}:{email}",
+            metadata={
+                "provider": provider_id,
+                "email": email,
+                "name": name or email.split("@")[0],
+                "avatar_url": avatar_url,
+                "raw_data": raw_user_data
+            }
+        )
+
+        logger.info(f"Successfully authenticated user: {email} via {provider_id}")
+        return user
+
+    except Exception as e:
+        logger.log_exception(f"OAuth callback error for provider {provider_id}", e)
+        return None
+
+
 @cl.on_chat_start
 async def start():
     """Initialize the chat session with settings-based persona configuration."""
@@ -164,6 +245,15 @@ async def start():
 
     if not conversation_manager or not _init_ok:
         await cl.Message(content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB).").send()
+        return
+
+    # Authentication enforcement - require OAuth authentication
+    user = cl.user_session.get("user")
+    if not user:
+        await cl.Message(
+            content="🔒 Authentication required. Please authenticate using Google or GitHub to access the CWE ChatBot.",
+            author="System"
+        ).send()
         return
 
     # Initialize default settings and expose a Settings panel
@@ -220,8 +310,48 @@ async def start():
     session_id = cl.context.session.id
     await conversation_manager.update_user_persona(session_id, persona)
 
+    # Integrate OAuth authentication with user context
+    user = cl.user_session.get("user")
+    if user and hasattr(user, 'metadata') and user.metadata:
+        try:
+            # User is authenticated via OAuth - integrate with UserContext
+            user_context = await conversation_manager.get_user_context(session_id)
+            if user_context:
+                user_context.set_oauth_data(
+                    provider=user.metadata.get("provider"),
+                    email=user.metadata.get("email"),
+                    name=user.metadata.get("name"),
+                    avatar_url=user.metadata.get("avatar_url")
+                )
+                # Update activity timestamp for session management
+                user_context.update_activity()
+                logger.info(f"OAuth integration completed for user: {user.metadata.get('email')}")
+
+                # Integrate persona selection with authenticated user context
+                user_context.persona = persona
+                logger.info(f"Persona '{persona}' assigned to authenticated user: {user.metadata.get('email')}")
+
+            # Store session validation data
+            cl.user_session.set("auth_timestamp", time.time())
+            cl.user_session.set("auth_provider", user.metadata.get("provider"))
+            cl.user_session.set("auth_email", user.metadata.get("email"))
+
+        except Exception as e:
+            logger.log_exception("OAuth integration error during chat start", e)
+            await cl.Message(
+                content="⚠️ Authentication integration error. Some features may not work properly. Please try refreshing the page.",
+                author="System"
+            ).send()
+
     # Enhanced onboarding welcome message with progressive introduction
-    welcome_message = """Welcome to the CWE ChatBot! 🛡️
+    # Personalize welcome if user is authenticated
+    user_greeting = "Welcome to the CWE ChatBot! 🛡️"
+    if user and user.metadata:
+        user_name = user.metadata.get("name") or user.metadata.get("email", "").split("@")[0]
+        provider = user.metadata.get("provider", "OAuth").title()
+        user_greeting = f"Welcome back, {user_name}! 🛡️\n\n*Authenticated via {provider}*\n\n🔐 *Your session is secure and your persona preferences will be saved.*"
+
+    welcome_message = f"""{user_greeting}
 
 I'm here to help you with Common Weakness Enumeration (CWE) information. Let me guide you through getting started:
 
@@ -276,6 +406,23 @@ Here are some questions to get you started:
 @cl.on_message
 async def main(message: cl.Message):
     """Handle incoming messages with Story 2.1 NLU and RAG pipeline."""
+
+    # Authentication enforcement - require OAuth authentication
+    user = cl.user_session.get("user")
+    if not user:
+        await cl.Message(
+            content="🔒 Authentication required. Please authenticate using Google or GitHub to send messages.",
+            author="System"
+        ).send()
+        return
+
+    # Session validation and activity tracking
+    try:
+        user_context = await conversation_manager.get_user_context(cl.context.session.id)
+        if user_context and user_context.is_authenticated:
+            user_context.update_activity()
+    except Exception as e:
+        logger.log_exception("Failed to update user activity", e)
 
     # Check if components are initialized
     if not conversation_manager or not _init_ok:
@@ -459,6 +606,11 @@ async def main(message: cl.Message):
 async def on_settings_update(settings: Dict[str, Any]):
     """Handle settings updates from the native Chainlit settings panel."""
     global conversation_manager
+
+    # Authentication enforcement - require OAuth authentication
+    user = cl.user_session.get("user")
+    if not user:
+        return
 
     if not conversation_manager:
         return
