@@ -137,12 +137,23 @@ def initialize_components() -> bool:
         return _init_ok
 
 
+persona_descriptions = {
+    "PSIRT Member": "Impact assessment and security advisory creation",
+    "Developer": "Remediation steps and secure coding examples",
+    "Academic Researcher": "Comprehensive analysis and CWE relationships",
+    "Bug Bounty Hunter": "Exploitation patterns and testing techniques",
+    "Product Manager": "Business impact and prevention strategies",
+    "CWE Analyzer": "CVE-to-CWE mapping analysis with confidence scoring",
+    "CVE Creator": "Structured CVE vulnerability descriptions",
+}
+
 @cl.set_chat_profiles
 def set_profiles():
     """Expose personas as top-bar chat profiles for quick access."""
     profiles = []
     for p in UserPersona:
-        profiles.append(ChatProfile(name=p.value, markdown_description=f"Persona: {p.value}"))
+        description = persona_descriptions.get(p.value, f"Persona: {p.value}")
+        profiles.append(ChatProfile(name=p.value, markdown_description=description))
     return profiles
 
 
@@ -242,7 +253,7 @@ Each persona provides responses tailored to your specific needs and expertise le
     persona_element = cl.Text(
         name="Persona Guide",
         content=persona_info,
-        display="side"
+        display="inline"
     )
 
     # Send example queries as a third guided step

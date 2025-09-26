@@ -19,3 +19,13 @@ Feedback:
 - Use the feedback controls to rate responses and help us improve.
 
 More info in the repository README.
+
+## Available Personas
+
+*   **PSIRT Member** 🛡️ - Impact assessment and security advisory creation
+*   **Developer** 💻 - Remediation steps and secure coding examples
+*   **Academic Researcher** 🎓 - Comprehensive analysis and CWE relationships
+*   **Bug Bounty Hunter** 🔍 - Exploitation patterns and testing techniques
+*   **Product Manager** 📊 - Business impact and prevention strategies
+*   **CWE Analyzer** 🔬 - CVE-to-CWE mapping analysis with confidence scoring
+*   **CVE Creator** 📝 - Structured CVE vulnerability descriptions

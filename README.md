@@ -6,6 +6,18 @@ A conversational AI application designed to revolutionize interaction with the M
 
 The CWE ChatBot enables cybersecurity professionals to interact with CWE data through natural language conversations, providing contextual, role-based responses for vulnerability analysis and prevention.
 
+## Personas
+
+The CWE ChatBot provides different personas to tailor the conversation to your specific needs. You can select a persona from the dropdown menu in the chat interface.
+
+*   **PSIRT Member** 🛡️ - Impact assessment and security advisory creation
+*   **Developer** 💻 - Remediation steps and secure coding examples
+*   **Academic Researcher** 🎓 - Comprehensive analysis and CWE relationships
+*   **Bug Bounty Hunter** 🔍 - Exploitation patterns and testing techniques
+*   **Product Manager** 📊 - Business impact and prevention strategies
+*   **CWE Analyzer** 🔬 - CVE-to-CWE mapping analysis with confidence scoring
+*   **CVE Creator** 📝 - Structured CVE vulnerability descriptions
+
 ## Project Documentation
 
 The following documents were created in order during the project planning phase:
