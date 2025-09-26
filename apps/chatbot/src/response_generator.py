@@ -171,27 +171,28 @@ Response:""",
             """You are a CVE-to-CWE mapping assistant.
 User Query: {user_query}
 
-CWE Context:
-{cwe_context}
-
 User-Provided Evidence:
 {user_evidence}
 
 Instructions:
-- Map to CWEs with confidence and rationale.
+- Analyze the user-provided evidence, which contains a description of a vulnerability.
+- Based on your analysis, identify the most relevant Common Weakness Enumeration (CWE) IDs.
+- Provide a mapping to the identified CWEs with a confidence score and a brief rationale for each mapping.
 Response:""",
         )
         load_prompt(
             "CVE Creator",
-            """You create structured CVE descriptions from provided info.
+            """You are an assistant that creates structured CVE descriptions.
 User Query: {user_query}
 
 User-Provided Evidence:
 {user_evidence}
 
 Instructions:
-- Use the standardized CVE format; note missing info.
-- Format key segments as bold (e.g., **Impact**, **Product**, **Vendor**, **Version**, **Affected Platform**, **Attacker**, **Action**, **Vector**); do not use square brackets.
+- Analyze the user-provided evidence, which contains information about a vulnerability.
+- Use the information to create a structured CVE description in the standardized CVE format.
+- Identify and format key segments as bold (e.g., **Impact**, **Product**, **Vendor**, **Version**, **Affected Platform**, **Attacker**, **Action**, **Vector**). Do not use square brackets.
+- If any information is missing, note it in the description.
 Response:""",
         )
         return mapping
@@ -216,11 +217,14 @@ Response:""",
                 return
 
             prompt_template = self.persona_prompts.get(user_persona, self.persona_prompts["Developer"])
-            prompt = prompt_template.format(
-                user_query=query,
-                cwe_context=context,
-                user_evidence=(user_evidence or "No additional evidence provided."),
-            )
+            if user_persona == "CVE Creator":
+                prompt = prompt_template.replace("{user_query}", query).replace("{user_evidence}", user_evidence or "No additional evidence provided.")
+            else:
+                prompt = prompt_template.format(
+                    user_query=query,
+                    cwe_context=context,
+                    user_evidence=(user_evidence or "No additional evidence provided."),
+                )
             # Allow tests to force non-stream path for stability
             if os.getenv("E2E_NO_STREAM") == "1":
                 try:
@@ -233,22 +237,10 @@ Response:""",
                     logger.error(f"Non-stream generation failed (E2E_NO_STREAM): {e2}")
                     raise
             else:
-                try:
-                    async for chunk_text in self.provider.generate_stream(prompt):
-                        cleaned_chunk = self._clean_response_chunk(chunk_text)
-                        if cleaned_chunk:
-                            yield cleaned_chunk
-                except Exception as gen_err:
-                    logger.warning(f"Primary streaming failed, retrying once non-streaming: {gen_err}")
-                    try:
-                        final = await self.provider.generate(prompt)
-                        final = self._clean_response(final)
-                        if final and final.strip():
-                            yield final
-                            return
-                    except Exception as e2:
-                        logger.error(f"Retry generation failed: {e2}")
-                        raise
+                async for chunk_text in self.provider.generate_stream(prompt):
+                    cleaned_chunk = self._clean_response_chunk(chunk_text)
+                    if cleaned_chunk:
+                        yield cleaned_chunk
 
         except Exception as e:
             logger.error(f"Streaming response generation failed: {e}")

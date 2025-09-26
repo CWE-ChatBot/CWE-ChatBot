@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 import asyncio
 import chainlit as cl
 
+import os
+
 from src.user_context import UserContext, UserPersona
 from src.input_security import InputSanitizer, SecurityValidator
 from src.query_handler import CWEQueryHandler
@@ -149,7 +151,8 @@ class ConversationManager:
                     "query_type": "off_topic"
                 }
 
-            if processed.get("security_check", {}).get("is_potentially_malicious", False):
+            security_mode = os.getenv("SECURITY_MODE", "FLAG_ONLY").upper()
+            if security_mode == "BLOCK" and processed.get("security_check", {}).get("is_potentially_malicious", False):
                 flags = processed.get("security_check", {}).get("detected_patterns", [])
                 fallback_response = self.input_sanitizer.generate_fallback_message(flags, context.persona)
 
@@ -172,6 +175,13 @@ class ConversationManager:
                     "persona": context.persona,
                     "message": msg,
                 }
+            elif processed.get("security_check", {}).get("is_potentially_malicious", False):
+                # In FLAG_ONLY mode, just log the event
+                flags = processed.get("security_check", {}).get("detected_patterns", [])
+                self.security_validator.log_security_event(
+                    "unsafe_input_flagged",
+                    {"session_id": session_id, "security_flags": flags, "persona": context.persona},
+                )
 
             # Evidence
             file_ctx = cl.user_session.get("uploaded_file_context")
@@ -188,9 +198,20 @@ class ConversationManager:
 
             # Retrieve with combined query
             user_context_data = context.get_persona_preferences()
-            retrieved_chunks = await self.query_handler.process_query(
-                combined_query, user_context_data
-            )
+
+            # Bypass retrieval for personas that analyze user input directly
+            if context.persona in ("CWE Analyzer", "CVE Creator"):
+                retrieved_chunks = []
+                # The user's query IS the evidence for these personas
+                context.set_evidence(sanitized_q)
+                if context.persona == "CWE Analyzer":
+                    combined_query = "Analyze the provided vulnerability description and map it to the most relevant CWEs."
+                else: # CVE Creator
+                    combined_query = "Create a structured CVE description from the provided text."
+            else:
+                retrieved_chunks = await self.query_handler.process_query(
+                    combined_query, user_context_data
+                )
 
             # Create message and stream tokens
             # If the user explicitly mentioned a CWE id, echo it upfront for clarity in UI/tests

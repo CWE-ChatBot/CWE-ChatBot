@@ -6,9 +6,13 @@ Integrates with existing production hybrid retrieval system from Story 1.5.
 
 import asyncio
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TypedDict, Literal
 from src.security.secure_logging import get_secure_logger
 from src.processing.query_processor import QueryProcessor
+from src.processing.confidence_calculator import ConfidenceCalculator, create_aggregated_cwe
+from src.processing.cwe_filter import CWEFilter, create_default_filter
+from src.processing.explanation_builder import ExplanationBuilder
+from src.processing.query_suggester import QuerySuggester
 
 # Prefer a clean package import; fall back to legacy path if package is unavailable
 try:  # minimal path when cwe_ingestion is installed
@@ -25,6 +29,24 @@ except Exception:  # fallback to legacy repo layout/env var
         raise
 
 logger = get_secure_logger(__name__)
+
+
+class Recommendation(TypedDict):
+    """Unified recommendation format for CWE suggestions."""
+    cwe_id: str
+    name: str
+    confidence: float
+    level: Literal["High", "Medium", "Low", "Very Low"]
+    explanation: Dict[str, Any]        # {"snippets":[...], "bullets":[...]}
+    top_chunks: List[Dict[str, Any]]   # server-side only
+    relationships: Optional[Dict[str, Any]]
+
+
+class QueryResult(TypedDict):
+    """Complete query processing result."""
+    recommendations: List[Recommendation]
+    low_confidence: bool
+    improvement_guidance: Optional[Dict[str, Any]]
 
 
 class CWEQueryHandler:
@@ -52,6 +74,12 @@ class CWEQueryHandler:
 
             # Initialize query processor for proper CWE extraction and query analysis
             self.query_processor = QueryProcessor()
+
+            # Initialize Story 3.2 processing modules
+            self.confidence_calculator = ConfidenceCalculator()
+            self.cwe_filter = create_default_filter()  # TODO: Load from config/corpus metadata
+            self.explanation_builder = ExplanationBuilder()
+            self.query_suggester = QuerySuggester()
 
             # Store hybrid weights (use provided weights or fall back to config defaults)
             if hybrid_weights is None:
@@ -124,6 +152,25 @@ class CWEQueryHandler:
             # Execute hybrid search using Story 1.5 production system
             results = await asyncio.to_thread(self.store.query_hybrid, **query_params)
 
+            # If hybrid returned nothing but we have explicit CWE IDs, force-inject canonical sections
+            if (not results) and extracted_cwe_ids:
+                forced_all: List[Dict[str, Any]] = []
+                boost_value = 2.0
+                for cwe_id in extracted_cwe_ids:
+                    try:
+                        forced = self._fetch_cwe_sections(cwe_id, limit=5)
+                        if forced:
+                            for ch in forced:
+                                sc = ch.get("scores") or {}
+                                sc["hybrid"] = float(sc.get("hybrid", 0.0)) + boost_value + 1.0
+                                ch["scores"] = sc
+                            forced_all.extend(forced)
+                            logger.info(f"Force-injected sections for CWE with empty hybrid results: {cwe_id}")
+                    except Exception:
+                        continue
+                if forced_all:
+                    results = forced_all
+
             # Handle multiple CWE IDs for comparison/analysis queries
             if extracted_cwe_ids and results:
                 boost_value = 2.0  # strong but bounded boost to prioritize exact IDs
@@ -177,6 +224,153 @@ class CWEQueryHandler:
             logger.log_exception("Query processing failed", e)
             # Return empty results on error to ensure graceful degradation
             return []
+
+    async def process_query_with_recommendations(self, query: str, user_context: Dict[str, Any]) -> QueryResult:
+        """
+        Process query using unified recommendation pipeline (Story 3.2).
+
+        Args:
+            query: User query string
+            user_context: User persona and context information
+
+        Returns:
+            QueryResult with recommendations, confidence, and improvement guidance
+        """
+        try:
+            logger.info(f"Processing query with recommendations: '{query[:50]}...' for persona: {user_context.get('persona', 'unknown')}")
+
+            # Step 1: Use existing hybrid retrieval to get raw chunks
+            chunks = await self.process_query(query, user_context)
+
+            if not chunks:
+                # Handle empty results
+                persona = user_context.get('persona', 'Developer')
+                improvement_guidance = self.query_suggester.generate_improvement_banner(
+                    query, persona, 0.0
+                )
+                return QueryResult(
+                    recommendations=[],
+                    low_confidence=True,
+                    improvement_guidance=improvement_guidance if improvement_guidance["show_banner"] else None
+                )
+
+            # Step 2: Aggregate chunks by CWE ID
+            cwe_chunks = self._aggregate_chunks_by_cwe(chunks)
+
+            # Step 3: Calculate confidence scores for each CWE
+            scored_cwes = []
+            for cwe_id, cwe_data in cwe_chunks.items():
+                # Create AggregatedCWE for confidence calculation
+                aggregated = create_aggregated_cwe(
+                    cwe_id=cwe_id,
+                    name=cwe_data['name'],
+                    chunks=cwe_data['chunks'],
+                    exact_match=cwe_data['exact_match']
+                )
+
+                # Calculate confidence
+                confidence, level = self.confidence_calculator.score_and_level(aggregated)
+
+                # Build explanation
+                explanation = self.explanation_builder.build(query, cwe_id, cwe_data['chunks'])
+
+                scored_cwes.append({
+                    'cwe_id': cwe_id,
+                    'name': cwe_data['name'],
+                    'confidence': confidence,
+                    'level': level,
+                    'explanation': explanation,
+                    'top_chunks': cwe_data['chunks'][:5],  # Limit for performance
+                    'relationships': None  # TODO: Implement in Task 2
+                })
+
+            # Step 4: Sort by confidence score
+            scored_cwes.sort(key=lambda x: x['confidence'], reverse=True)
+
+            # Step 5: Filter and cap recommendations
+            filter_result = self.cwe_filter.filter(scored_cwes)
+            filtered_recommendations = filter_result['recommendations']
+
+            logger.info(f"Filtered recommendations: {filter_result['original_count']} → {filter_result['final_count']}")
+
+            # Step 6: Convert to Recommendation TypedDict format
+            recommendations = []
+            for rec in filtered_recommendations:
+                recommendations.append(Recommendation(
+                    cwe_id=rec['cwe_id'],
+                    name=rec['name'],
+                    confidence=rec['confidence'],
+                    level=rec['level'],
+                    explanation=rec['explanation'],
+                    top_chunks=rec['top_chunks'],
+                    relationships=rec['relationships']
+                ))
+
+            # Step 7: Determine if low confidence guidance is needed
+            avg_confidence = sum(r['confidence'] for r in recommendations) / len(recommendations) if recommendations else 0.0
+            is_low_confidence = avg_confidence < 0.6 or len(recommendations) < 2
+
+            # Step 8: Generate improvement guidance if needed
+            improvement_guidance = None
+            if is_low_confidence:
+                persona = user_context.get('persona', 'Developer')
+                guidance = self.query_suggester.generate_improvement_banner(
+                    query, persona, avg_confidence
+                )
+                if guidance["show_banner"]:
+                    improvement_guidance = guidance
+
+            return QueryResult(
+                recommendations=recommendations,
+                low_confidence=is_low_confidence,
+                improvement_guidance=improvement_guidance
+            )
+
+        except Exception as e:
+            logger.log_exception("Recommendation processing failed", e)
+            # Return error state with improvement guidance
+            persona = user_context.get('persona', 'Developer')
+            improvement_guidance = self.query_suggester.generate_improvement_banner(
+                query, persona, 0.0
+            )
+            return QueryResult(
+                recommendations=[],
+                low_confidence=True,
+                improvement_guidance=improvement_guidance if improvement_guidance["show_banner"] else None
+            )
+
+    def _aggregate_chunks_by_cwe(self, chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """
+        Aggregate chunks by CWE ID for confidence calculation.
+
+        Args:
+            chunks: List of retrieved chunks
+
+        Returns:
+            Dictionary mapping CWE ID to aggregated data
+        """
+        cwe_aggregation = {}
+
+        for chunk in chunks:
+            metadata = chunk.get('metadata', {})
+            cwe_id = metadata.get('cwe_id')
+            cwe_name = metadata.get('name') or metadata.get('cwe_name', '')
+
+            if not cwe_id:
+                continue
+
+            cwe_id = cwe_id.upper()
+
+            if cwe_id not in cwe_aggregation:
+                cwe_aggregation[cwe_id] = {
+                    'name': cwe_name,
+                    'chunks': [],
+                    'exact_match': False  # TODO: Detect exact alias matches
+                }
+
+            cwe_aggregation[cwe_id]['chunks'].append(chunk)
+
+        return cwe_aggregation
 
     def get_database_stats(self) -> Dict[str, Any]:
         """Get production database statistics."""

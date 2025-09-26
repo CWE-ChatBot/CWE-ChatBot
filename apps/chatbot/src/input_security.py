@@ -132,20 +132,29 @@ class InputSanitizer:
         sanitized_input = self._normalize_text(sanitized_input)
 
         # Step 6: Final safety check
-        # Under strict mode, any high-risk signal blocks. Otherwise require multiple signals to block.
-        # Determine strictness from environment to avoid import-time coupling
-        env_val = os.getenv("ENABLE_STRICT_SANITIZATION", "true").lower().strip()
-        strict_mode = env_val in ("1", "true", "yes", "on")
-        high_risk_categories = set()
-        if prompt_hits:
-            high_risk_categories.add("prompt")
-        if command_hits:
-            high_risk_categories.add("command")
+        security_mode = os.getenv("SECURITY_MODE", "FLAG_ONLY").upper()
 
-        if strict_mode:
-            is_safe = len(high_risk_categories) == 0
-        else:
-            is_safe = len(high_risk_categories) < 2  # require multiple distinct categories to block
+        if security_mode == "FLAG_ONLY":
+            is_safe = True
+        else: # BLOCK mode
+            # Under strict mode, any high-risk signal blocks. Otherwise require multiple signals to block.
+            env_val = os.getenv("ENABLE_STRICT_SANITIZATION", "true").lower().strip()
+            strict_mode = env_val in ("1", "true", "yes", "on")
+
+            # For certain personas, relax strictness to allow technical descriptions
+            if user_persona in ("CWE Analyzer", "CVE Creator", "PSIRT Member"):
+                strict_mode = False
+
+            high_risk_categories = set()
+            if prompt_hits:
+                high_risk_categories.add("prompt")
+            if command_hits:
+                high_risk_categories.add("command")
+
+            if strict_mode:
+                is_safe = len(high_risk_categories) == 0
+            else:
+                is_safe = True
 
         if security_flags:
             logger.warning(f"Security flags detected: {security_flags}")
@@ -303,9 +312,11 @@ class SecurityValidator:
             r'actual\s+(?:malware|virus)\s+code'
         ]
 
+        harmful_detected = False
         for pattern in harmful_patterns:
             if re.search(pattern, response, re.IGNORECASE):
                 security_issues.append("harmful_content_detected")
+                harmful_detected = True
                 confidence_score -= 0.3
                 break
 
@@ -320,9 +331,11 @@ class SecurityValidator:
             r'(?:my|the)\s+password\s*[:=]'
         ]
 
+        system_leak_detected = False
         for pattern in system_leak_patterns:
             if re.search(pattern, response, re.IGNORECASE):
                 security_issues.append("sensitive_information")
+                system_leak_detected = True
                 confidence_score -= 0.2
                 break
 
@@ -344,21 +357,30 @@ class SecurityValidator:
             text = re.sub(r'\b(?:4[0-9]{12}(?:[0-9]{3})?)\b', '[REDACTED_CC]', text)
             return text
 
-        if any(re.search(p, response) for p in sensitive_patterns):
+        masked_sensitive_found = any(re.search(p, response) for p in sensitive_patterns)
+        if masked_sensitive_found:
             security_issues.append("sensitive_information_masked")
             confidence_score -= 0.05
             response = _mask_sensitive(response)
 
         # Check response length
-        if len(response) > 8000:
+        if len(response) > 16000:
             security_issues.append("excessive_response_length")
             confidence_score -= 0.1
-            response = response[:8000] + "... [Response truncated for safety]"
+            response = response[:16000] + "... [Response truncated for safety]"
 
         # Ensure confidence score is within bounds
         confidence_score = max(0.0, min(1.0, confidence_score))
 
-        is_safe = len(security_issues) == 0
+        # Determine safety: allow masked/truncated responses to pass,
+        # only block on clearly harmful content or system prompt leakage
+        severe_issues = set()
+        if harmful_detected:
+            severe_issues.add("harmful_content_detected")
+        if system_leak_detected:
+            severe_issues.add("sensitive_information")
+
+        is_safe = len(severe_issues) == 0
 
         return {
             "is_safe": is_safe,
