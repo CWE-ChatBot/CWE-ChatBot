@@ -50,11 +50,22 @@ class Config:
     max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "2048"))
     max_document_snippet_length: int = int(os.getenv("MAX_DOCUMENT_SNIPPET_LENGTH", "1000"))
     max_context_length: int = int(os.getenv("MAX_CONTEXT_LENGTH", "16000"))
-    
+
+    # LLM Configuration (Flexible defaults)
+    llm_provider: str = os.getenv("LLM_PROVIDER", "google")
+    llm_model_name: str = os.getenv("LLM_MODEL_NAME", "gemini-2.5-flash-lite")
+    llm_temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.1"))
+    llm_top_p: float = float(os.getenv("LLM_TOP_P", "0.9"))
+    llm_top_k: int = int(os.getenv("LLM_TOP_K", "40"))
+    llm_safety_permissive: bool = os.getenv("LLM_SAFETY_PERMISSIVE", "true").lower() == "true"
+
     # Application Configuration
     enable_debug_logging: bool = os.getenv("DEBUG", "false").lower() == "true"
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     section_boost_value: float = float(os.getenv("SECTION_BOOST_VALUE", "0.15"))
+
+    # Authentication Configuration
+    enable_oauth: bool = os.getenv("ENABLE_OAUTH", "true").lower() == "true"
     
     def get_pg_config(self) -> Dict[str, Any]:
         """Get PostgreSQL connection configuration."""
@@ -72,6 +83,48 @@ class Config:
             "w_vec": self.w_vec,
             "w_fts": self.w_fts,
             "w_alias": self.w_alias
+        }
+
+    def get_llm_generation_config(self) -> Dict[str, Any]:
+        """Get LLM generation configuration with configurable defaults."""
+        return {
+            "temperature": self.llm_temperature,
+            "max_output_tokens": self.max_output_tokens,
+            "top_p": self.llm_top_p,
+            "top_k": self.llm_top_k,
+        }
+
+    def get_llm_safety_settings(self) -> Optional[Dict[str, Any]]:
+        """Get LLM safety settings based on configuration."""
+        if not self.llm_safety_permissive:
+            # Use default safety settings (more restrictive)
+            return None
+
+        # Return permissive settings for cybersecurity content
+        try:
+            from google.generativeai.types import HarmCategory, HarmBlockThreshold  # type: ignore
+            return [
+                {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+            ]
+        except ImportError:
+            # Fallback using string names
+            return [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            ]
+
+    def get_llm_provider_config(self) -> Dict[str, Any]:
+        """Get complete LLM provider configuration."""
+        return {
+            "provider": self.llm_provider,
+            "model_name": self.llm_model_name,
+            "generation_config": self.get_llm_generation_config(),
+            "safety_settings": self.get_llm_safety_settings()
         }
     
     def validate_config(self, *, offline_ai: bool = False) -> None:

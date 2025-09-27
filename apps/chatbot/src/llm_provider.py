@@ -36,33 +36,30 @@ class GoogleProvider(LLMProvider):
         self._model = genai.GenerativeModel(model_name)
         self._gen_cfg = generation_config or {}
 
-        # AGGRESSIVE: Properly disable safety settings for Gemini 2.5 Flash Lite cybersecurity content
-        # Use the correct safety category names from official docs
-        try:
-            from google.generativeai.types import HarmCategory, HarmBlockThreshold  # type: ignore
-
-            # Official safety settings for Gemini 2.5 Flash Lite - BLOCK_NONE for all categories
-            self._safety = [
-                {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
-                {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.BLOCK_NONE},
-                {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.BLOCK_NONE},
-                {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
-            ]
-            logger.info("GoogleProvider configured with BLOCK_NONE for all safety categories (Gemini 2.5 Flash Lite)")
-        except ImportError:
-            # Fallback using string names
-            self._safety = [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-            ]
-            logger.info("GoogleProvider configured with BLOCK_NONE using string fallback")
-
-        # If user explicitly provides safety settings, respect them
+        # Configure safety settings - use provided settings or default to permissive for cybersecurity content
         if safety_settings is not None:
             self._safety = safety_settings
             logger.info(f"GoogleProvider using explicit safety_settings: {safety_settings}")
+        else:
+            # Default to permissive settings for cybersecurity content
+            try:
+                from google.generativeai.types import HarmCategory, HarmBlockThreshold  # type: ignore
+                self._safety = [
+                    {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                    {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                    {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                    {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                ]
+                logger.info("GoogleProvider configured with default BLOCK_NONE for cybersecurity content")
+            except ImportError:
+                # Fallback using string names
+                self._safety = [
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+                ]
+                logger.info("GoogleProvider configured with default BLOCK_NONE using string fallback")
 
     async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
         logger.debug(f"Starting streaming generation with safety_settings: {self._safety}")

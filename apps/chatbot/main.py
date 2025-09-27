@@ -15,8 +15,6 @@ import time
 
 import chainlit as cl
 from chainlit.input_widget import Select, Switch
-from chainlit import ChatProfile
-from pydantic import BaseModel, Field
 
 from src.user_context import UserPersona, UserContext
 from src.conversation import ConversationManager
@@ -25,6 +23,8 @@ from src.file_processor import FileProcessor
 from src.security.secure_logging import get_secure_logger
 # Use the extended config which loads from environment files automatically
 from src.app_config_extended import config as app_config
+# Import the new UI modules
+from src.ui import UIMessaging, UISettings, create_chat_profiles
 
 
 # Configure logging
@@ -34,21 +34,6 @@ logging.basicConfig(
 )
 logger = get_secure_logger(__name__)
 
-# Pydantic Chat Settings for native UI
-class UISettings(BaseModel):
-    detail_level: Literal["basic", "standard", "detailed"] = Field(
-        default="standard",
-        description="Level of detail in responses"
-    )
-    include_examples: bool = Field(
-        default=True,
-        description="Include code examples and practical demonstrations"
-    )
-    include_mitigations: bool = Field(
-        default=True,
-        description="Include prevention and mitigation guidance"
-    )
-
 # Global components (initialized on startup)
 conversation_manager: Optional[ConversationManager] = None
 input_sanitizer: Optional[InputSanitizer] = None
@@ -57,32 +42,35 @@ file_processor: Optional[FileProcessor] = None
 _init_ok: bool = False
 
 
-def create_progressive_response(content: str, detail_level: str) -> list:
-    """
-    Create progressive disclosure response based on detail level setting.
-    Story 3.4: Progressive Disclosure Implementation
-    """
-    if detail_level == "basic" and len(content) > 300:
-        # Create summary with expandable details
-        summary = content[:300] + "..."
-        remaining = content[300:]
+def requires_authentication() -> bool:
+    """Check if authentication is required based on configuration and available providers."""
+    if not app_config.enable_oauth:
+        return False
 
-        # Use Chainlit's Text element with expandable content
-        return [
-            cl.Text(name="Summary", content=summary, display="inline"),
-            cl.Text(name="Detailed Information", content=remaining, display="side")
-        ]
-    elif detail_level == "detailed":
-        # Show full content with additional context
-        return [cl.Text(name="Detailed Response", content=content, display="inline")]
-    else:
-        # Standard level - show full content normally
-        return [cl.Text(name="Response", content=content, display="inline")]
+    # Check if OAuth credentials are actually configured
+    has_google_oauth = bool(os.getenv("OAUTH_GOOGLE_CLIENT_ID") and os.getenv("OAUTH_GOOGLE_CLIENT_SECRET"))
+    has_github_oauth = bool(os.getenv("OAUTH_GITHUB_CLIENT_ID") and os.getenv("OAUTH_GITHUB_CLIENT_SECRET"))
+
+    return has_google_oauth or has_github_oauth
+
+
+def is_user_authenticated() -> bool:
+    """Check if the current user is authenticated (only relevant if OAuth is enabled and configured)."""
+    if not requires_authentication():
+        return True  # Always authenticated if OAuth is disabled or not configured
+
+    user = cl.user_session.get("user")
+    return user is not None
 
 
 def initialize_components() -> bool:
     """Initialize all Story 2.1 chatbot components with error handling."""
     global conversation_manager, input_sanitizer, security_validator, file_processor, _init_ok
+
+    # Prevent double initialization
+    if _init_ok and conversation_manager is not None:
+        logger.info("Components already initialized, skipping initialization")
+        return True
 
     try:
         # Validate config once; if it fails, we will surface a UI error and disable handlers
@@ -129,6 +117,23 @@ def initialize_components() -> bool:
 
         logger.info("Story 2.1 components initialized successfully")
         logger.info(f"Database health: {health}")
+
+        # Log OAuth configuration status
+        if not app_config.enable_oauth:
+            logger.info("OAuth mode: disabled (open access)")
+        else:
+            has_google_oauth = bool(os.getenv("OAUTH_GOOGLE_CLIENT_ID") and os.getenv("OAUTH_GOOGLE_CLIENT_SECRET"))
+            has_github_oauth = bool(os.getenv("OAUTH_GITHUB_CLIENT_ID") and os.getenv("OAUTH_GITHUB_CLIENT_SECRET"))
+            if has_google_oauth or has_github_oauth:
+                providers = []
+                if has_google_oauth:
+                    providers.append("Google")
+                if has_github_oauth:
+                    providers.append("GitHub")
+                logger.info(f"OAuth mode: enabled with {', '.join(providers)} provider(s)")
+            else:
+                logger.info("OAuth mode: enabled but no provider credentials found (running in open access mode)")
+
         _init_ok = True
         return _init_ok
     except Exception as e:
@@ -137,27 +142,12 @@ def initialize_components() -> bool:
         return _init_ok
 
 
-persona_descriptions = {
-    "PSIRT Member": "Impact assessment and security advisory creation",
-    "Developer": "Remediation steps and secure coding examples",
-    "Academic Researcher": "Comprehensive analysis and CWE relationships",
-    "Bug Bounty Hunter": "Exploitation patterns and testing techniques",
-    "Product Manager": "Business impact and prevention strategies",
-    "CWE Analyzer": "CVE-to-CWE mapping analysis with confidence scoring",
-    "CVE Creator": "Structured CVE vulnerability descriptions",
-}
-
 @cl.set_chat_profiles
 def set_profiles():
     """Expose personas as top-bar chat profiles for quick access."""
-    profiles = []
-    for p in UserPersona:
-        description = persona_descriptions.get(p.value, f"Persona: {p.value}")
-        profiles.append(ChatProfile(name=p.value, markdown_description=description))
-    return profiles
+    return create_chat_profiles()
 
 
-@cl.oauth_callback
 def oauth_callback(
     provider_id: str,
     token: str,
@@ -247,9 +237,8 @@ async def start():
         await cl.Message(content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB).").send()
         return
 
-    # Authentication enforcement - require OAuth authentication
-    user = cl.user_session.get("user")
-    if not user:
+    # Authentication enforcement - require OAuth authentication if enabled
+    if requires_authentication() and not is_user_authenticated():
         await cl.Message(
             content="🔒 Authentication required. Please authenticate using Google or GitHub to access the CWE ChatBot.",
             author="System"
@@ -306,50 +295,66 @@ async def start():
     except Exception as e:
         logger.log_exception("Failed to send UI hint", e)
 
-    # Initialize per-user context in Chainlit with default persona
+    # Initialize per-user context in Chainlit with centralized helper
     session_id = cl.context.session.id
-    await conversation_manager.update_user_persona(session_id, persona)
 
-    # Integrate OAuth authentication with user context
-    user = cl.user_session.get("user")
-    if user and hasattr(user, 'metadata') and user.metadata:
-        try:
-            # User is authenticated via OAuth - integrate with UserContext
-            user_context = await conversation_manager.get_user_context(session_id)
-            if user_context:
-                user_context.set_oauth_data(
-                    provider=user.metadata.get("provider"),
-                    email=user.metadata.get("email"),
-                    name=user.metadata.get("name"),
-                    avatar_url=user.metadata.get("avatar_url")
-                )
-                # Update activity timestamp for session management
-                user_context.update_activity()
-                logger.info(f"OAuth integration completed for user: {user.metadata.get('email')}")
+    # Import and use centralized helper
+    from src.utils.session import get_user_context
+    user_context = get_user_context()
 
-                # Integrate persona selection with authenticated user context
-                user_context.persona = persona
-                logger.info(f"Persona '{persona}' assigned to authenticated user: {user.metadata.get('email')}")
+    # Set the persona from the selected chat profile (only if changed)
+    if user_context.persona != persona:
+        user_context.persona = persona
 
-            # Store session validation data
-            cl.user_session.set("auth_timestamp", time.time())
-            cl.user_session.set("auth_provider", user.metadata.get("provider"))
-            cl.user_session.set("auth_email", user.metadata.get("email"))
+    # Integrate OAuth authentication with user context (if OAuth is enabled)
+    if requires_authentication():
+        user = cl.user_session.get("user")
+        if user and hasattr(user, 'metadata') and user.metadata:
+            try:
+                # User is authenticated via OAuth - integrate with UserContext
+                if user_context:
+                    user_context.set_oauth_data(
+                        provider=user.metadata.get("provider"),
+                        email=user.metadata.get("email"),
+                        name=user.metadata.get("name"),
+                        avatar_url=user.metadata.get("avatar_url")
+                    )
+                    # Update activity timestamp for session management
+                    user_context.update_activity()
+                    logger.info(f"OAuth integration completed for user: {user.metadata.get('email')}")
 
-        except Exception as e:
-            logger.log_exception("OAuth integration error during chat start", e)
-            await cl.Message(
-                content="⚠️ Authentication integration error. Some features may not work properly. Please try refreshing the page.",
-                author="System"
-            ).send()
+                    # Integrate persona selection with authenticated user context
+                    user_context.persona = persona
+                    logger.info(f"Persona '{persona}' assigned to authenticated user: {user.metadata.get('email')}")
+
+                # Store session validation data
+                cl.user_session.set("auth_timestamp", time.time())
+                cl.user_session.set("auth_provider", user.metadata.get("provider"))
+                cl.user_session.set("auth_email", user.metadata.get("email"))
+
+            except Exception as e:
+                logger.log_exception("OAuth integration error during chat start", e)
+                await cl.Message(
+                    content="⚠️ Authentication integration error. Some features may not work properly. Please try refreshing the page.",
+                    author="System"
+                ).send()
+    else:
+        # OAuth is disabled - just set persona without authentication integration
+        if user_context:
+            user_context.persona = persona
+            logger.info(f"Persona '{persona}' assigned (OAuth disabled mode)")
 
     # Enhanced onboarding welcome message with progressive introduction
-    # Personalize welcome if user is authenticated
+    # Personalize welcome if user is authenticated (OAuth mode only)
     user_greeting = "Welcome to the CWE ChatBot! 🛡️"
-    if user and user.metadata:
-        user_name = user.metadata.get("name") or user.metadata.get("email", "").split("@")[0]
-        provider = user.metadata.get("provider", "OAuth").title()
-        user_greeting = f"Welcome back, {user_name}! 🛡️\n\n*Authenticated via {provider}*\n\n🔐 *Your session is secure and your persona preferences will be saved.*"
+    if requires_authentication():
+        user = cl.user_session.get("user")
+        if user and user.metadata:
+            user_name = user.metadata.get("name") or user.metadata.get("email", "").split("@")[0]
+            provider = user.metadata.get("provider", "OAuth").title()
+            user_greeting = f"Welcome back, {user_name}! 🛡️\n\n*Authenticated via {provider}*\n\n🔐 *Your session is secure and your persona preferences will be saved.*"
+    else:
+        user_greeting = f"Welcome to the CWE ChatBot! 🛡️\n\n*Running in open access mode (OAuth disabled)*"
 
     welcome_message = f"""{user_greeting}
 
@@ -407,9 +412,8 @@ Here are some questions to get you started:
 async def main(message: cl.Message):
     """Handle incoming messages with Story 2.1 NLU and RAG pipeline."""
 
-    # Authentication enforcement - require OAuth authentication
-    user = cl.user_session.get("user")
-    if not user:
+    # Authentication enforcement - require OAuth authentication if enabled
+    if requires_authentication() and not is_user_authenticated():
         await cl.Message(
             content="🔒 Authentication required. Please authenticate using Google or GitHub to send messages.",
             author="System"
@@ -418,7 +422,8 @@ async def main(message: cl.Message):
 
     # Session validation and activity tracking
     try:
-        user_context = await conversation_manager.get_user_context(cl.context.session.id)
+        from src.utils.session import get_user_context
+        user_context = get_user_context()
         if user_context and user_context.is_authenticated:
             user_context.update_activity()
     except Exception as e:
@@ -486,72 +491,31 @@ async def main(message: cl.Message):
         current_persona = (current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value)
         logger.info(f"Processing user query: '{user_query[:100]}...' for persona: {current_persona}")
 
-        # Process message using conversation manager with streaming (true streaming)
-        result = await conversation_manager.process_user_message_streaming(
-            session_id=session_id,
-            message_content=user_query,
-            message_id=message.id
-        )
+        # Main Processing Pipeline with Step Visualization
+        async with cl.Step(name="Analyze security query", type="tool") as analysis_step:
+            analysis_step.input = f"Query: '{user_query[:100]}...' | Persona: {current_persona}"
+            analysis_step.output = "Query validated and ready for CWE analysis"
+
+            # Process message using conversation manager with streaming (true streaming)
+            result = await conversation_manager.process_user_message_streaming(
+                session_id=session_id,
+                message_content=user_query,
+                message_id=message.id
+            )
 
         # Create source cards as Chainlit Elements if we have retrieved chunks
         elements = []
         if result.get("retrieved_cwes") and result.get("chunk_count", 0) > 0:
-            # Get the retrieved chunks to create source elements
-            retrieved_chunks = result.get("retrieved_chunks", [])
-
-            # Group chunks by CWE and create source cards
-            cwe_groups = {}
-            for chunk in retrieved_chunks:
-                cwe_id = chunk["metadata"]["cwe_id"]
-                if cwe_id not in cwe_groups:
-                    cwe_groups[cwe_id] = {
-                        "name": chunk["metadata"]["name"],
-                        "chunks": []
-                    }
-                cwe_groups[cwe_id]["chunks"].append(chunk)
-
-            # Create source elements for each CWE (skip evidence pseudo-source)
-            filtered = [(cid, info) for cid, info in cwe_groups.items() if cid not in ("EVIDENCE", "FILE")]
-            for cwe_id, cwe_info in filtered[:3]:  # Limit to top 3 CWEs
-                # Get best scoring chunk for this CWE
-                best_chunk = max(cwe_info["chunks"], key=lambda x: x.get("scores", {}).get("hybrid", 0.0))
-                score = best_chunk.get("scores", {}).get("hybrid", 0.0)
-
-                # Create source content showing the CWE information
-                source_content = f"**{cwe_id}: {cwe_info['name']}**\n\n"
-                source_content += f"**Relevance Score:** {score:.3f}\n\n"
-
-                # Add section content from the best chunk
-                section = best_chunk["metadata"].get("section", "Content")
-                source_content += f"**{section}:**\n"
-                document_text = best_chunk["document"]
-
-                # Truncate if too long
-                if len(document_text) > 500:
-                    source_content += document_text[:500] + "..."
-                else:
-                    source_content += document_text
-
-                # Create Chainlit Text element for the source
-                source_element = cl.Text(
-                    name=f"Source: {cwe_id}",
-                    content=source_content,
-                    display="side"  # Display in sidebar
-                )
-                elements.append(source_element)
+            async with cl.Step(name="Prepare source references", type="tool") as sources_step:
+                # Get the retrieved chunks to create source elements
+                retrieved_chunks = result.get("retrieved_chunks", [])
+                elements = UIMessaging.create_source_elements(retrieved_chunks)
+                sources_step.output = f"Created {len(elements)} source references"
 
         # Add uploaded file evidence as a side element (if present)
         file_ctx = cl.user_session.get("uploaded_file_context")
         if file_ctx:
-            # Truncate for display; full text already passed as isolated context
-            preview = file_ctx
-            if len(preview) > 800:
-                preview = preview[:800] + "..."
-            evidence = cl.Text(
-                name="Uploaded Evidence",
-                content=preview,
-                display="side"
-            )
+            evidence = UIMessaging.create_file_evidence_element(file_ctx)
             elements.append(evidence)
 
         # Add metadata for debugging if needed
@@ -561,30 +525,9 @@ async def main(message: cl.Message):
         # Apply progressive disclosure based on UI settings and update message with elements
         if result.get("message"):
             # Apply progressive disclosure if configured
-            detail_level = ui_settings.get("detail_level", "standard")
-            if detail_level == "basic" and hasattr(result["message"], 'content'):
-                # Create progressive disclosure for long responses
-                content = result["message"].content
-                if len(content) > 300:
-                    # Split into summary and details
-                    summary = content[:300] + "..."
-                    details = content[300:]
-
-                    # Update the main message to show summary
-                    result["message"].content = summary
-
-                    # Add detailed content as a side element
-                    detail_element = cl.Text(
-                        name="Detailed Information",
-                        content=details,
-                        display="side"
-                    )
-                    elements.append(detail_element)
-
+            elements = UIMessaging.apply_progressive_disclosure(result["message"], ui_settings, elements)
             # Update message with all elements
-            if elements:
-                result["message"].elements = elements
-                await result["message"].update()
+            await UIMessaging.update_message_with_elements(result["message"], elements)
 
         # Clear file context after use to avoid unbounded growth (ConversationManager clears its own context copy)
         if file_ctx:
@@ -607,9 +550,8 @@ async def on_settings_update(settings: Dict[str, Any]):
     """Handle settings updates from the native Chainlit settings panel."""
     global conversation_manager
 
-    # Authentication enforcement - require OAuth authentication
-    user = cl.user_session.get("user")
-    if not user:
+    # Authentication enforcement - require OAuth authentication if enabled
+    if requires_authentication() and not is_user_authenticated():
         return
 
     if not conversation_manager:
@@ -766,6 +708,28 @@ async def on_stop() -> None:
                 logger.info("Closed retriever/database resources")
     except Exception as e:
         logger.log_exception("Shutdown cleanup failed", e)
+
+
+# Conditionally register OAuth callback only if OAuth is enabled AND provider credentials are set
+if app_config.enable_oauth:
+    # Check if any OAuth provider credentials are actually configured
+    has_google_oauth = bool(os.getenv("OAUTH_GOOGLE_CLIENT_ID") and os.getenv("OAUTH_GOOGLE_CLIENT_SECRET"))
+    has_github_oauth = bool(os.getenv("OAUTH_GITHUB_CLIENT_ID") and os.getenv("OAUTH_GITHUB_CLIENT_SECRET"))
+
+    if has_google_oauth or has_github_oauth:
+        # Register the OAuth callback decorator
+        oauth_callback = cl.oauth_callback(oauth_callback)
+        providers = []
+        if has_google_oauth:
+            providers.append("Google")
+        if has_github_oauth:
+            providers.append("GitHub")
+        logger.info(f"OAuth callback registered for: {', '.join(providers)}")
+    else:
+        logger.warning("OAuth enabled but no provider credentials found (OAUTH_*_CLIENT_ID/SECRET). Running in open access mode.")
+else:
+    logger.info("OAuth callback not registered (OAuth disabled)")
+
 
 if __name__ == "__main__":
     # This allows running the app directly with: python main.py
