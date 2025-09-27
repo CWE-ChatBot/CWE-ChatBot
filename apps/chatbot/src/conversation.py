@@ -19,6 +19,7 @@ from src.query_handler import CWEQueryHandler
 from src.response_generator import ResponseGenerator
 from src.security.secure_logging import get_secure_logger
 from src.processing.query_processor import QueryProcessor
+from src.processing.pipeline import ProcessingPipeline
 from src.utils.session import get_user_context
 
 from src.app_config_extended import config
@@ -67,6 +68,7 @@ class ConversationManager:
             self.query_handler = CWEQueryHandler(database_url, gemini_api_key)
             self.response_generator = ResponseGenerator(gemini_api_key)
             self.query_processor = QueryProcessor()
+            self.processing_pipeline = ProcessingPipeline()
 
             # No local message storage; rely on Chainlit's built-in persistence
 
@@ -76,23 +78,15 @@ class ConversationManager:
             logger.log_exception("Failed to initialize ConversationManager", e)
             raise
 
-    # -----------------------------
-    # Per-user context via cl.user_session
-    # -----------------------------
-    def _get_or_create_user_context(self, session_id: str) -> UserContext:
-        """Back-compat shim: use central session helper and bind session id if missing."""
+    def get_user_context(self, session_id: str) -> UserContext:
+        """
+        Public accessor to retrieve or create the per-user context.
+        Uses the centralized helper from src.utils.session.
+        """
         ctx = get_user_context()
+        # Bind session id if missing (back-compat)
         if not getattr(ctx, "session_id", None):
             ctx.session_id = session_id
-        # Seed persona from top-bar ChatProfile if available (first touch only)
-        try:
-            selected_profile = cl.user_session.get("chat_profile")
-            if isinstance(selected_profile, str) and selected_profile in UserPersona.get_all_personas():
-                if ctx.persona != selected_profile:
-                    ctx.persona = selected_profile
-        except Exception:
-            pass
-        ctx.update_activity()
         return ctx
 
     async def process_user_message_streaming(
@@ -108,16 +102,9 @@ class ConversationManager:
             logger.info(f"Processing streaming message for session {session_id}")
 
             # Get or create user context in cl.user_session
-            context = self._get_or_create_user_context(session_id)
+            context = self.get_user_context(session_id)
 
-            # Store user message
-            user_message = ConversationMessage(
-                message_id=message_id,
-                session_id=session_id,
-                content=message_content,
-                message_type="user",
-            )
-            self._add_message(session_id, user_message)
+            # User message is automatically stored by Chainlit
 
             processed = self.query_processor.process_with_context(
                 message_content, context.get_session_context_for_processing()
@@ -199,19 +186,34 @@ class ConversationManager:
             # Retrieve with combined query
             user_context_data = context.get_persona_preferences()
 
-            # Bypass retrieval for personas that analyze user input directly
-            if context.persona in ("CWE Analyzer", "CVE Creator"):
-                retrieved_chunks = []
-                # The user's query IS the evidence for these personas
-                context.set_evidence(sanitized_q)
-                if context.persona == "CWE Analyzer":
-                    combined_query = "Analyze the provided vulnerability description and map it to the most relevant CWEs."
-                else: # CVE Creator
-                    combined_query = "Create a structured CVE description from the provided text."
-            else:
-                retrieved_chunks = await self.query_handler.process_query(
-                    combined_query, user_context_data
-                )
+            # Step 1: Retrieve CWE context
+            async with cl.Step(name="Retrieve CWE context") as step:
+                # Bypass retrieval for personas that analyze user input directly
+                if context.persona in ("CWE Analyzer", "CVE Creator"):
+                    retrieved_chunks = []
+                    # The user's query IS the evidence for these personas
+                    context.set_evidence(sanitized_q)
+                    if context.persona == "CWE Analyzer":
+                        combined_query = "Analyze the provided vulnerability description and map it to the most relevant CWEs."
+                        step.output = "Direct analysis mode - no retrieval needed"
+                    else: # CVE Creator
+                        combined_query = "Create a structured CVE description from the provided text."
+                        step.output = "CVE creation mode - no retrieval needed"
+                else:
+                    retrieved_chunks = await self.query_handler.process_query(
+                        combined_query, user_context_data
+                    )
+                    step.output = f"Retrieved {len(retrieved_chunks)} relevant CWE chunks"
+
+            # Step 1.5: Process chunks into recommendations (new pipeline)
+            recommendations = []
+            if retrieved_chunks:
+                async with cl.Step(name="Process recommendations") as step:
+                    query_result = self.processing_pipeline.generate_recommendations(
+                        combined_query, retrieved_chunks, user_context_data
+                    )
+                    recommendations = query_result['recommendations']
+                    step.output = f"Generated {len(recommendations)} CWE recommendations"
 
             # Create message and stream tokens
             # If the user explicitly mentioned a CWE id, echo it upfront for clarity in UI/tests
@@ -230,13 +232,18 @@ class ConversationManager:
             except Exception:
                 pass
 
+            # Step 2: Generate answer - prepare but don't stream inside step
+            collected = ""
+            async with cl.Step(name="Generate answer") as step:
+                step.output = "Generating response..."
+
+            # Stream response outside of step context so it appears as final message
             msg = cl.Message(content=preface)
             await msg.send()
-            collected = ""
             try:
                 async for token in self.response_generator.generate_response_streaming(
                     combined_query,
-                    retrieved_chunks or [],
+                    recommendations,  # Use processed recommendations instead of raw chunks
                     context.persona,
                     user_evidence=context.file_evidence,
                 ):
@@ -265,9 +272,8 @@ class ConversationManager:
                 msg.content = new_content
                 await msg.update()
 
-            retrieved_cwes = list(set(
-                ch.get("metadata", {}).get("cwe_id") for ch in (retrieved_chunks or [])
-            )) if retrieved_chunks else []
+            # Extract CWE IDs from processed recommendations (better than raw chunks)
+            retrieved_cwes = [rec['cwe_id'] for rec in recommendations] if recommendations else []
 
             # FIX: Prioritize directly requested CWE in context storage
             # If user asked for a specific CWE, put it first in the context list
@@ -286,28 +292,15 @@ class ConversationManager:
             context.add_conversation_entry(combined_query, final_response, retrieved_cwes)
             context.clear_evidence()
 
-            # Store assistant message
-            assistant_message = ConversationMessage(
-                message_id=f"{message_id}_response",
-                session_id=session_id,
-                content=final_response,
-                message_type="assistant",
-                metadata={
-                    "retrieved_cwes": retrieved_cwes,
-                    "chunk_count": len(retrieved_chunks),
-                    "persona": context.persona,
-                    "security_validated": validation_result["is_safe"],
-                },
-            )
-            self._add_message(session_id, assistant_message)
+            # Assistant message is automatically stored by Chainlit
 
             return {
                 "response": final_response,
                 "session_id": session_id,
                 "is_safe": validation_result["is_safe"],
                 "retrieved_cwes": retrieved_cwes,
-                "chunk_count": len(retrieved_chunks),
-                "retrieved_chunks": retrieved_chunks,
+                "chunk_count": len(retrieved_chunks or []),
+                "recommendations": recommendations,  # New: processed recommendations
                 "persona": context.persona,
                 "message": msg,
             }
@@ -332,34 +325,13 @@ class ConversationManager:
             logger.error(f"Invalid persona: {new_persona}")
             return False
 
-        context = self._get_or_create_user_context(session_id)
+        context = self.get_user_context(session_id)
         old_persona = context.persona
         context.persona = new_persona
         context.update_activity()
-        # Add system message about persona change
-        system_message = ConversationMessage(
-            message_id=f"persona_change_{datetime.now(timezone.utc).timestamp()}",
-            session_id=session_id,
-            content=f"Persona updated to: {new_persona}",
-            message_type="system",
-            metadata={"persona_change": True, "new_persona": new_persona, "old_persona": old_persona}
-        )
-        self._add_message(session_id, system_message)
+        logger.info(f"Persona updated from {old_persona} to {new_persona} for session {session_id}")
         return True
 
-    def get_conversation_history(self, session_id: str, limit: int = 20) -> List[ConversationMessage]:
-        """
-        Get conversation history for a session.
-
-        Args:
-            session_id: Session identifier
-            limit: Maximum number of messages to return
-
-        Returns:
-            List of conversation messages
-        """
-        # Chainlit UI shows persisted history; avoid duplicating storage here.
-        return []
 
     def get_session_context(self, session_id: str) -> Optional[UserContext]:
         """
@@ -389,7 +361,7 @@ class ConversationManager:
             logger.error(f"Invalid rating: {rating}")
             return False
 
-        context = self._get_or_create_user_context(session_id)
+        context = self.get_user_context(session_id)
         if not context:
             logger.error(f"Session not found: {session_id}")
             return False
@@ -402,15 +374,6 @@ class ConversationManager:
         logger.info(f"Recorded feedback for session {session_id}: {rating}")
         return True
 
-    def cleanup_expired_sessions(self) -> int:
-        """
-        Clean up expired sessions and associated conversation data.
-
-        Returns:
-            Number of sessions cleaned up
-        """
-        # cl.user_session is per-connection; nothing to clean here
-        return 0
 
     def get_system_health(self) -> Dict[str, Any]:
         """
@@ -427,9 +390,6 @@ class ConversationManager:
         })
         return health
 
-    def _add_message(self, session_id: str, message: ConversationMessage) -> None:
-        """No-op for local storage; Chainlit persists messages in its data layer."""
-        logger.debug(f"Message recorded (type={message.message_type}) for session {session_id}")
 
     def _summarize_attachment(self, text: str, *, limit: int = None) -> str:
         """Create a brief, safe attachment summary for retrieval/context."""
