@@ -28,46 +28,42 @@ class ResponseGenerator:
     - Source attribution and confidence indicators
     """
 
-    def __init__(self, gemini_api_key: str, model_name: str = "gemini-2.5-flash-lite"):
+    def __init__(self, gemini_api_key: str, model_name: str = None):
         """
-        Initialize response generator with Gemini model.
+        Initialize response generator with configurable LLM settings.
 
         Args:
             gemini_api_key: Gemini API key
-            model_name: Gemini model to use for generation
+            model_name: Optional model override (uses config default if None)
         """
         try:
             # Allow offline mode (explicit opt-in)
             self.offline = os.getenv("DISABLE_AI") == "1" or os.getenv("GEMINI_OFFLINE") == "1"
 
-            # Configure generation for factual, security-focused responses
-            self.generation_config = {
-                "temperature": 0.1,  # Low temperature for factual responses
-                "max_output_tokens": config.max_output_tokens,
-                "top_p": 0.9,
-                "top_k": 40,
-            }
-            # Permissive safety settings for security content (explicitly logged)
-            # Use None to let GoogleProvider apply its default permissive settings
-            self.safety_settings = None
+            # Get LLM configuration from centralized config
+            llm_config = config.get_llm_provider_config()
+
+            # Allow override of model name
+            if model_name is not None:
+                llm_config["model_name"] = model_name
 
             # Load persona-specific prompt templates
             self.persona_prompts = self._load_persona_prompts()
 
-            mode = "offline" if self.offline else model_name
-            # Initialize provider adapter
-            provider_name = os.getenv("PROVIDER") or "google"
+            mode = "offline" if self.offline else llm_config["model_name"]
+            # Initialize provider adapter with centralized configuration
             self.provider = get_llm_provider(
-                provider=provider_name,
+                provider=llm_config["provider"],
                 api_key=gemini_api_key,
-                model_name=model_name,
-                generation_config=self.generation_config,
-                safety_settings=getattr(self, "safety_settings", None),
+                model_name=llm_config["model_name"],
+                generation_config=llm_config["generation_config"],
+                safety_settings=llm_config["safety_settings"],
                 offline=self.offline,
                 persona=None,
             )
 
-            logger.info(f"ResponseGenerator initialized with {mode}")
+            logger.info(f"ResponseGenerator initialized with {mode} (configurable defaults)")
+            logger.info(f"LLM Config - Provider: {llm_config['provider']}, Temperature: {llm_config['generation_config']['temperature']}, Safety: {'permissive' if llm_config['safety_settings'] else 'default'}")
 
         except Exception as e:
             logger.error(f"Failed to initialize ResponseGenerator: {e}")

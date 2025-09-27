@@ -104,7 +104,8 @@ class ExplanationBuilder:
         query_terms = set(query.lower().split())
 
         for chunk in chunks:
-            content = chunk.get("content", "")
+            # Standardized: primary text is under "document" in your pipeline
+            content = chunk.get("document") or chunk.get("content", "")
             section = chunk.get("metadata", {}).get("section", "Unknown")
             score = chunk.get("score", chunk.get("hybrid_score", 0.0))
 
@@ -284,7 +285,10 @@ class ExplanationBuilder:
             CWE name if found, empty string otherwise
         """
         for chunk in chunks:
-            cwe_name = chunk.get("metadata", {}).get("cwe_name")
+            cwe_name = (
+                chunk.get("metadata", {}).get("name")
+                or chunk.get("metadata", {}).get("cwe_name")
+            )
             if cwe_name:
                 return cwe_name
 

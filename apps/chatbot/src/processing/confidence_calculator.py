@@ -171,7 +171,11 @@ def create_aggregated_cwe(cwe_id: str,
 
     for chunk in chunks:
         # Extract score (could be in different fields depending on retrieval method)
-        score = chunk.get("score", chunk.get("hybrid_score", 0.0))
+        score = chunk.get("score", chunk.get("hybrid_score"))
+        if score is None:
+            # Your retrieval shape keeps scores nested under "scores"
+            s = (chunk.get("scores") or {})
+            score = s.get("hybrid", s.get("vec", 0.0))
         if isinstance(score, (int, float)):
             top_scores.append(float(score))
 
