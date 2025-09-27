@@ -133,97 +133,54 @@ class ConversationManager:
 
             # User message is automatically stored by Chainlit
 
-            # Analyzer disambiguation: support persistent modes and switching commands
+            # Analyzer disambiguation (action-driven): support persistent modes and switching commands
             if context.persona == "CWE Analyzer":
-                try:
-                    awaiting = bool(cl.user_session.get("analyzer_awaiting_option") or False)
-                    question_mode = bool(cl.user_session.get("analyzer_question_mode") or False)
-                    compare_mode = bool(cl.user_session.get("analyzer_compare_mode") or False)
-                except Exception:
-                    awaiting, question_mode, compare_mode = False, False, False
-                # While in a persistent mode, allow '0' to exit back to analysis selection
-                if (question_mode or compare_mode) and not awaiting:
-                    import re as _re
-                    if _re.match(r"^\s*0\b", message_content):
-                        try:
-                            cl.user_session.set("analyzer_awaiting_option", True)
-                            cl.user_session.set("analyzer_question_mode", False)
-                            cl.user_session.set("analyzer_compare_mode", False)
-                        except Exception:
-                            pass
-                        prompt_msg = (
-                            "Exited special mode. Reply '1' to ask questions, or '2' to propose candidate CWE ID(s). "
-                            "Otherwise, send new vulnerability text for a fresh CWE mapping."
-                        )
-                        out_msg = cl.Message(content=prompt_msg)
-                        await out_msg.send()
-                        return {
-                            "response": prompt_msg,
-                            "session_id": session_id,
-                            "is_safe": True,
-                            "retrieved_cwes": [],
-                            "chunk_count": 0,
-                            "retrieved_chunks": [],
-                            "persona": context.persona,
-                            "message": out_msg,
-                        }
-                if awaiting:
-                    import re as _re
-                    if _re.match(r"^\s*1\b", message_content):
-                        try:
-                            cl.user_session.set("analyzer_awaiting_option", False)
-                            cl.user_session.set("analyzer_question_mode", True)
-                            cl.user_session.set("analyzer_compare_mode", False)
-                        except Exception:
-                            pass
-                        # Prompt for the actual question and return
-                        prompt_msg = (
-                            "Question mode activated. Please ask your question about the current CWE analysis.\n"
-                            "(Send new vulnerability text to re-run analysis instead.)"
-                        )
-                        out_msg = cl.Message(content=prompt_msg)
-                        await out_msg.send()
-                        return {
-                            "response": prompt_msg,
-                            "session_id": session_id,
-                            "is_safe": True,
-                            "retrieved_cwes": [],
-                            "chunk_count": 0,
-                            "retrieved_chunks": [],
-                            "persona": context.persona,
-                            "message": out_msg,
-                        }
-                    elif _re.match(r"^\s*2\b", message_content):
-                        try:
-                            cl.user_session.set("analyzer_awaiting_option", False)
-                            cl.user_session.set("analyzer_question_mode", False)
-                            cl.user_session.set("analyzer_compare_mode", True)
-                        except Exception:
-                            pass
-                        prompt_msg = (
-                            "Comparison mode activated. Please provide the candidate CWE ID(s) to compare with the prior recommendations (e.g., 'CWE-917' or 'CWE-79, CWE-80').\n"
-                            "(Send new vulnerability text to re-run analysis instead.)"
-                        )
-                        out_msg = cl.Message(content=prompt_msg)
-                        await out_msg.send()
-                        return {
-                            "response": prompt_msg,
-                            "session_id": session_id,
-                            "is_safe": True,
-                            "retrieved_cwes": [],
-                            "chunk_count": 0,
-                            "retrieved_chunks": [],
-                            "persona": context.persona,
-                            "message": out_msg,
-                        }
-                    else:
-                        # Treat as new analysis; clear awaiting/question flags
-                        try:
-                            cl.user_session.set("analyzer_awaiting_option", False)
-                            cl.user_session.set("analyzer_question_mode", False)
-                            cl.user_session.set("analyzer_compare_mode", False)
-                        except Exception:
-                            pass
+                import re as _re
+                # Command switches: /ask, /compare, /exit
+                if _re.match(r"^\s*/ask\b", message_content, flags=_re.IGNORECASE):
+                    context.analyzer_mode = "question"
+                    out_msg = cl.Message(content="Question mode activated. Ask about the last analysis or type /exit to leave.")
+                    await out_msg.send()
+                    return {
+                        "response": out_msg.content,
+                        "session_id": session_id,
+                        "is_safe": True,
+                        "retrieved_cwes": [],
+                        "chunk_count": 0,
+                        "retrieved_chunks": [],
+                        "persona": context.persona,
+                        "message": out_msg,
+                    }
+                if _re.match(r"^\s*/compare\b", message_content, flags=_re.IGNORECASE):
+                    context.analyzer_mode = "compare"
+                    out_msg = cl.Message(content="Comparison mode activated. Provide candidate CWE ID(s) (e.g., CWE-79, CWE-80). Type /exit to leave.")
+                    await out_msg.send()
+                    return {
+                        "response": out_msg.content,
+                        "session_id": session_id,
+                        "is_safe": True,
+                        "retrieved_cwes": [],
+                        "chunk_count": 0,
+                        "retrieved_chunks": [],
+                        "persona": context.persona,
+                        "message": out_msg,
+                    }
+                # Allow '0' or /exit to exit any active follow-up mode
+                if context.analyzer_mode in ("question", "compare") and (_re.match(r"^\s*0\b", message_content) or _re.match(r"^\s*/exit\b", message_content, flags=_re.IGNORECASE)):
+                    context.analyzer_mode = None
+                    hint = "Exited follow-up mode. Type /ask to ask a question or /compare to compare CWEs."
+                    out_msg = cl.Message(content=hint)
+                    await out_msg.send()
+                    return {
+                        "response": hint,
+                        "session_id": session_id,
+                        "is_safe": True,
+                        "retrieved_cwes": [],
+                        "chunk_count": 0,
+                        "retrieved_chunks": [],
+                        "persona": context.persona,
+                        "message": out_msg,
+                    }
 
             processed = self.query_processor.process_with_context(
                 message_content, context.get_session_context_for_processing()
@@ -335,15 +292,10 @@ class ConversationManager:
                     combined_query = analyzer_query
 
                     # If in explicit question mode, reuse prior context and avoid new analysis
-                    try:
-                        question_mode = bool(cl.user_session.get("analyzer_question_mode") or False)
-                        compare_mode = bool(cl.user_session.get("analyzer_compare_mode") or False)
-                        prev_recs = cl.user_session.get("last_recommendations") or []
-                        prev_chunks = cl.user_session.get("last_chunks") or []
-                    except Exception:
-                        question_mode, compare_mode, prev_recs, prev_chunks = False, False, [], []
+                    prev_recs = context.last_recommendations or []
+                    prev_chunks = context.last_chunks or []
 
-                    if question_mode and prev_chunks:
+                    if context.analyzer_mode == "question" and prev_chunks:
                         retrieved_chunks = prev_chunks
                         step.output = "Question mode - using prior analysis context"
                         # Build follow-up instruction unconditionally
@@ -355,21 +307,16 @@ class ConversationManager:
                                 "Task: Address the user’s follow-up by referencing and, if needed, revising prior recommendations with clear reasoning.\n"
                             )
                             combined_query = combined_query + followup_note
-                    elif compare_mode:
+                    elif context.analyzer_mode == "compare":
                         # Expect candidate CWE IDs from the user input; compare against previous recs
                         candidates = list(processed.get("cwe_ids", set()) or [])
                         prev_ids = [r.get('cwe_id') for r in prev_recs if r.get('cwe_id')]
                         if not candidates:
                             step.output = "Comparison mode - awaiting candidate CWE IDs"
-                            # Return early with prompt to supply candidate IDs
-                            prompt_msg = (
-                                "Please provide the candidate CWE ID(s) to compare (e.g., 'CWE-917' or 'CWE-79, CWE-80').\n"
-                                "Reply '0' to exit comparison mode."
-                            )
-                            msg = cl.Message(content=prompt_msg)
+                            msg = cl.Message(content="Provide candidate CWE ID(s) to compare. You can type /exit to leave compare mode.")
                             await msg.send()
                             return {
-                                "response": prompt_msg,
+                                "response": msg.content,
                                 "session_id": session_id,
                                 "is_safe": True,
                                 "retrieved_cwes": [],
@@ -487,11 +434,8 @@ class ConversationManager:
                     recommendations = query_result['recommendations']
                     step.output = f"Generated {len(recommendations)} CWE recommendations"
             # Store recommendations for follow-up turns (e.g., Analyzer comparisons)
-            try:
-                cl.user_session.set("last_recommendations", recommendations or [])
-                cl.user_session.set("last_chunks", retrieved_chunks or [])
-            except Exception:
-                pass
+            context.last_recommendations = recommendations or []
+            context.last_chunks = retrieved_chunks or []
 
             # Append canonical metadata for recommended CWEs from DB to assist generation (all personas)
             try:
@@ -577,18 +521,10 @@ class ConversationManager:
             # Compute mode tag for step clarity (no newlines)
             step_mode_tag = ""
             if context.persona == "CWE Analyzer":
-                try:
-                    awaiting = bool(cl.user_session.get("analyzer_awaiting_option") or False)
-                    question_mode = bool(cl.user_session.get("analyzer_question_mode") or False)
-                    compare_mode = bool(cl.user_session.get("analyzer_compare_mode") or False)
-                except Exception:
-                    awaiting = question_mode = compare_mode = False
-                if question_mode:
+                if context.analyzer_mode == "question":
                     step_mode_tag = " [Analyzer: Question Mode]"
-                elif compare_mode:
+                elif context.analyzer_mode == "compare":
                     step_mode_tag = " [Analyzer: Comparison Mode]"
-                elif awaiting:
-                    step_mode_tag = " [Analyzer: Select Mode]"
 
             collected = ""
             async with cl.Step(name="Generate answer") as step:
@@ -596,11 +532,8 @@ class ConversationManager:
 
             # Build follow-up comparison context for CWE Analyzer
             if context.persona == "CWE Analyzer":
-                try:
-                    prev_recs = cl.user_session.get("last_recommendations") or []
-                    prev_chunks = cl.user_session.get("last_chunks") or []
-                except Exception:
-                    prev_recs, prev_chunks = [], []
+                prev_recs = context.last_recommendations or []
+                prev_chunks = context.last_chunks or []
                 # If the user proposes specific CWE ids, append a comparison instruction
                 candidate_cwes = list(processed.get("cwe_ids", set()) or [])
                 followup_intent = getattr(processed.get('followup_intent', None), 'intent_type', None)
@@ -630,18 +563,10 @@ class ConversationManager:
             # Add a small status tag for CWE Analyzer modes
             mode_tag = ""
             if context.persona == "CWE Analyzer":
-                try:
-                    awaiting = bool(cl.user_session.get("analyzer_awaiting_option") or False)
-                    question_mode = bool(cl.user_session.get("analyzer_question_mode") or False)
-                    compare_mode = bool(cl.user_session.get("analyzer_compare_mode") or False)
-                except Exception:
-                    awaiting = question_mode = compare_mode = False
-                if question_mode:
+                if context.analyzer_mode == "question":
                     mode_tag = "[Analyzer: Question Mode]\n\n"
-                elif compare_mode:
+                elif context.analyzer_mode == "compare":
                     mode_tag = "[Analyzer: Comparison Mode]\n\n"
-                elif awaiting:
-                    mode_tag = "[Analyzer: Select Mode]\n\n"
 
             msg = cl.Message(content=(mode_tag + (preface or "")))
             await msg.send()
@@ -738,28 +663,16 @@ class ConversationManager:
 
             # Assistant message is automatically stored by Chainlit
 
-            # After CWE Analyzer analysis: maintain mode or prompt selection
+            # After CWE Analyzer analysis: maintain mode or present command hints
             if context.persona == "CWE Analyzer":
                 try:
-                    awaiting = bool(cl.user_session.get("analyzer_awaiting_option") or False)
-                    question_mode = bool(cl.user_session.get("analyzer_question_mode") or False)
-                    compare_mode = bool(cl.user_session.get("analyzer_compare_mode") or False)
-                except Exception:
-                    awaiting, question_mode, compare_mode = False, False, False
-                try:
-                    if question_mode:
-                        hint = "(Question mode active) Reply '0' to exit, or continue asking follow-up questions."
-                        await cl.Message(content=hint).send()
-                    elif compare_mode:
-                        hint = "(Comparison mode active) Provide candidate CWE ID(s), or reply '0' to exit."
-                        await cl.Message(content=hint).send()
+                    if context.analyzer_mode == "question":
+                        await cl.Message(content="(Question mode active) Ask a question about the last analysis. Type /exit to leave.").send()
+                    elif context.analyzer_mode == "compare":
+                        await cl.Message(content="(Comparison mode active) Provide candidate CWE ID(s). Type /exit to leave.").send()
                     else:
-                        cl.user_session.set("analyzer_awaiting_option", True)
-                        choice_prompt = (
-                            "Reply '1' to ask questions about this analysis, or '2' to propose candidate CWE ID(s) to compare. "
-                            "Otherwise, send new vulnerability text to perform a fresh CWE mapping."
-                        )
-                        await cl.Message(content=choice_prompt).send()
+                        # Fresh analysis finished; offer command hints
+                        await cl.Message(content="Next: type /ask to ask a question about this analysis, or /compare to compare candidate CWEs.").send()
                 except Exception:
                     pass
 
@@ -870,6 +783,8 @@ class ConversationManager:
         if len(t) > limit:
             t = t[:limit] + "..."
         return t
+
+    # Removed actions helper; using slash-command hints instead.
 
     async def _handle_processing_error(self, session_id: str, error: Exception) -> Dict[str, Any]:
         """Handle processing errors with consistent response pattern."""

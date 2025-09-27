@@ -5,7 +5,7 @@ Manages user personas, context, and session state for personalized CWE responses
 """
 
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Literal
 from enum import Enum
 from dataclasses import dataclass, field
 import uuid
@@ -73,6 +73,11 @@ class UserContext:
     query_count: int = 0
     preferred_cwe_categories: List[str] = field(default_factory=list)
     feedback_ratings: List[int] = field(default_factory=list)
+
+    # Analyzer follow-up state and cached context
+    last_recommendations: List[Dict[str, Any]] = field(default_factory=list)
+    last_chunks: List[Dict[str, Any]] = field(default_factory=list)
+    analyzer_mode: Optional[Literal["question", "compare"]] = None
 
     def update_activity(self) -> None:
         """Update last activity timestamp."""

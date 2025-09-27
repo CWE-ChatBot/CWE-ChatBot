@@ -25,6 +25,7 @@ from src.security.secure_logging import get_secure_logger
 from src.app_config_extended import config as app_config
 # Import the new UI modules
 from src.ui import UIMessaging, UISettings, create_chat_profiles
+from src.utils.session import get_user_context
 
 
 # Configure logging
@@ -405,6 +406,9 @@ Here are some questions to get you started:
 
     await cl.Message(content=examples_message, elements=[persona_element]).send()
 
+    # Optional: Debug action rendering if DEBUG_ACTIONS=1 (disabled due to environment ValidationError)
+    # To test actions, use the CWE Analyzer flow or thumbs-down feedback instead.
+
     # Users can upload files via Chainlit's spontaneous file upload feature (config.toml)
 
 
@@ -422,7 +426,6 @@ async def main(message: cl.Message):
 
     # Session validation and activity tracking
     try:
-        from src.utils.session import get_user_context
         user_context = get_user_context()
         if user_context and user_context.is_authenticated:
             user_context.update_activity()
@@ -461,6 +464,12 @@ async def main(message: cl.Message):
         cl.user_session.set("_last_msg_ts", now)
 
         user_query = message.content.strip()
+
+        # Manual feedback command as fallback when thumbs UI is unavailable
+        if user_query.lower().startswith("/feedback"):
+            await cl.Message(content="Opening feedback prompt...").send()
+            await collect_detailed_feedback()
+            return
 
         # If user uploaded files via the Attach Files action earlier, merge their content
         pending_upload = cl.user_session.get("uploaded_file_content")
@@ -543,6 +552,9 @@ async def main(message: cl.Message):
         logger.log_exception("Error processing message", e, extra_context={"handler": "on_message"})
         error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
         await cl.Message(content=error_response).send()
+
+
+# Actions removed: follow-ups now driven by slash commands (/ask, /compare, /exit)
 
 
 @cl.on_settings_update
@@ -642,21 +654,9 @@ async def on_feedback(feedback):
         if success:
             logger.info(f"Recorded feedback for message {message_id}: rating {rating} (feedback value: {feedback_value})")
 
-            # For negative feedback, offer detailed feedback collection
+            # For negative feedback, collect details directly (no actions)
             if feedback_value == 0:  # thumbs down
-                # Create action for detailed feedback
-                detailed_feedback_action = cl.Action(
-                    name="detailed_feedback",
-                    value="collect",
-                    label="💬 Share Details",
-                    description="Tell us how we can improve"
-                )
-
-                await cl.Message(
-                    content="Sorry this response wasn't helpful. Would you like to share more details?",
-                    actions=[detailed_feedback_action],
-                    author="System"
-                ).send()
+                await collect_detailed_feedback()
             else:
                 # Brief positive acknowledgment
                 await cl.Message(
@@ -672,11 +672,7 @@ async def on_feedback(feedback):
         logger.debug(f"Feedback object attributes: {dir(feedback) if feedback else 'None'}")
 
 
-# Action: Detailed Feedback Collection
-@cl.action_callback("detailed_feedback")
-async def on_detailed_feedback(action):
-    """Handle detailed feedback collection action."""
-    await collect_detailed_feedback()
+# Actions removed; detailed feedback collected directly on thumbs-down
 
 
 

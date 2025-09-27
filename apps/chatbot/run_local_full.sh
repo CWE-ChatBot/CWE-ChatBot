@@ -153,6 +153,8 @@ do
 done
 
 export DEBUG_CANONICAL=1
+export DEBUG_ACTIONS=1
+
 
 # Set defaults for missing values (Local Docker PostgreSQL)
 export POSTGRES_HOST=${POSTGRES_HOST:-localhost}
@@ -301,3 +303,4 @@ echo ""
 # Execute the command from project root so Chainlit loads .chainlit/config.toml there
 cd "$PROJECT_ROOT"
 exec $CMD
+

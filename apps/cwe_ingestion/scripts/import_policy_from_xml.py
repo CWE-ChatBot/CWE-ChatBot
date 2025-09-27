@@ -326,9 +326,11 @@ def main():
         try:
             with conn.cursor() as cur:
                 ids = list(KNOWN_EXPECTED.keys())
+                ids_upper = [i.upper() for i in ids]
+                # Use ANY(%s) with an array parameter to avoid dynamic SQL
                 cur.execute(
-                    f"SELECT cwe_id, mapping_label FROM cwe_policy_labels WHERE UPPER(cwe_id) IN ({','.join(['%s']*len(ids))})",
-                    ids,
+                    "SELECT cwe_id, mapping_label FROM cwe_policy_labels WHERE UPPER(cwe_id) = ANY(%s)",
+                    (ids_upper,),
                 )
                 db_map = {row[0].upper(): row[1] for row in cur.fetchall()}
                 for cid, expected in KNOWN_EXPECTED.items():
