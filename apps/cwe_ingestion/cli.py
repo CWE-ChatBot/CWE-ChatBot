@@ -13,7 +13,12 @@ except ImportError:
     # Absolute imports (when run directly)
     from pg_chunk_store import PostgresChunkStore
     from pg_vector_store import PostgresVectorStore
-    from pipeline import CWEIngestionPipeline
+from pipeline import CWEIngestionPipeline
+try:
+    from scripts.import_policy_from_xml import main as policy_import_main
+except Exception:
+    # Allow running when relative import path differs
+    from apps.cwe_ingestion.scripts.import_policy_from_xml import main as policy_import_main  # type: ignore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -347,3 +352,35 @@ def ingest_multi(target_cwes, only_cwes_file, embedding_model, embedder_type, lo
 
 if __name__ == '__main__':
     cli()
+
+@cli.command(name='policy-import')
+@click.option('--xml', type=str, help='Path to CWE XML file (e.g., cwec_v4.18.xml)')
+@click.option('--url', type=str, help='Remote URL to CWE XML or ZIP (e.g., https://.../cwec_latest.xml.zip)')
+@click.option('--db', type=str, help='Database URL (overrides env)')
+@click.option('--infer-by-abstraction', is_flag=True, help='Derive labels when Usage is absent')
+@click.option('--limit', type=int, default=0, help='Limit number of CWEs to import (for testing)')
+@click.option('--dry-run', is_flag=True, help='Parse and derive labels without writing to DB')
+@click.option('--env-file', type=str, default=os.path.expanduser('~/work/env/.env_cwe_chatbot'), help='Env file path for DB vars')
+@click.option('--verify-known', is_flag=True, help='Verify known CWE labels after import')
+def policy_import(xml, url, db, infer_by_abstraction, limit, dry_run, env_file, verify_known):
+    """Import CWE policy labels (Allowed / Allowed-with-Review / Discouraged / Prohibited) from CWE XML."""
+    import os
+    import sys
+    argv = ["--env-file", env_file]
+    if xml:
+        argv += ["--xml", xml]
+    if url:
+        argv += ["--url", url]
+    if db:
+        argv += ["--db", db]
+    if infer_by_abstraction:
+        argv.append("--infer-by-abstraction")
+    if limit:
+        argv += ["--limit", str(limit)]
+    if dry_run:
+        argv.append("--dry-run")
+    if verify_known:
+        os.environ['VERIFY_KNOWN'] = '1'
+    # Reinvoke importer's main with constructed argv
+    sys.argv = ["import_policy_from_xml.py"] + argv
+    policy_import_main()

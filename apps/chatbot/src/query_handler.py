@@ -100,7 +100,13 @@ class CWEQueryHandler:
             logger.log_exception("Failed to initialize CWEQueryHandler", e)
             raise
 
-    async def process_query(self, query: str, user_context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    async def process_query(
+        self,
+        query: str,
+        user_context: Dict[str, Any],
+        *,
+        hybrid_weights_override: Optional[Dict[str, float]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Process query using existing hybrid retrieval with user context.
 
@@ -124,7 +130,7 @@ class CWEQueryHandler:
             logger.debug(f"Generated {len(query_embedding)}D embedding")
 
             # Use centralized hybrid weights from Config (Story 1.5 validated weights)
-            weights = self.hybrid_weights
+            weights = hybrid_weights_override or self.hybrid_weights
 
             # Apply persona-specific section boost if configured
             section_boost = user_context.get("section_boost")
@@ -234,6 +240,111 @@ class CWEQueryHandler:
         except Exception as e:
             logger.log_exception("Failed to get database stats", e)
             return {"count": 0, "error": str(e)}
+
+    def get_canonical_cwe_metadata(self, cwe_ids: List[str]) -> Dict[str, Dict[str, str]]:
+        """
+        Fetch canonical CWE metadata (name, abstraction, status) from the embeddings table.
+
+        Args:
+            cwe_ids: List of CWE IDs like ["CWE-79", "CWE-89"]
+
+        Returns:
+            Dict mapping CWE ID to {name, abstraction, status}
+        """
+        meta: Dict[str, Dict[str, str]] = {}
+        if not cwe_ids:
+            return meta
+        try:
+            conn = getattr(self.store, "conn", None)
+            if conn is None:
+                return meta
+            # Normalize IDs to uppercase
+            ids = [str(cid).upper() for cid in cwe_ids]
+            placeholders = ",".join(["%s"] * len(ids))
+            # Prefer cwe_catalog if present; fallback to cwe_embeddings
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        f"SELECT cwe_id, name, abstraction, status FROM cwe_catalog WHERE UPPER(cwe_id) IN ({placeholders})",
+                        ids,
+                    )
+                    rows = cur.fetchall()
+                    if rows:
+                        for cwe_id, name, abstraction, status in rows:
+                            meta[str(cwe_id).upper()] = {
+                                "name": name or "",
+                                "abstraction": abstraction or "",
+                                "status": status or "",
+                            }
+                except Exception:
+                    # Fall back to embeddings if catalog is missing
+                    cur.execute(
+                        f"SELECT cwe_id, name, abstraction, status FROM cwe_embeddings WHERE UPPER(cwe_id) IN ({placeholders})",
+                        ids,
+                    )
+                    rows = cur.fetchall()
+                    for cwe_id, name, abstraction, status in rows:
+                        meta[str(cwe_id).upper()] = {
+                            "name": name or "",
+                            "abstraction": abstraction or "",
+                            "status": status or "",
+                        }
+        except Exception as e:
+            # Downgrade noise when tables are not present
+            msg = str(e)
+            if 'UndefinedTable' in msg or 'undefined table' in msg.lower():
+                logger.info("Canonical CWE metadata table(s) not available; skipping")
+            else:
+                logger.log_exception("Failed to fetch canonical CWE metadata", e)
+            try:
+                if conn is not None:
+                    conn.rollback()
+            except Exception:
+                pass
+        return meta
+
+    def get_cwe_policy_labels(self, cwe_ids: List[str]) -> Dict[str, Dict[str, str]]:
+        """
+        Fetch CWE policy labels (e.g., vulnerability mapping policy: Allowed / Allowed-with-Review / Discouraged)
+        from a dedicated table if present. This table is separate from embeddings and may be managed independently.
+
+        Expected schema (if present):
+        CREATE TABLE cwe_policy_labels (
+          cwe_id TEXT PRIMARY KEY,
+          mapping_label TEXT,  -- e.g., 'Allowed', 'Allowed-with-Review', 'Discouraged'
+          notes TEXT
+        );
+        """
+        labels: Dict[str, Dict[str, str]] = {}
+        if not cwe_ids:
+            return labels
+        try:
+            conn = getattr(self.store, "conn", None)
+            if conn is None:
+                return labels
+            ids = [str(cid).upper() for cid in cwe_ids]
+            placeholders = ",".join(["%s"] * len(ids))
+            sql = f"""
+                SELECT cwe_id, mapping_label, COALESCE(notes, '')
+                  FROM cwe_policy_labels
+                 WHERE UPPER(cwe_id) IN ({placeholders})
+            """
+            with conn.cursor() as cur:
+                cur.execute(sql, ids)
+                for cwe_id, mapping_label, notes in cur.fetchall():
+                    labels[str(cwe_id).upper()] = {
+                        "mapping_label": mapping_label or "",
+                        "notes": notes or "",
+                    }
+        except Exception as e:
+            # Table may not exist; log at info to avoid noise, and rollback transaction if needed
+            logger.info(f"Policy labels table not available or fetch failed: {e}")
+            try:
+                if conn is not None:
+                    conn.rollback()
+            except Exception:
+                pass
+        return labels
 
     def health_check(self) -> Dict[str, bool]:
         """Perform health check on all components."""

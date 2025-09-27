@@ -164,12 +164,32 @@ class ProcessingPipeline:
 
         for cwe_id, cwe_data in cwe_chunks.items():
             try:
+                # Determine exact alias/name match to boost confidence
+                ql = (query or "").lower()
+                name_lower = (cwe_data['name'] or "").lower()
+                exact_match = False
+                if name_lower and name_lower in ql:
+                    exact_match = True
+                else:
+                    # Look for Aliases chunk and check for phrase matches
+                    for ch in cwe_data['chunks']:
+                        section = (ch.get('metadata') or {}).get('section', '')
+                        if section == 'Aliases':
+                            alias_text = (ch.get('document') or '').lower()
+                            # Aliases are joined with ';' per entry_to_sections
+                            for alias in [a.strip() for a in alias_text.split(';') if a.strip()]:
+                                if alias and alias in ql:
+                                    exact_match = True
+                                    break
+                        if exact_match:
+                            break
+
                 # Create AggregatedCWE for confidence calculation
                 aggregated = create_aggregated_cwe(
                     cwe_id=cwe_id,
                     name=cwe_data['name'],
                     chunks=cwe_data['chunks'],
-                    exact_match=cwe_data['exact_match']
+                    exact_match=exact_match
                 )
 
                 # Calculate confidence

@@ -152,6 +152,8 @@ do
     load_env_key "$KEY"
 done
 
+export DEBUG_CANONICAL=1
+
 # Set defaults for missing values (Local Docker PostgreSQL)
 export POSTGRES_HOST=${POSTGRES_HOST:-localhost}
 export POSTGRES_PORT=${POSTGRES_PORT:-5432}

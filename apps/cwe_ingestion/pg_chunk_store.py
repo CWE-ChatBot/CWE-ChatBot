@@ -440,15 +440,15 @@ class PostgresChunkStore:
             LIMIT  %s
           ),
         unioned AS (
-          SELECT id, rnk_v AS rnk FROM vec_search
+          SELECT id, rnk_v AS rnk, %s::float AS w FROM vec_search
           UNION ALL
-          SELECT id, rnk_f AS rnk FROM fts_search
+          SELECT id, rnk_f AS rnk, %s::float AS w FROM fts_search
           UNION ALL
-          SELECT id, rnk_a AS rnk FROM alias_search
+          SELECT id, rnk_a AS rnk, %s::float AS w FROM alias_search
         ),
         rrf AS (
           SELECT id,
-                 SUM(1.0 / (%s + rnk)) AS rrf_score
+                 SUM(w * (1.0 / (%s + rnk))) AS rrf_score
           FROM   unioned
           GROUP  BY id
         )
@@ -485,6 +485,9 @@ class PostgresChunkStore:
             query_text,
             query_text,
             alias_k_eff,
+            w_vec,
+            w_fts,
+            w_alias,
             k_rrf,
             section,
             section,
@@ -499,9 +502,9 @@ class PostgresChunkStore:
         for r in rows:
             chunk_id, cwe_id, section_name, section_rank, name, full_text, score, rnk_v, rnk_f, rnk_a = r
             # Approximate per-source contributions using RRF components
-            vec_contrib = (1.0 / (k_rrf + rnk_v)) if rnk_v is not None else 0.0
-            fts_contrib = (1.0 / (k_rrf + rnk_f)) if rnk_f is not None else 0.0
-            alias_contrib = (1.0 / (k_rrf + rnk_a)) if rnk_a is not None else 0.0
+            vec_contrib = (w_vec * (1.0 / (k_rrf + rnk_v))) if rnk_v is not None else 0.0
+            fts_contrib = (w_fts * (1.0 / (k_rrf + rnk_f))) if rnk_f is not None else 0.0
+            alias_contrib = (w_alias * (1.0 / (k_rrf + rnk_a))) if rnk_a is not None else 0.0
 
             results.append({
                 "chunk_id": str(chunk_id),

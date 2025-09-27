@@ -260,6 +260,38 @@ Response:""",
 
     # removed non-streaming generate_response (streaming-only)
 
+    async def generate_response_full_once(
+        self,
+        query: str,
+        retrieved_chunks: List[Dict[str, Any]],
+        user_persona: str,
+        *,
+        user_evidence: Optional[str] = None,
+    ) -> str:
+        """
+        Non-streaming single-shot generation using the same prompt as streaming.
+        Returns a cleaned response string or empty string on failure.
+        """
+        try:
+            context = self._build_context(retrieved_chunks or [])
+            if not context and not (user_evidence and user_evidence.strip()):
+                return ""
+
+            prompt_template = self.persona_prompts.get(user_persona, self.persona_prompts["Developer"])
+            if user_persona == "CVE Creator":
+                prompt = prompt_template.replace("{user_query}", query).replace("{user_evidence}", user_evidence or "No additional evidence provided.")
+            else:
+                prompt = prompt_template.format(
+                    user_query=query,
+                    cwe_context=context,
+                    user_evidence=(user_evidence or "No additional evidence provided."),
+                )
+            final = await self.provider.generate(prompt)
+            return self._clean_response(final)
+        except Exception as e:
+            logger.error(f"Full generation (non-stream) failed: {e}")
+            return ""
+
     def _build_context(self, chunks: Optional[List[Dict[str, Any]]]) -> str:
         """
         Build structured context from retrieved CWE chunks.

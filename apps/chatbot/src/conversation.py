@@ -20,6 +20,7 @@ from src.response_generator import ResponseGenerator
 from src.security.secure_logging import get_secure_logger
 from src.processing.query_processor import QueryProcessor
 from src.processing.pipeline import ProcessingPipeline
+from src.utils.text_post import harmonize_cwe_names_in_table
 from src.utils.session import get_user_context
 
 from src.app_config_extended import config
@@ -78,6 +79,32 @@ class ConversationManager:
             logger.log_exception("Failed to initialize ConversationManager", e)
             raise
 
+    # -----------------------------
+    # Lightweight helpers
+    # -----------------------------
+    def _extract_key_phrases(self, text: str) -> Dict[str, str]:
+        """Extract simple key phrases like Rootcause/Weakness from free text.
+
+        This is a lightweight, regex-based extractor to improve retrieval hints
+        for the CWE Analyzer persona. It complements, not replaces, the LLM
+        extraction performed later in the prompt.
+        """
+        try:
+            import re
+            phrases: Dict[str, str] = {}
+            # Accept variants like Rootcause/Root cause (case-insensitive)
+            patterns = {
+                'rootcause': r'(?im)^(?:root\s*cause|rootcause)\s*:\s*(.+)$',
+                'weakness': r'(?im)^weakness\s*:\s*(.+)$',
+            }
+            for key, pat in patterns.items():
+                m = re.search(pat, text)
+                if m:
+                    phrases[key] = m.group(1).strip()
+            return phrases
+        except Exception:
+            return {}
+
     def get_user_context(self, session_id: str) -> UserContext:
         """
         Public accessor to retrieve or create the per-user context.
@@ -105,6 +132,98 @@ class ConversationManager:
             context = self.get_user_context(session_id)
 
             # User message is automatically stored by Chainlit
+
+            # Analyzer disambiguation: support persistent modes and switching commands
+            if context.persona == "CWE Analyzer":
+                try:
+                    awaiting = bool(cl.user_session.get("analyzer_awaiting_option") or False)
+                    question_mode = bool(cl.user_session.get("analyzer_question_mode") or False)
+                    compare_mode = bool(cl.user_session.get("analyzer_compare_mode") or False)
+                except Exception:
+                    awaiting, question_mode, compare_mode = False, False, False
+                # While in a persistent mode, allow '0' to exit back to analysis selection
+                if (question_mode or compare_mode) and not awaiting:
+                    import re as _re
+                    if _re.match(r"^\s*0\b", message_content):
+                        try:
+                            cl.user_session.set("analyzer_awaiting_option", True)
+                            cl.user_session.set("analyzer_question_mode", False)
+                            cl.user_session.set("analyzer_compare_mode", False)
+                        except Exception:
+                            pass
+                        prompt_msg = (
+                            "Exited special mode. Reply '1' to ask questions, or '2' to propose candidate CWE ID(s). "
+                            "Otherwise, send new vulnerability text for a fresh CWE mapping."
+                        )
+                        out_msg = cl.Message(content=prompt_msg)
+                        await out_msg.send()
+                        return {
+                            "response": prompt_msg,
+                            "session_id": session_id,
+                            "is_safe": True,
+                            "retrieved_cwes": [],
+                            "chunk_count": 0,
+                            "retrieved_chunks": [],
+                            "persona": context.persona,
+                            "message": out_msg,
+                        }
+                if awaiting:
+                    import re as _re
+                    if _re.match(r"^\s*1\b", message_content):
+                        try:
+                            cl.user_session.set("analyzer_awaiting_option", False)
+                            cl.user_session.set("analyzer_question_mode", True)
+                            cl.user_session.set("analyzer_compare_mode", False)
+                        except Exception:
+                            pass
+                        # Prompt for the actual question and return
+                        prompt_msg = (
+                            "Question mode activated. Please ask your question about the current CWE analysis.\n"
+                            "(Send new vulnerability text to re-run analysis instead.)"
+                        )
+                        out_msg = cl.Message(content=prompt_msg)
+                        await out_msg.send()
+                        return {
+                            "response": prompt_msg,
+                            "session_id": session_id,
+                            "is_safe": True,
+                            "retrieved_cwes": [],
+                            "chunk_count": 0,
+                            "retrieved_chunks": [],
+                            "persona": context.persona,
+                            "message": out_msg,
+                        }
+                    elif _re.match(r"^\s*2\b", message_content):
+                        try:
+                            cl.user_session.set("analyzer_awaiting_option", False)
+                            cl.user_session.set("analyzer_question_mode", False)
+                            cl.user_session.set("analyzer_compare_mode", True)
+                        except Exception:
+                            pass
+                        prompt_msg = (
+                            "Comparison mode activated. Please provide the candidate CWE ID(s) to compare with the prior recommendations (e.g., 'CWE-917' or 'CWE-79, CWE-80').\n"
+                            "(Send new vulnerability text to re-run analysis instead.)"
+                        )
+                        out_msg = cl.Message(content=prompt_msg)
+                        await out_msg.send()
+                        return {
+                            "response": prompt_msg,
+                            "session_id": session_id,
+                            "is_safe": True,
+                            "retrieved_cwes": [],
+                            "chunk_count": 0,
+                            "retrieved_chunks": [],
+                            "persona": context.persona,
+                            "message": out_msg,
+                        }
+                    else:
+                        # Treat as new analysis; clear awaiting/question flags
+                        try:
+                            cl.user_session.set("analyzer_awaiting_option", False)
+                            cl.user_session.set("analyzer_question_mode", False)
+                            cl.user_session.set("analyzer_compare_mode", False)
+                        except Exception:
+                            pass
 
             processed = self.query_processor.process_with_context(
                 message_content, context.get_session_context_for_processing()
@@ -188,17 +307,170 @@ class ConversationManager:
 
             # Step 1: Retrieve CWE context
             async with cl.Step(name="Retrieve CWE context") as step:
-                # Bypass retrieval for personas that analyze user input directly
-                if context.persona in ("CWE Analyzer", "CVE Creator"):
+                # CVE Creator: keep direct creation mode (no retrieval)
+                if context.persona == "CVE Creator":
                     retrieved_chunks = []
-                    # The user's query IS the evidence for these personas
                     context.set_evidence(sanitized_q)
-                    if context.persona == "CWE Analyzer":
-                        combined_query = "Analyze the provided vulnerability description and map it to the most relevant CWEs."
-                        step.output = "Direct analysis mode - no retrieval needed"
-                    else: # CVE Creator
-                        combined_query = "Create a structured CVE description from the provided text."
-                        step.output = "CVE creation mode - no retrieval needed"
+                    combined_query = "Create a structured CVE description from the provided text."
+                    step.output = "CVE creation mode - no retrieval needed"
+                elif context.persona == "CWE Analyzer":
+                    # CWE Analyzer: perform targeted retrieval to improve mapping quality
+                    context.set_evidence(sanitized_q)
+
+                    # Extract lightweight key phrases to boost retrieval
+                    key_phrases = self._extract_key_phrases(sanitized_q)
+                    boost_terms = []
+                    if key_phrases.get('rootcause'):
+                        boost_terms.append(key_phrases['rootcause'])
+                    if key_phrases.get('weakness'):
+                        boost_terms.append(key_phrases['weakness'])
+
+                    analyzer_seed = processed.get("enhanced_query") or sanitized_q
+                    analyzer_query = analyzer_seed
+                    if boost_terms:
+                        analyzer_query = f"{analyzer_seed} " + " ".join(boost_terms)
+                    # Add stable hints to emphasize classification
+                    analyzer_query = f"{analyzer_query} root cause underlying weakness pattern classification mapping"
+
+                    combined_query = analyzer_query
+
+                    # If in explicit question mode, reuse prior context and avoid new analysis
+                    try:
+                        question_mode = bool(cl.user_session.get("analyzer_question_mode") or False)
+                        compare_mode = bool(cl.user_session.get("analyzer_compare_mode") or False)
+                        prev_recs = cl.user_session.get("last_recommendations") or []
+                        prev_chunks = cl.user_session.get("last_chunks") or []
+                    except Exception:
+                        question_mode, compare_mode, prev_recs, prev_chunks = False, False, [], []
+
+                    if question_mode and prev_chunks:
+                        retrieved_chunks = prev_chunks
+                        step.output = "Question mode - using prior analysis context"
+                        # Build follow-up instruction unconditionally
+                        prev_ids = [r.get('cwe_id') for r in prev_recs if r.get('cwe_id')]
+                        if prev_ids:
+                            followup_note = (
+                                "\n\n[Follow-up Instruction]\n"
+                                f"Prior recommendations: {', '.join(prev_ids)}\n"
+                                "Task: Address the user’s follow-up by referencing and, if needed, revising prior recommendations with clear reasoning.\n"
+                            )
+                            combined_query = combined_query + followup_note
+                    elif compare_mode:
+                        # Expect candidate CWE IDs from the user input; compare against previous recs
+                        candidates = list(processed.get("cwe_ids", set()) or [])
+                        prev_ids = [r.get('cwe_id') for r in prev_recs if r.get('cwe_id')]
+                        if not candidates:
+                            step.output = "Comparison mode - awaiting candidate CWE IDs"
+                            # Return early with prompt to supply candidate IDs
+                            prompt_msg = (
+                                "Please provide the candidate CWE ID(s) to compare (e.g., 'CWE-917' or 'CWE-79, CWE-80').\n"
+                                "Reply '0' to exit comparison mode."
+                            )
+                            msg = cl.Message(content=prompt_msg)
+                            await msg.send()
+                            return {
+                                "response": prompt_msg,
+                                "session_id": session_id,
+                                "is_safe": True,
+                                "retrieved_cwes": [],
+                                "chunk_count": 0,
+                                "retrieved_chunks": [],
+                                "persona": context.persona,
+                                "message": msg,
+                            }
+                        # Build a comparison instruction: focus on suitability, not generic descriptions
+                        if prev_ids:
+                            compare_note = (
+                                "\n\n[Follow-up Comparison]\n"
+                                f"Candidate CWEs: {', '.join(candidates)}\n"
+                                f"Prior recommendations: {', '.join(prev_ids)}\n"
+                                "Task: For each candidate, decide suitability relative to the original evidence: "
+                                "Primary / Secondary / Related / Not a fit. Provide concise justification referencing the original evidence. "
+                                "Do NOT provide generic CWE descriptions.\n\n"
+                                "Output Format (Markdown Table):\n"
+                                "| Candidate CWE | Suitability | Rationale |\n"
+                                "|---|---|---|\n"
+                                "| CWE-XXX | Primary/Secondary/Related/Not a fit | 1-2 sentences citing specific evidence |\n\n"
+                                "Then provide a one-paragraph summary stating whether the primary mapping should change.\n"
+                            )
+                            combined_query = "Use prior evidence for comparison." + compare_note
+
+                        # Append canonical metadata (name, abstraction, status, policy label) for both prior and candidate CWEs
+                        try:
+                            scope_ids = prev_ids + candidates
+                            if scope_ids:
+                                canon = self.query_handler.get_canonical_cwe_metadata(scope_ids)
+                                policies = self.query_handler.get_cwe_policy_labels(scope_ids)
+                                lines = []
+                                for cid in scope_ids:
+                                    key = str(cid).upper()
+                                    meta = canon.get(key, {})
+                                    pol = policies.get(key, {})
+                                    name = meta.get('name', '')
+                                    abstraction = meta.get('abstraction', '')
+                                    status = meta.get('status', '')
+                                    mapping_label = pol.get('mapping_label', '')
+                                    parts = [f"- {cid}"]
+                                    if name:
+                                        parts.append(f": {name}")
+                                    if abstraction:
+                                        parts.append(f" | Abstraction: {abstraction}")
+                                    if status:
+                                        parts.append(f" | Status: {status}")
+                                    if mapping_label:
+                                        parts.append(f" | Mapping Policy: {mapping_label}")
+                                    lines.append("".join(parts))
+                                if lines:
+                                    combined_query += "\n\n[Canonical CWE Metadata]\n" + "\n".join(lines) + "\n"
+                        except Exception as e:
+                            logger.warning(f"Failed to append canonical metadata for comparison: {e}")
+
+                        # Retrieve candidate sections and merge with prior analysis context
+                        analyzer_weights = {"w_vec": 0.4, "w_fts": 0.2, "w_alias": 0.4}
+                        priorities = ["Aliases", "Description", "Examples"]
+                        candidate_chunks: List[Dict[str, Any]] = []
+                        for cid in candidates:
+                            for sect in priorities:
+                                analyzer_context = dict(user_context_data)
+                                analyzer_context['section_boost'] = sect
+                                # Query per candidate id to pull canonical sections
+                                chunks = await self.query_handler.process_query(
+                                    cid,
+                                    analyzer_context,
+                                    hybrid_weights_override=analyzer_weights,
+                                )
+                                candidate_chunks.extend(chunks[:3])
+                                if len(chunks) >= 3:
+                                    break
+                        # Merge with prior chunks, deduplicate by chunk_id
+                        merged = []
+                        seen = set()
+                        for ch in (prev_chunks + candidate_chunks):
+                            cid = (ch.get('chunk_id') or id(ch))
+                            if cid in seen:
+                                continue
+                            seen.add(cid)
+                            merged.append(ch)
+                        retrieved_chunks = merged
+                        step.output = f"Comparison mode - merged {len(retrieved_chunks)} chunks (prior + candidates)"
+                    else:
+                        # Per-request hybrid weights: bias aliases more heavily for Analyzer
+                        analyzer_weights = {"w_vec": 0.4, "w_fts": 0.2, "w_alias": 0.4}
+
+                        # Try prioritized section boosts: Aliases → Description → Examples
+                        priorities = ["Aliases", "Description", "Examples"]
+                        retrieved_chunks = []
+                        for sect in priorities:
+                            analyzer_context = dict(user_context_data)
+                            analyzer_context['section_boost'] = sect
+                            retrieved_chunks = await self.query_handler.process_query(
+                                analyzer_query,
+                                analyzer_context,
+                                hybrid_weights_override=analyzer_weights,
+                            )
+                            if len(retrieved_chunks) >= 3:
+                                break
+                        step.output = f"Retrieved {len(retrieved_chunks)} CWE chunks for analysis (boost: {analyzer_context['section_boost']})"
                 else:
                     retrieved_chunks = await self.query_handler.process_query(
                         combined_query, user_context_data
@@ -214,6 +486,75 @@ class ConversationManager:
                     )
                     recommendations = query_result['recommendations']
                     step.output = f"Generated {len(recommendations)} CWE recommendations"
+            # Store recommendations for follow-up turns (e.g., Analyzer comparisons)
+            try:
+                cl.user_session.set("last_recommendations", recommendations or [])
+                cl.user_session.set("last_chunks", retrieved_chunks or [])
+            except Exception:
+                pass
+
+            # Append canonical metadata for recommended CWEs from DB to assist generation (all personas)
+            try:
+                rec_ids = [r['cwe_id'] for r in recommendations] if recommendations else []
+                if rec_ids:
+                    canon = self.query_handler.get_canonical_cwe_metadata(rec_ids)
+                    policies = self.query_handler.get_cwe_policy_labels(rec_ids)
+                    # Enrich in-memory recommendations with canonical name and mapping policy (for UI/logic)
+                    for rec in (recommendations or []):
+                        key = str(rec.get('cwe_id', '')).upper()
+                        meta = canon.get(key) or {}
+                        if meta.get('name'):
+                            # Ensure recommendation carries the canonical CWE name
+                            rec['name'] = meta.get('name')
+                        pol = policies.get(key) or {}
+                        if pol.get('mapping_label'):
+                            rec['policy_label'] = pol.get('mapping_label')
+                    if canon or policies:
+                        lines = []
+                        for cid in rec_ids:
+                            key = str(cid).upper()
+                            meta = canon.get(key, {})
+                            pol = policies.get(key, {})
+                            name = meta.get('name', '')
+                            abstraction = meta.get('abstraction', '')
+                            status = meta.get('status', '')
+                            mapping_label = pol.get('mapping_label', '')
+                            parts = [f"- {cid}"]
+                            if name:
+                                parts.append(f": {name}")
+                            if abstraction:
+                                parts.append(f" | Abstraction: {abstraction}")
+                            if status:
+                                parts.append(f" | Status: {status}")
+                            if mapping_label:
+                                parts.append(f" | Mapping Policy: {mapping_label}")
+                            lines.append("".join(parts))
+                        if lines:
+                            canonical_block = "\n\n[Canonical CWE Metadata]\n" + "\n".join(lines) + "\n"
+                            combined_query += canonical_block
+                            # Optional debug: echo canonical block to logs/UI to verify LLM sees it
+                            try:
+                                import os as _os
+                                if _os.getenv("DEBUG_CANONICAL", "0") == "1":
+                                    logger.info("Canonical CWE block appended to prompt:\n" + canonical_block)
+                                    try:
+                                        await cl.Message(content="[Debug] Canonical CWE Metadata Appended:\n" + canonical_block, author="System").send()
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                            combined_query += (
+                                "\n[Policy Rules]\n"
+                                "Use 'Name' and 'Mapping Policy' exactly as provided in Canonical CWE Metadata (authoritative DB values).\n"
+                                "Prioritize the CWEs provided in the `[Canonical CWE Metadata]` block. You may override these recommendations if you have a strong, well-justified reason to do so.\n"
+                                "- Prohibited: Not a fit for mapping.\n"
+                                "- Discouraged: Generally not a fit; only Secondary if clearly justified.\n"
+                                "- Allowed-with-Review: Allowed but call out review rationale.\n"
+                                "- Allowed: Use without contradicting the policy.\n"
+                                "Do NOT contradict the Mapping Policy or the canonical CWE Name in your output.\n"
+                            )
+            except Exception as e:
+                logger.warning(f"Failed to append canonical metadata: {e}")
 
             # Create message and stream tokens
             # If the user explicitly mentioned a CWE id, echo it upfront for clarity in UI/tests
@@ -233,17 +574,82 @@ class ConversationManager:
                 pass
 
             # Step 2: Generate answer - prepare but don't stream inside step
+            # Compute mode tag for step clarity (no newlines)
+            step_mode_tag = ""
+            if context.persona == "CWE Analyzer":
+                try:
+                    awaiting = bool(cl.user_session.get("analyzer_awaiting_option") or False)
+                    question_mode = bool(cl.user_session.get("analyzer_question_mode") or False)
+                    compare_mode = bool(cl.user_session.get("analyzer_compare_mode") or False)
+                except Exception:
+                    awaiting = question_mode = compare_mode = False
+                if question_mode:
+                    step_mode_tag = " [Analyzer: Question Mode]"
+                elif compare_mode:
+                    step_mode_tag = " [Analyzer: Comparison Mode]"
+                elif awaiting:
+                    step_mode_tag = " [Analyzer: Select Mode]"
+
             collected = ""
             async with cl.Step(name="Generate answer") as step:
-                step.output = "Generating response..."
+                step.output = "Generating response..." + step_mode_tag
+
+            # Build follow-up comparison context for CWE Analyzer
+            if context.persona == "CWE Analyzer":
+                try:
+                    prev_recs = cl.user_session.get("last_recommendations") or []
+                    prev_chunks = cl.user_session.get("last_chunks") or []
+                except Exception:
+                    prev_recs, prev_chunks = [], []
+                # If the user proposes specific CWE ids, append a comparison instruction
+                candidate_cwes = list(processed.get("cwe_ids", set()) or [])
+                followup_intent = getattr(processed.get('followup_intent', None), 'intent_type', None)
+                if candidate_cwes and prev_recs:
+                    prev_ids = [r.get('cwe_id') for r in prev_recs if r.get('cwe_id')]
+                    if prev_ids:
+                        followup_note = (
+                            "\n\n[Follow-up Comparison]\n"
+                            f"Candidate CWEs: {', '.join(candidate_cwes)}\n"
+                            f"Prior recommendations: {', '.join(prev_ids)}\n"
+                            "Task: Compare the candidate(s) against prior recommendations. Decide if any candidate is a better primary fit; "
+                            "if not, classify as Secondary/Related with rationale, and update confidence accordingly.\n"
+                        )
+                        combined_query = combined_query + followup_note
+                elif followup_intent in ("comparison", "clarification", "tell_more") and prev_recs:
+                    prev_ids = [r.get('cwe_id') for r in prev_recs if r.get('cwe_id')]
+                    if prev_ids:
+                        followup_note = (
+                            "\n\n[Follow-up Instruction]\n"
+                            f"Prior recommendations: {', '.join(prev_ids)}\n"
+                            "Task: Address the user’s follow-up by referencing and, if needed, revising prior recommendations with clear reasoning.\n"
+                        )
+                        combined_query = combined_query + followup_note
+            # Canonical CWE metadata should come from the database; no hardcoded overrides
 
             # Stream response outside of step context so it appears as final message
-            msg = cl.Message(content=preface)
+            # Add a small status tag for CWE Analyzer modes
+            mode_tag = ""
+            if context.persona == "CWE Analyzer":
+                try:
+                    awaiting = bool(cl.user_session.get("analyzer_awaiting_option") or False)
+                    question_mode = bool(cl.user_session.get("analyzer_question_mode") or False)
+                    compare_mode = bool(cl.user_session.get("analyzer_compare_mode") or False)
+                except Exception:
+                    awaiting = question_mode = compare_mode = False
+                if question_mode:
+                    mode_tag = "[Analyzer: Question Mode]\n\n"
+                elif compare_mode:
+                    mode_tag = "[Analyzer: Comparison Mode]\n\n"
+                elif awaiting:
+                    mode_tag = "[Analyzer: Select Mode]\n\n"
+
+            msg = cl.Message(content=(mode_tag + (preface or "")))
             await msg.send()
+            logger.info(f"Combined query for LLM:\n{combined_query}")
             try:
                 async for token in self.response_generator.generate_response_streaming(
                     combined_query,
-                    recommendations,  # Use processed recommendations instead of raw chunks
+                    retrieved_chunks or [],  # Provide raw chunks for context building
                     context.persona,
                     user_evidence=context.file_evidence,
                 ):
@@ -260,9 +666,47 @@ class ConversationManager:
                 if not collected:
                     collected = self.response_generator._generate_error_response(context.persona)
 
+            # If streamed response is unexpectedly short, try a single non-stream completion
+            try:
+                import os as _os
+                min_chars = int(_os.getenv("MIN_STREAM_CHARS", "480"))
+                if len(collected.strip()) < min_chars and (retrieved_chunks or []):
+                    full = await self.response_generator.generate_response_full_once(
+                        combined_query,
+                        retrieved_chunks or [],
+                        context.persona,
+                        user_evidence=context.file_evidence,
+                    )
+                    if full and len(full) > len(collected):
+                        msg.content = (preface or "") + full
+                        await msg.update()
+                        collected = full
+                        logger.info(f"Filled short streamed response with full generation ({len(full)} chars)")
+            except Exception as e:
+                logger.warning(f"Full-generation fill failed: {e}")
+
             # Validate final and update if masked
             validation_result = self.security_validator.validate_response(collected)
             final_response = validation_result["validated_response"]
+            # Post-process: harmonize CWE names in Analyzer tables using canonical names from recommendations
+            try:
+                if context.persona == "CWE Analyzer":
+                    # Extract all CWE IDs from the generated table
+                    import re
+                    all_cwe_ids = re.findall(r"CWE[-_\s]?(\d{1,5})", final_response, re.IGNORECASE)
+                    all_cwe_ids = [f"CWE-{c}" for c in all_cwe_ids]
+
+                    if all_cwe_ids:
+                        canon = self.query_handler.get_canonical_cwe_metadata(all_cwe_ids)
+                        policies = self.query_handler.get_cwe_policy_labels(all_cwe_ids)
+
+                        id_to_name = {k.upper(): v['name'] for k, v in canon.items() if v.get('name')}
+                        id_to_policy = {k.upper(): v['mapping_label'] for k, v in policies.items() if v.get('mapping_label')}
+
+                        if id_to_name or id_to_policy:
+                            final_response = harmonize_cwe_names_in_table(final_response, id_to_name, id_to_policy)
+            except Exception as e:
+                logger.warning(f"Failed to harmonize CWE table: {e}")
             if final_response != collected:
                 # Preserve any preface (e.g., echoed CWE id) when updating content
                 try:
@@ -293,6 +737,31 @@ class ConversationManager:
             context.clear_evidence()
 
             # Assistant message is automatically stored by Chainlit
+
+            # After CWE Analyzer analysis: maintain mode or prompt selection
+            if context.persona == "CWE Analyzer":
+                try:
+                    awaiting = bool(cl.user_session.get("analyzer_awaiting_option") or False)
+                    question_mode = bool(cl.user_session.get("analyzer_question_mode") or False)
+                    compare_mode = bool(cl.user_session.get("analyzer_compare_mode") or False)
+                except Exception:
+                    awaiting, question_mode, compare_mode = False, False, False
+                try:
+                    if question_mode:
+                        hint = "(Question mode active) Reply '0' to exit, or continue asking follow-up questions."
+                        await cl.Message(content=hint).send()
+                    elif compare_mode:
+                        hint = "(Comparison mode active) Provide candidate CWE ID(s), or reply '0' to exit."
+                        await cl.Message(content=hint).send()
+                    else:
+                        cl.user_session.set("analyzer_awaiting_option", True)
+                        choice_prompt = (
+                            "Reply '1' to ask questions about this analysis, or '2' to propose candidate CWE ID(s) to compare. "
+                            "Otherwise, send new vulnerability text to perform a fresh CWE mapping."
+                        )
+                        await cl.Message(content=choice_prompt).send()
+                except Exception:
+                    pass
 
             return {
                 "response": final_response,

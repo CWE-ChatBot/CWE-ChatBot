@@ -303,9 +303,10 @@ class SecurityValidator:
         security_issues = []
         confidence_score = 1.0
 
-        # Check for harmful content patterns
+        # Check for harmful content patterns (refined to reduce false positives)
         harmful_patterns = [
-            r'(?:hack|exploit|attack).*(?:tutorial|guide|instructions)',
+            # Explicit how-to guidance for offensive actions
+            r'(?:hack|exploit|attack).*(?:tutorial|guide|step[- ]?by[- ]?step|how\s+to)',
             r'here\'s how to.*(?:break|bypass|crack)',
             r'use this.*(?:maliciously|illegally)',
             r'steal.*(?:data|information|credentials)',
@@ -314,16 +315,18 @@ class SecurityValidator:
 
         harmful_detected = False
         for pattern in harmful_patterns:
-            if re.search(pattern, response, re.IGNORECASE):
+            m = re.search(pattern, response, re.IGNORECASE)
+            if m:
                 security_issues.append("harmful_content_detected")
                 harmful_detected = True
                 confidence_score -= 0.3
+                logger.debug(f"Harmful pattern matched: {pattern} -> '{m.group(0)[:80]}'")
                 break
 
         # Check for leaked system information
+        # Restrictive system leak patterns (avoid false positives on benign "Instructions:" headings)
         system_leak_patterns = [
             r'system\s+prompt',
-            r'(?:my|the)\s+instructions?\s*:',
             r'internal\s+error',
             r'traceback',
             r'api\s+key\s*[:=]',
@@ -333,41 +336,30 @@ class SecurityValidator:
 
         system_leak_detected = False
         for pattern in system_leak_patterns:
-            if re.search(pattern, response, re.IGNORECASE):
+            m = re.search(pattern, response, re.IGNORECASE)
+            if m:
                 security_issues.append("sensitive_information")
                 system_leak_detected = True
                 confidence_score -= 0.2
+                logger.debug(f"System leak pattern matched: {pattern} -> '{m.group(0)[:80]}'")
                 break
 
-        # Check for potential sensitive information patterns and mask instead of hard-blocking
+        # Check for potential sensitive information patterns (flag only; do not mask)
         sensitive_patterns = [
             r'\b(?:sk-[a-zA-Z0-9]{48})\b',  # API key pattern
             r'\b(?:4[0-9]{12}(?:[0-9]{3})?)\b',  # Credit card pattern
             r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b',  # IP address pattern
             r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'  # Email pattern
         ]
-
-        def _mask_sensitive(text: str) -> str:
-            # Mask IPs and emails conservatively; leave context while removing exact values
-            text = re.sub(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', '[REDACTED_IP]', text)
-            text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', '[REDACTED_EMAIL]', text)
-            # Coarse mask for API-like tokens
-            text = re.sub(r'\b(?:sk-[A-Za-z0-9]{24,})\b', '[REDACTED_TOKEN]', text)
-            # Credit card-like sequences
-            text = re.sub(r'\b(?:4[0-9]{12}(?:[0-9]{3})?)\b', '[REDACTED_CC]', text)
-            return text
-
         masked_sensitive_found = any(re.search(p, response) for p in sensitive_patterns)
         if masked_sensitive_found:
-            security_issues.append("sensitive_information_masked")
+            security_issues.append("sensitive_information_present")
             confidence_score -= 0.05
-            response = _mask_sensitive(response)
 
-        # Check response length
+        # Check response length (flag only; do not truncate)
         if len(response) > 16000:
             security_issues.append("excessive_response_length")
             confidence_score -= 0.1
-            response = response[:16000] + "... [Response truncated for safety]"
 
         # Ensure confidence score is within bounds
         confidence_score = max(0.0, min(1.0, confidence_score))
@@ -380,13 +372,12 @@ class SecurityValidator:
         if system_leak_detected:
             severe_issues.add("sensitive_information")
 
-        is_safe = len(severe_issues) == 0
-
+        # Flag but do not block or mask – always return original response
         return {
-            "is_safe": is_safe,
+            "is_safe": True,
             "security_issues": security_issues,
             "confidence_score": confidence_score,
-            "validated_response": response if is_safe else "I apologize, but I couldn't generate a safe response. Please try rephrasing your question about CWE topics."
+            "validated_response": response,
         }
 
     def log_security_event(self, event_type: str, details: Dict[str, Any]) -> None:

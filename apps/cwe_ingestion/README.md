@@ -1325,3 +1325,74 @@ Start with **chunked + hybrid** and tune based on query type:
 3.  **Use environment variables** for all credentials
 4.  **Enable SSL** for all database connections (handled automatically by the proxy)
 5.  **Rotate service account keys** regularly if using key files
+
+## Policy Labels Importer (Standalone)
+
+This standalone script imports CWE policy labels (Allowed, Allowed-with-Review, Discouraged, Prohibited) from the official CWE XML. It does not modify the main ingestion pipeline, so you can validate the results safely before integration.
+
+- Source of truth:
+  - Mapping_Notes/Usage (UsageEnumeration) in the CWE XML
+  - Optional fallback: derive from Abstraction (Class/Base/Variant)
+
+### Usage
+
+Local XML file:
+
+```
+poetry run python apps/cwe_ingestion/scripts/import_policy_from_xml.py \
+  --xml /path/to/cwec.xml \
+  --infer-by-abstraction
+```
+
+Remote ZIP/XML:
+
+```
+poetry run python apps/cwe_ingestion/scripts/import_policy_from_xml.py \
+  --url https://example.com/cwec_latest.xml.zip \
+  --infer-by-abstraction
+```
+
+Dry run (no DB writes, preview first rows):
+
+```
+poetry run python apps/cwe_ingestion/scripts/import_policy_from_xml.py \
+  --url https://example.com/cwec_latest.xml.zip \
+  --dry-run --limit 20
+```
+
+### Database Configuration
+
+The script resolves the DB URL like the chatbot's run_local_full.sh:
+
+1. `--db` argument if provided
+2. `DATABASE_URL` or `LOCAL_DATABASE_URL`
+3. Or built from `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+
+Example environment:
+
+```
+export POSTGRES_HOST=localhost
+export POSTGRES_PORT=5432
+export POSTGRES_DATABASE=cwe
+export POSTGRES_USER=postgres
+export POSTGRES_PASSWORD=postgres
+```
+
+The importer will create the target table if missing:
+
+```
+CREATE TABLE IF NOT EXISTS cwe_policy_labels (
+  cwe_id TEXT PRIMARY KEY,
+  mapping_label TEXT NOT NULL,  -- Allowed | Allowed-with-Review | Discouraged | Prohibited
+  notes TEXT
+);
+```
+
+### Notes
+
+- Downloads XML safely (supports ZIP) and parses via `defusedxml` (same as main parser).
+- When `Mapping_Notes/Usage` is absent, enabling `--infer-by-abstraction` applies a conservative fallback:
+  - `Class` → Discouraged
+  - `Base` → Allowed
+  - `Variant` → Allowed-with-Review
+- Iterate using `--dry-run` and `--limit` to verify a subset before writing to DB.

@@ -51,6 +51,7 @@ ruff = "^0.0.284"
 mypy = "^1.5.0"
 toml = "^0.10.2"
 pre-commit = "^3.4.0"
+python-dotenv = "^1.0.0"
 
 # Story 2.6 Dependencies - UI/UX Testing with Playwright
 playwright = "^1.40.0"
