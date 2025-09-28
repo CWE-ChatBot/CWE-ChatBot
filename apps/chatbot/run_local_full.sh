@@ -120,48 +120,11 @@ fi
 # Load environment variables from chatbot-specific env file
 USER_ENV_FILE="$HOME/work/env/.env_cwe_chatbot"
 
-# Helper to load a single key from the user env file if unset
-load_env_key() {
-    local key="$1"
-    local current_val="${!key:-}"
-    if [[ -z "$current_val" && -f "$USER_ENV_FILE" ]]; then
-        local line
-        line=$(grep -E "^${key}=" "$USER_ENV_FILE" | tail -n 1 || true)
-        if [[ -n "$line" ]]; then
-            local val
-            val=$(echo "$line" | sed -E "s/^${key}=//; s/^\"(.*)\"$/\1/; s/^'(.*)'$/\1/")
-            if [[ -n "$val" ]]; then
-                export "$key"="$val"
-                echo -e "${GREEN}✅ Loaded ${key} from ${USER_ENV_FILE}${NC}"
-            fi
-        fi
-    fi
-}
-
-echo -e "${BLUE}🔧 Loading environment configuration...${NC}"
-
-# Load all required environment variables
-for KEY in \
-    GEMINI_API_KEY \
-    POSTGRES_HOST \
-    POSTGRES_PORT \
-    POSTGRES_DATABASE \
-    POSTGRES_USER \
-    POSTGRES_PASSWORD
-do
-    load_env_key "$KEY"
-done
-
-export DEBUG_CANONICAL=1
-export DEBUG_ACTIONS=1
-
-
-# Set defaults for missing values (Local Docker PostgreSQL)
-export POSTGRES_HOST=${POSTGRES_HOST:-localhost}
-export POSTGRES_PORT=${POSTGRES_PORT:-5432}
-export POSTGRES_DATABASE=${POSTGRES_DATABASE:-cwe}
-export POSTGRES_USER=${POSTGRES_USER:-postgres}
-export POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+echo -e "${BLUE}🔧 Setting environment for local development...${NC}"
+# The Python application now handles loading .env files.
+# We just need to set the context.
+export ENV_CONTEXT=local
+echo -e "${GREEN}✅ ENV_CONTEXT set to 'local'${NC}"
 
 # Required: CWE ingestion path
 export CWE_INGESTION_PATH="$PROJECT_ROOT/apps/cwe_ingestion"
@@ -173,27 +136,8 @@ if [[ ! -d "$CWE_INGESTION_PATH" ]]; then
     exit 1
 fi
 
-# Validate required environment variables
-echo -e "${BLUE}🔍 Validating configuration...${NC}"
-
-if [[ -z "$GEMINI_API_KEY" ]]; then
-    echo -e "${RED}❌ GEMINI_API_KEY not set${NC}"
-    echo "   Set it in ~/work/env/.env_cwe_chatbot: GEMINI_API_KEY=your-api-key"
-    exit 1
-fi
-
-if [[ -z "$POSTGRES_USER" ]] || [[ -z "$POSTGRES_PASSWORD" ]]; then
-    echo -e "${RED}❌ PostgreSQL credentials not configured${NC}"
-    echo "   Using defaults: postgres/postgres for local Docker PostgreSQL"
-    echo "   Or set POSTGRES_USER and POSTGRES_PASSWORD in ~/work/env/.env_cwe_chatbot"
-fi
-
-# Build local database URL
-LOCAL_DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DATABASE}"
-export LOCAL_DATABASE_URL
-
-echo -e "${GREEN}✅ GEMINI_API_KEY configured${NC}"
-echo -e "${GREEN}✅ LOCAL_DATABASE_URL configured${NC}"
+# Configuration is now validated by the Python application on startup.
+echo -e "${BLUE}🔍 Configuration will be loaded and validated by the application.${NC}"
 
 # Database setup and ingestion
 if [[ "$SETUP_DATABASE" == true ]] || [[ "$INGEST_ONLY" == true ]]; then

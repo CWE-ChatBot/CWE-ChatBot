@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from .llm_provider import get_llm_provider
 
-from .app_config_extended import config
+from src.app_config import config
 
 logger = logging.getLogger(__name__)
 

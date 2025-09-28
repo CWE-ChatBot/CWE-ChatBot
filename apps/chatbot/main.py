@@ -22,7 +22,7 @@ from src.input_security import InputSanitizer, SecurityValidator
 from src.file_processor import FileProcessor
 from src.security.secure_logging import get_secure_logger
 # Use the extended config which loads from environment files automatically
-from src.app_config_extended import config as app_config
+from src.app_config import config as app_config
 # Import the new UI modules
 from src.ui import UIMessaging, UISettings, create_chat_profiles
 from src.utils.session import get_user_context
