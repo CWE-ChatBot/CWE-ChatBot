@@ -80,8 +80,7 @@ class CWEQueryHandler:
 
             # Store hybrid weights (use provided weights or fall back to config defaults)
             if hybrid_weights is None:
-                # Import extended config (auto-loads env); avoid circular imports
-                from .app_config_extended import config
+                from src.app_config import config
                 self.hybrid_weights = config.get_hybrid_weights()
             else:
                 self.hybrid_weights = hybrid_weights
@@ -108,14 +107,18 @@ class CWEQueryHandler:
         hybrid_weights_override: Optional[Dict[str, float]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Process query using existing hybrid retrieval with user context.
+        Execute hybrid search and return raw chunks - NO business logic applied.
+
+        This method is now a pure Data Access Layer that only retrieves data.
+        Business logic (force-injection, boosting) is handled by ProcessingPipeline.
 
         Args:
             query: User query string
             user_context: User persona and context information
+            hybrid_weights_override: Optional custom hybrid weights
 
         Returns:
-            List of retrieved chunks with metadata and scores
+            List of raw retrieved chunks with metadata and scores
         """
         try:
             logger.info(f"Processing query: '{query[:50]}...' for persona: {user_context.get('persona', 'unknown')}")
@@ -144,7 +147,7 @@ class CWEQueryHandler:
             if section_boost:
                 # Pull boost value from centralized config
                 try:
-                    from .app_config_extended import config
+                    from src.app_config import config
                     boost_value = getattr(config, "section_boost_value", 0.15)
                 except Exception:
                     boost_value = 0.15
@@ -155,66 +158,7 @@ class CWEQueryHandler:
             # Execute hybrid search using Story 1.5 production system
             results = await asyncio.to_thread(self.store.query_hybrid, **query_params)
 
-            # If hybrid returned nothing but we have explicit CWE IDs, force-inject canonical sections
-            if (not results) and extracted_cwe_ids:
-                forced_all: List[Dict[str, Any]] = []
-                boost_value = 2.0
-                for cwe_id in extracted_cwe_ids:
-                    try:
-                        forced = self._fetch_cwe_sections(cwe_id, limit=5)
-                        if forced:
-                            for ch in forced:
-                                sc = ch.get("scores") or {}
-                                sc["hybrid"] = float(sc.get("hybrid", 0.0)) + boost_value + 1.0
-                                ch["scores"] = sc
-                            forced_all.extend(forced)
-                            logger.info(f"Force-injected sections for CWE with empty hybrid results: {cwe_id}")
-                    except Exception:
-                        continue
-                if forced_all:
-                    results = forced_all
-
-            # Handle multiple CWE IDs for comparison/analysis queries
-            if extracted_cwe_ids and results:
-                boost_value = 2.0  # strong but bounded boost to prioritize exact IDs
-                cwe_ids_list = list(extracted_cwe_ids)
-
-                # Boost all mentioned CWE IDs in results
-                for cwe_id in cwe_ids_list:
-                    for r in results:
-                        md = r.get("metadata") or {}
-                        rid = str(md.get("cwe_id", "")).upper()
-                        if rid == cwe_id.upper():
-                            sc = r.get("scores") or {}
-                            sc["hybrid"] = float(sc.get("hybrid", 0.0)) + boost_value
-                            r["scores"] = sc
-
-                # For each missing CWE ID, force-inject sections to ensure comprehensive coverage
-                present_cwes = set()
-                for r in results:
-                    md = r.get("metadata") or {}
-                    if md.get("cwe_id"):
-                        present_cwes.add(str(md.get("cwe_id", "")).upper())
-
-                forced_chunks = []
-                for cwe_id in cwe_ids_list:
-                    if cwe_id.upper() not in present_cwes:
-                        forced = self._fetch_cwe_sections(cwe_id, limit=3)
-                        if forced:
-                            for ch in forced:
-                                sc = ch.get("scores") or {}
-                                sc["hybrid"] = float(sc.get("hybrid", 0.0)) + boost_value + 1.0
-                                ch["scores"] = sc
-                            forced_chunks.extend(forced)
-                            logger.info(f"Force-injected sections for missing CWE: {cwe_id}")
-
-                if forced_chunks:
-                    results.extend(forced_chunks)
-
-                # Re-sort after boosting to ensure best results first
-                results.sort(key=lambda x: float((x.get("scores") or {}).get("hybrid", 0.0)), reverse=True)
-
-            logger.info(f"Retrieved {len(results)} chunks")
+            logger.info(f"Retrieved {len(results)} raw chunks from database")
 
             # Log top results for debugging
             if results:
@@ -227,6 +171,27 @@ class CWEQueryHandler:
             logger.log_exception("Query processing failed", e)
             # Return empty results on error to ensure graceful degradation
             return []
+
+    def fetch_canonical_sections_for_cwes(self, cwe_ids: List[str], limit_per_cwe: int = 3) -> List[Dict[str, Any]]:
+        """
+        Fetch canonical sections for specific CWE IDs. Used by ProcessingPipeline for business logic.
+
+        Args:
+            cwe_ids: List of CWE IDs to fetch sections for
+            limit_per_cwe: Maximum number of sections per CWE
+
+        Returns:
+            List of chunks in query_hybrid format
+        """
+        sections = []
+        for cwe_id in cwe_ids:
+            try:
+                cwe_sections = self._fetch_cwe_sections(cwe_id, limit=limit_per_cwe)
+                sections.extend(cwe_sections)
+            except Exception as e:
+                logger.warning(f"Failed to fetch sections for {cwe_id}: {e}")
+                continue
+        return sections
 
     # Business logic methods removed - moved to ProcessingPipeline for better separation of concerns
     # process_query_with_recommendations() -> ProcessingPipeline.generate_recommendations()

@@ -7,12 +7,15 @@ from the data retrieval logic, implementing proper separation of concerns.
 """
 
 import logging
+import re
+from dataclasses import dataclass, field
 from typing import Dict, List, Any, TypedDict, Optional
 
 from src.processing.confidence_calculator import ConfidenceCalculator, create_aggregated_cwe
 from src.processing.cwe_filter import CWEFilter, create_default_filter
 from src.processing.explanation_builder import ExplanationBuilder
 from src.processing.query_suggester import QuerySuggester
+from src.processing.query_processor import QueryProcessor
 from src.security.secure_logging import get_secure_logger
 
 
@@ -33,6 +36,18 @@ class QueryResult(TypedDict):
     low_confidence: bool
     improvement_guidance: Optional[Dict[str, Any]]
 
+
+@dataclass
+class PipelineResult:
+    """Standardized output from the processing pipeline."""
+    final_response_text: str
+    recommendations: List[Recommendation] = field(default_factory=list)
+    retrieved_cwes: List[str] = field(default_factory=list)
+    chunk_count: int = 0
+    is_low_confidence: bool = False
+    improvement_guidance: Optional[Dict[str, Any]] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
 logger = get_secure_logger(__name__)
 
 
@@ -51,12 +66,24 @@ class ProcessingPipeline:
     a clean, testable pipeline that's separate from data retrieval concerns.
     """
 
-    def __init__(self):
-        """Initialize the processing pipeline with all required components."""
+    def __init__(self, query_handler=None, response_generator=None):
+        """
+        Initialize the pipeline with dependencies.
+
+        Args:
+            query_handler: CWEQueryHandler for data access (optional for backward compatibility)
+            response_generator: ResponseGenerator for LLM interactions (optional for backward compatibility)
+        """
+        # Core processing components
         self.confidence_calculator = ConfidenceCalculator()
         self.cwe_filter = create_default_filter()
         self.explanation_builder = ExplanationBuilder()
         self.query_suggester = QuerySuggester()
+        self.query_processor = QueryProcessor()
+
+        # New dependencies for full end-to-end processing
+        self.query_handler = query_handler
+        self.response_generator = response_generator
 
         logger.info("ProcessingPipeline initialized with all components")
 
@@ -116,6 +143,83 @@ class ProcessingPipeline:
             logger.log_exception("Pipeline processing failed", e)
             # Return empty result with guidance on error
             return self._handle_empty_results(query, user_context)
+
+    async def process_user_request(self, query: str, user_context) -> PipelineResult:
+        """
+        Complete end-to-end processing from query to validated response.
+
+        This method orchestrates the full workflow:
+        1. Retrieve raw chunks
+        2. Apply business logic (force-injection, boosting)
+        3. Generate recommendations
+        4. Fetch canonical metadata
+        5. Build LLM prompt
+        6. Generate LLM response
+        7. Post-process and validate response
+
+        Args:
+            query: User query string
+            user_context: UserContext object with persona and preferences
+
+        Returns:
+            PipelineResult with final response and metadata
+        """
+        if not self.query_handler or not self.response_generator:
+            raise ValueError("ProcessingPipeline requires query_handler and response_generator for end-to-end processing")
+
+        try:
+            logger.info(f"Processing end-to-end request for query: '{query[:50]}...'")
+
+            # Step 1: Retrieve raw chunks using the simplified QueryHandler
+            user_prefs = user_context.get_persona_preferences()
+            raw_chunks = await self.query_handler.process_query(query, user_prefs)
+
+            # Step 2: Apply business logic (MOVED FROM QueryHandler)
+            processed_chunks = self._apply_retrieval_business_logic(query, raw_chunks)
+
+            # Step 3: Generate recommendations (existing logic)
+            query_result = self.generate_recommendations(query, processed_chunks, user_prefs)
+            recommendations = query_result['recommendations']
+
+            # Step 4: Fetch canonical metadata (MOVED FROM ConversationManager)
+            rec_ids = [r['cwe_id'] for r in recommendations]
+            canonical_metadata = {}
+            policy_labels = {}
+
+            if rec_ids and hasattr(self.query_handler, 'get_canonical_cwe_metadata'):
+                canonical_metadata = self.query_handler.get_canonical_cwe_metadata(rec_ids)
+                policy_labels = self.query_handler.get_cwe_policy_labels(rec_ids)
+
+            # Step 5: Build enhanced prompt with metadata
+            llm_prompt = self._build_llm_prompt(query, processed_chunks, user_context, canonical_metadata, policy_labels)
+
+            # Step 6: Generate LLM response
+            raw_response = await self.response_generator.generate_response_full_once(
+                llm_prompt,
+                processed_chunks,
+                user_context.persona,
+                user_evidence=getattr(user_context, 'file_evidence', None),
+            )
+
+            # Step 7: Post-process and validate response (MOVED FROM ConversationManager)
+            final_response = self._harmonize_and_validate_response(raw_response)
+
+            return PipelineResult(
+                final_response_text=final_response,
+                recommendations=recommendations,
+                retrieved_cwes=rec_ids,
+                chunk_count=len(processed_chunks),
+                is_low_confidence=query_result['low_confidence'],
+                improvement_guidance=query_result['improvement_guidance']
+            )
+
+        except Exception as e:
+            logger.log_exception("End-to-end pipeline processing failed", e)
+            # Return fallback result
+            return PipelineResult(
+                final_response_text="I apologize, but I'm experiencing technical difficulties processing your request. Please try again.",
+                is_low_confidence=True
+            )
 
     def _handle_empty_results(self, query: str, user_context: Dict[str, Any]) -> QueryResult:
         """Handle case when no chunks are retrieved."""
@@ -254,6 +358,133 @@ class ProcessingPipeline:
 
         return None
 
+    def _apply_retrieval_business_logic(self, query: str, raw_chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Apply business logic that was moved from CWEQueryHandler.
+
+        This includes force-injection and boosting logic for mentioned CWE IDs.
+        """
+        # Extract CWE IDs from query using QueryProcessor
+        query_analysis = self.query_processor.preprocess_query(query)
+        extracted_cwe_ids = query_analysis.get('cwe_ids', set())
+
+        processed_chunks = list(raw_chunks)  # Start with raw results
+
+        # Force-inject canonical sections if no results for mentioned CWE IDs
+        if extracted_cwe_ids and not processed_chunks and self.query_handler:
+            forced_sections = self.query_handler.fetch_canonical_sections_for_cwes(list(extracted_cwe_ids))
+            for chunk in forced_sections:
+                scores = chunk.get("scores", {})
+                scores["hybrid"] = scores.get("hybrid", 0.0) + 3.0  # Strong boost
+                chunk["scores"] = scores
+            processed_chunks.extend(forced_sections)
+            logger.info(f"Force-injected sections for mentioned CWE IDs: {extracted_cwe_ids}")
+
+        # Boost mentioned CWE IDs in existing results
+        if extracted_cwe_ids and processed_chunks:
+            for cwe_id in extracted_cwe_ids:
+                for chunk in processed_chunks:
+                    metadata = chunk.get("metadata", {})
+                    if str(metadata.get("cwe_id", "")).upper() == cwe_id.upper():
+                        scores = chunk.get("scores", {})
+                        scores["hybrid"] = scores.get("hybrid", 0.0) + 2.0
+                        chunk["scores"] = scores
+
+            # Re-sort after boosting
+            processed_chunks.sort(key=lambda x: x.get("scores", {}).get("hybrid", 0.0), reverse=True)
+
+        return processed_chunks
+
+    def _build_llm_prompt(self, query: str, chunks: List[Dict], user_context, canonical_metadata: Dict, policy_labels: Dict) -> str:
+        """
+        Build enhanced LLM prompt with canonical metadata.
+
+        This logic was moved from ConversationManager.
+        """
+        enhanced_prompt = query
+
+        # Add canonical metadata block if available
+        if canonical_metadata or policy_labels:
+            lines = []
+            rec_ids = set()
+
+            # Collect CWE IDs from recommendations
+            for chunk in chunks:
+                metadata = chunk.get("metadata", {})
+                if metadata.get("cwe_id"):
+                    rec_ids.add(metadata.get("cwe_id"))
+
+            for cwe_id in rec_ids:
+                key = str(cwe_id).upper()
+                meta = canonical_metadata.get(key, {})
+                pol = policy_labels.get(key, {})
+
+                name = meta.get('name', '')
+                abstraction = meta.get('abstraction', '')
+                status = meta.get('status', '')
+                mapping_label = pol.get('mapping_label', '')
+
+                parts = [f"- {cwe_id}"]
+                if name:
+                    parts.append(f": {name}")
+                if abstraction:
+                    parts.append(f" | Abstraction: {abstraction}")
+                if status:
+                    parts.append(f" | Status: {status}")
+                if mapping_label:
+                    parts.append(f" | Mapping Policy: {mapping_label}")
+                lines.append("".join(parts))
+
+            if lines:
+                canonical_block = "\n\n[Canonical CWE Metadata]\n" + "\n".join(lines) + "\n"
+                enhanced_prompt += canonical_block
+                enhanced_prompt += (
+                    "\n[Policy Rules]\n"
+                    "Use 'Name' and 'Mapping Policy' exactly as provided in Canonical CWE Metadata (authoritative DB values).\n"
+                    "- Prohibited: Not a fit for mapping.\n"
+                    "- Discouraged: Generally not a fit; only Secondary if clearly justified.\n"
+                    "- Allowed-with-Review: Allowed but call out review rationale.\n"
+                    "- Allowed: Use without contradicting the policy.\n"
+                    "Do NOT contradict the Mapping Policy or the canonical CWE Name in your output.\n"
+                )
+
+        return enhanced_prompt
+
+    def _harmonize_and_validate_response(self, llm_response: str) -> str:
+        """
+        Post-process LLM response to fix CWE names and policies.
+
+        This logic was moved from ConversationManager.
+        """
+        if not self.query_handler:
+            return llm_response
+
+        # Extract all CWE IDs from the response
+        all_cwe_ids = re.findall(r"CWE[-_\s]?(\d{1,5})", llm_response, re.IGNORECASE)
+        all_cwe_ids = [f"CWE-{c}" for c in all_cwe_ids]
+
+        if not all_cwe_ids:
+            return llm_response
+
+        try:
+            # Import harmonization function
+            from src.utils.text_post import harmonize_cwe_names_in_table
+
+            # Fetch canonical data for ALL CWE IDs mentioned in response
+            canon = self.query_handler.get_canonical_cwe_metadata(all_cwe_ids)
+            policies = self.query_handler.get_cwe_policy_labels(all_cwe_ids)
+
+            # Build mapping dictionaries
+            id_to_name = {k.upper(): v['name'] for k, v in canon.items() if v.get('name')}
+            id_to_policy = {k.upper(): v['mapping_label'] for k, v in policies.items() if v.get('mapping_label')}
+
+            # Apply harmonization
+            return harmonize_cwe_names_in_table(llm_response, id_to_name, id_to_policy)
+
+        except Exception as e:
+            logger.warning(f"Failed to harmonize CWE names in response: {e}")
+            return llm_response
+
     def get_pipeline_health(self) -> Dict[str, Any]:
         """Get health status of pipeline components."""
         return {
@@ -261,5 +492,7 @@ class ProcessingPipeline:
             "cwe_filter": bool(self.cwe_filter),
             "explanation_builder": bool(self.explanation_builder),
             "query_suggester": bool(self.query_suggester),
+            "query_handler": bool(self.query_handler),
+            "response_generator": bool(self.response_generator),
             "status": "healthy"
         }
