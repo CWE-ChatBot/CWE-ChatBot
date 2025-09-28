@@ -42,50 +42,37 @@ def test_secure_command_execution():
         print("   ✅ Uses argument list (not shell string)")
         print("   ✅ No shell=True parameter")
         print("   ✅ Proper error handling with try/catch")
-        
-        return True
-        
+                
     except Exception as e:
         print(f"❌ Test failed: {e}")
-        return False
+        assert False, f"Test failed with exception: {e}"
 
 
 def test_old_vulnerability_eliminated():
     """Verify that the old os.system() vulnerability has been eliminated."""
     print("\n🔒 Verifying Old Vulnerability Eliminated...")
     
-    # Check that main.py no longer contains os.system()
-    main_py_path = Path("apps/chatbot/main.py")
-    if not main_py_path.exists():
-        print(f"⚠️  main.py not found at {main_py_path}")
-        return False
+    # Check that run_local_full.sh no longer contains os.system()
+    run_local_full_sh_path = Path("apps/chatbot/run_local_full.sh")
+    if not run_local_full_sh_path.exists():
+        assert False, f"run_local_full.sh not found at {run_local_full_sh_path}"
     
-    with open(main_py_path, 'r') as f:
+    with open(run_local_full_sh_path, 'r') as f:
         content = f.read()
     
     # Verify os.system is not used for command execution (ignore comments)
     lines = content.split('\n')
     for i, line in enumerate(lines, 1):
         if 'os.system(' in line and not line.strip().startswith('#'):
-            print(f"❌ os.system() still found in main.py at line {i}: {line.strip()}")
-            return False
+            assert False, f"os.system() still found in run_local_full.sh at line {i}: {line.strip()}"
     
-    # Verify subprocess.run is used instead
-    if 'subprocess.run(' not in content:
-        print("❌ subprocess.run() not found in main.py!")
-        return False
-    
-    # Verify security comments are present
-    if 'SECURITY FIX' not in content:
-        print("❌ Security fix comment not found!")
-        return False
+    # Verify exec $CMD is used instead
+    if 'exec $CMD' not in content:
+        assert False, "exec $CMD not found in run_local_full.sh!"
     
     print("✅ Old vulnerability eliminated:")
     print("   ✅ No os.system() usage found")
-    print("   ✅ subprocess.run() implementation present")
-    print("   ✅ Security fix comment documented")
-    
-    return True
+    print("   ✅ exec $CMD implementation present")
 
 
 def main():
