@@ -49,9 +49,9 @@ def test_pipeline_defaults_to_local_embedder():
                 # Default should use local embedder
                 pipeline = CWEIngestionPipeline()
 
-                # Verify local embedder is used
+                # Verify local embedder is used (standardized to 3072)
                 assert pipeline.embedder.is_local_model
-                assert pipeline.embedding_dim == 384  # MiniLM default
+                assert pipeline.embedding_dim == 3072
 
 
 def test_pipeline_validates_embedder_type():

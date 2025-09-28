@@ -23,7 +23,7 @@ def test_cwe_embedder_uses_mock_fallback():
     assert embedder.model_name == "all-MiniLM-L6-v2"
     assert embedder.is_local_model is True
     assert embedder.api_key is None
-    assert embedder.embedding_dimension == 384
+    assert embedder.embedding_dimension == 3072
 
 
 def test_cwe_embedder_custom_model():
@@ -47,7 +47,7 @@ def test_cwe_embed_text_returns_vector():
 
     # Should return numpy array
     assert isinstance(embedding, np.ndarray)
-    assert embedding.shape[0] == 384  # Mock or real MiniLM dimension
+    assert embedding.shape[0] == 3072  # Standardized mock dimension
     assert len(embedding) > 0
 
 
@@ -66,7 +66,7 @@ def test_cwe_embed_batch_processes_multiple_texts():
 
     assert len(embeddings) == 3
     assert all(isinstance(emb, np.ndarray) for emb in embeddings)
-    assert all(len(emb) == 384 for emb in embeddings)
+    assert all(len(emb) == 3072 for emb in embeddings)
 
 
 def test_cwe_embedder_handles_empty_text():
@@ -78,7 +78,7 @@ def test_cwe_embedder_handles_empty_text():
     # Test empty string
     result = embedder.embed_text("")
     assert isinstance(result, np.ndarray)
-    assert len(result) == 384
+    assert len(result) == 3072
 
     # Test None input
     with pytest.raises(ValueError):

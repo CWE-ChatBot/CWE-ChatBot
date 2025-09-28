@@ -802,4 +802,3 @@ class ConversationManager:
             "message": msg
         }
 
-    # _process_message_core removed; streaming and non-stream paths call shared components directly

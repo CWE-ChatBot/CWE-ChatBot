@@ -278,14 +278,8 @@ except Exception as e:
 
 If IAM authentication continues to fail:
 
-1. **Temporary Password Authentication** (Development Only)
-```bash
-# Create temporary password user for testing
-gcloud sql users create temp_user --instance=cwe-postgres-prod --password=temp_password
-DATABASE_URL="postgresql://temp_user:temp_password@34.170.63.164:5432/postgres?sslmode=require"
-```
 
-2. **Use Cloud SQL Auth Proxy** (Recommended for Local Development)
+1. **Use Cloud SQL Auth Proxy** (Recommended for Local Development)
 ```bash
 # Always use Auth Proxy for local development
 ./cloud_sql_proxy -instances=cwechatbot:us-central1:cwe-postgres-prod=tcp:5432 &

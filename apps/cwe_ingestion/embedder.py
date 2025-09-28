@@ -1,13 +1,17 @@
 # apps/cwe_ingestion/embedder.py
 """
-Local embedding model for CWE text using sentence transformers.
-Handles optional dependency gracefully.
-Story 1.4: Added Gemini API integration for state-of-the-art embeddings.
+Embedding providers for CWE ingestion.
+
+- CWEEmbedder: standardized 3072-D mock embedder (no external deps)
+- GeminiEmbedder: 3072-D embeddings via google-generativeai
+
+Local sentence-transformers support has been removed to simplify the stack
+and align all embeddings to 3072 dimensions used in production (pgvector).
 """
 import asyncio
 import logging
 import os
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, cast
 
 import numpy as np
 
@@ -54,46 +58,18 @@ class CWEEmbedder:
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         self.model_name = model_name
         self.is_local_model = True
-        self.api_key = None  # No API key needed for local model
-        self.model: Optional[Any] = None
-        self.embedding_dimension = 384  # Default for MiniLM
+        self.api_key = None  # No API key needed for local mock embedder
+        self.model: Optional[Any] = None  # Always None for mock-only implementation
+        self.embedding_dimension = 3072
+        logger.info("Initialized 3072-D mock embedder (no external model)")
 
-        try:
-            logger.info(f"Attempting to load embedding model: {model_name}")
-            self._load_model()
-            logger.info(f"Model loaded successfully. Dimension: {self.embedding_dimension}")
-        except ImportError as e:
-            logger.warning(f"sentence-transformers not available: {e}")
-            logger.info("Using mock embedder for testing/development")
-            self._use_mock_embedder()
-        except Exception as e:
-            logger.error(f"Failed to load embedding model: {e}")
-            logger.info("Falling back to mock embedder")
-            self._use_mock_embedder()
-
-    def _load_model(self):
-        """Load the sentence transformer model."""
-        from sentence_transformers import SentenceTransformer  # type: ignore[reportMissingImports]
-        # Build locally first to avoid Optional type narrowing issues
-        model = SentenceTransformer(self.model_name)
-        # Prefer the API if available; otherwise infer from an example encoding
-        get_dim = getattr(model, "get_sentence_embedding_dimension", None)
-        if callable(get_dim):
-            self.embedding_dimension = int(get_dim())
-        else:
-            try:
-                example = model.encode("dimension_probe", convert_to_numpy=True)
-                self.embedding_dimension = int(getattr(example, "shape", (0,))[0]) or 3072
-            except Exception:
-                self.embedding_dimension = 3072
-        # Assign after successful load
-        self.model = model
+    # sentence-transformers support removed; mock-only implementation
 
     def _use_mock_embedder(self) -> None:
         """Use mock embedder for testing when sentence-transformers is not available."""
         self.model = None
-        self.embedding_dimension = 384  # Mock dimension
-        logger.info("Using mock embedder - embeddings will be random vectors")
+        self.embedding_dimension = 3072  # Mock dimension standardized
+        logger.info("Using mock embedder (3072-D) - embeddings will be random vectors")
 
     def embed_text(self, text: str) -> np.ndarray:
         """
@@ -113,13 +89,8 @@ class CWEEmbedder:
                 logger.warning("Empty text provided for embedding")
                 return np.zeros(self.embedding_dimension, dtype=np.float32)
 
-            if self.model is not None:
-                # Use real sentence transformer
-                embedding: np.ndarray = self.model.encode(text.strip(), convert_to_numpy=True)
-                return embedding
-            else:
-                # Use mock embedder for testing
-                return self._generate_mock_embedding(text)
+            # Always use mock embedder for local implementation
+            return self._generate_mock_embedding(text)
 
         except Exception as e:
             logger.error(f"Failed to generate embedding: {e}")

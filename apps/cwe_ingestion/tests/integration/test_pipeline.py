@@ -211,7 +211,7 @@ def test_multi_database_pipeline_integration():
 
     # Verify pipeline configuration
     assert len(pipeline.database_targets) == 2
-    assert pipeline.embedding_dim == 384  # Local embedder dimension
+    assert pipeline.embedding_dim == 3072  # Standardized local embedder dimension
     assert hasattr(pipeline, 'embedder')
 
     # Test that both storage modes are configured correctly
