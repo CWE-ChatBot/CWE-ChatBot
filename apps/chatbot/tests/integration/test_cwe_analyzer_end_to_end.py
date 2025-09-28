@@ -35,7 +35,10 @@ INPUT_SAMPLES = [
 @pytest.fixture(scope="module")
 def conversation_manager():
     # This fixture will be slow as it initializes the ConversationManager
-    return ConversationManager(DB_URL, os.getenv("GEMINI_API_KEY"))
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY must be set for integration tests")
+    return ConversationManager(DB_URL, api_key)
 
 @pytest.fixture
 def mock_chainlit_session(mocker):
@@ -154,8 +157,8 @@ def get_policies_from_db(cwe_ids: List[str]) -> Dict[str, str]:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                f"SELECT cwe_id, mapping_label FROM cwe_policy_labels WHERE cwe_id IN ({', '.join(['%s'] * len(cwe_ids))})",
-                cwe_ids,
+                "SELECT cwe_id, mapping_label FROM cwe_policy_labels WHERE cwe_id IN %s",
+                (cwe_ids,),
             )
             for row in cur.fetchall():
                 policies[row[0]] = row[1]
@@ -173,8 +176,8 @@ def get_catalog_data_from_db(cwe_ids: List[str]) -> Dict[str, tuple]:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                f"SELECT cwe_id, name, abstraction FROM cwe_catalog WHERE cwe_id IN ({', '.join(['%s'] * len(cwe_ids))})",
-                cwe_ids,
+                "SELECT cwe_id, name, abstraction FROM cwe_catalog WHERE cwe_id IN %s",
+                (cwe_ids,),
             )
             for row in cur.fetchall():
                 catalog_data[row[0]] = (row[1], row[2])  # (name, abstraction)

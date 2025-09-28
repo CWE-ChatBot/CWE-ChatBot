@@ -5,7 +5,10 @@ Manages conversation flow, session state, and message handling for Chainlit inte
 """
 
 import logging
-from typing import Dict, List, Any, Optional, AsyncGenerator
+from typing import Dict, List, Any, Optional, AsyncGenerator, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.processing.pipeline import PipelineResult
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import asyncio
@@ -210,7 +213,6 @@ class ConversationManager:
 
     async def _handle_cve_creator(self, query: str, context) -> 'PipelineResult':
         """Handle CVE Creator persona logic."""
-        from src.processing.pipeline import PipelineResult
 
         # Set evidence and create structured CVE description
         context.set_evidence(query)
@@ -332,7 +334,7 @@ class ConversationManager:
         health: Dict[str, Any] = self.query_handler.health_check()
         # Per-user data now lives in cl.user_session; global counts are not available here
         health.update({
-            "active_sessions": None,
+            "active_sessions": -1,
             "persona_distribution": {}
         })
         return health
