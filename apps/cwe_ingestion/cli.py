@@ -1,6 +1,7 @@
 # apps/cwe_ingestion/cli.py
 #!/usr/bin/env python3
 import logging
+import os
 import sys
 import click
 

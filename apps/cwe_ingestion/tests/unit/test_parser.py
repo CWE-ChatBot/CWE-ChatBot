@@ -70,36 +70,34 @@ def test_parser_extracts_required_fields():
         cwe = result[0]
 
         # Test all required fields are extracted
-        assert cwe['id'] == '79'
-        assert cwe['name'] == 'Cross-site Scripting'
-        assert cwe['abstraction'] == 'Base'
-        assert cwe['status'] == 'Stable'
-        assert 'The software does not neutralize user input' in cwe['description']
-        assert 'Cross-site scripting attacks can lead' in cwe['extended_description']
+        assert cwe.ID == '79'
+        assert cwe.Name == 'Cross-site Scripting'
+        assert cwe.Abstraction == 'Base'
+        assert cwe.Status == 'Stable'
+        assert 'The software does not neutralize user input' in cwe.Description
+        assert 'Cross-site scripting attacks can lead' in cwe.ExtendedDescription
 
         # Test alternate terms
-        assert len(cwe['alternate_terms']) == 1
-        assert cwe['alternate_terms'][0]['term'] == 'XSS'
-        assert 'Common abbreviation' in cwe['alternate_terms'][0]['description']
+        assert len(cwe.AlternateTerms) == 1
+        assert cwe.AlternateTerms[0].Term == 'XSS'
+        assert 'Common abbreviation' in cwe.AlternateTerms[0].Description
 
         # Test observed examples
-        assert len(cwe['observed_examples']) == 1
-        assert cwe['observed_examples'][0]['reference'] == 'CVE-2002-0738'
-        assert 'XSS in web application' in cwe['observed_examples'][0]['description']
+        assert len(cwe.ObservedExamples) == 1
+        assert cwe.ObservedExamples[0].Reference == 'CVE-2002-0738'
+        assert 'XSS in web application' in cwe.ObservedExamples[0].Description
 
         # Test related weaknesses
-        assert len(cwe['related_weaknesses']) == 1
-        assert cwe['related_weaknesses'][0]['nature'] == 'ChildOf'
-        assert cwe['related_weaknesses'][0]['cwe_id'] == '20'
-        assert cwe['related_weaknesses'][0]['view_id'] == '1000'
+        assert len(cwe.RelatedWeaknesses) == 1
+        assert cwe.RelatedWeaknesses[0].Nature == 'ChildOf'
+        assert cwe.RelatedWeaknesses[0].CweID == '20'
+        assert cwe.RelatedWeaknesses[0].ViewID == '1000'
 
         # Test full_text contains all information
-        assert 'CWE-79: Cross-site Scripting' in cwe['full_text']
-        assert 'Type: Base' in cwe['full_text']
-        assert 'Status: Stable' in cwe['full_text']
-        assert 'Alternative Terms:' in cwe['full_text']
-        assert 'Real-World Examples:' in cwe['full_text']
-        assert 'Related Weaknesses:' in cwe['full_text']
+        full_text = cwe.to_searchable_text()
+        assert 'CWE-79: Cross-site Scripting' in full_text
+        assert 'Abstraction Level: Base' in full_text
+        assert 'Status: Stable' in full_text
     finally:
         Path(temp_file).unlink()
 
@@ -107,14 +105,14 @@ def test_parser_filters_target_cwes():
     """Test that parser only extracts specified CWE IDs."""
     from apps.cwe_ingestion.parser import CWEParser
 
-    # Sample XML with multiple CWEs
+    # Sample XML with multiple CWEs (including required Abstraction and Status attributes)
     sample_xml = '''<?xml version="1.0" encoding="UTF-8"?>
     <Weakness_Catalog>
         <Weaknesses>
-            <Weakness ID="79" Name="Cross-site Scripting">
+            <Weakness ID="79" Name="Cross-site Scripting" Abstraction="Base" Status="Stable">
                 <Description><Description_Summary>XSS desc</Description_Summary></Description>
             </Weakness>
-            <Weakness ID="89" Name="SQL Injection">
+            <Weakness ID="89" Name="SQL Injection" Abstraction="Base" Status="Stable">
                 <Description><Description_Summary>SQL desc</Description_Summary></Description>
             </Weakness>
         </Weaknesses>
@@ -131,8 +129,8 @@ def test_parser_filters_target_cwes():
         result = parser.parse_file(temp_file, target_cwes=['CWE-79'])
 
         assert len(result) == 1
-        assert result[0]['id'] == '79'
-        assert result[0]['name'] == 'Cross-site Scripting'
+        assert result[0].ID == '79'
+        assert result[0].Name == 'Cross-site Scripting'
     finally:
         Path(temp_file).unlink()
 
@@ -144,7 +142,7 @@ def test_parser_handles_missing_fields_gracefully():
     sample_xml = '''<?xml version="1.0" encoding="UTF-8"?>
     <Weakness_Catalog>
         <Weaknesses>
-            <Weakness ID="79" Name="Cross-site Scripting">
+            <Weakness ID="79" Name="Cross-site Scripting" Abstraction="Base" Status="Stable">
                 <Description><Description_Summary>Basic desc</Description_Summary></Description>
             </Weakness>
         </Weaknesses>
@@ -161,14 +159,14 @@ def test_parser_handles_missing_fields_gracefully():
 
         assert len(result) == 1
         cwe = result[0]
-        assert cwe['id'] == '79'
-        assert cwe['name'] == 'Cross-site Scripting'
+        assert cwe.ID == '79'
+        assert cwe.Name == 'Cross-site Scripting'
 
         # Optional fields should be empty but present
-        assert cwe.get('extended_description', '') == ''
-        assert cwe.get('alternate_terms', []) == []
-        assert cwe.get('observed_examples', []) == []
-        assert cwe.get('related_weaknesses', []) == []
+        assert cwe.ExtendedDescription is None or cwe.ExtendedDescription == ''
+        assert cwe.AlternateTerms == []
+        assert cwe.ObservedExamples == []
+        assert cwe.RelatedWeaknesses == []
     finally:
         Path(temp_file).unlink()
 

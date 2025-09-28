@@ -74,8 +74,20 @@ class CWEEmbedder:
     def _load_model(self):
         """Load the sentence transformer model."""
         from sentence_transformers import SentenceTransformer  # type: ignore[reportMissingImports]
-        self.model = SentenceTransformer(self.model_name)
-        self.embedding_dimension = self.model.get_sentence_embedding_dimension()
+        # Build locally first to avoid Optional type narrowing issues
+        model = SentenceTransformer(self.model_name)
+        # Prefer the API if available; otherwise infer from an example encoding
+        get_dim = getattr(model, "get_sentence_embedding_dimension", None)
+        if callable(get_dim):
+            self.embedding_dimension = int(get_dim())
+        else:
+            try:
+                example = model.encode("dimension_probe", convert_to_numpy=True)
+                self.embedding_dimension = int(getattr(example, "shape", (0,))[0]) or 3072
+            except Exception:
+                self.embedding_dimension = 3072
+        # Assign after successful load
+        self.model = model
 
     def _use_mock_embedder(self) -> None:
         """Use mock embedder for testing when sentence-transformers is not available."""

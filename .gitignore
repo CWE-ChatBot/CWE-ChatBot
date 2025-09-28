@@ -60,6 +60,19 @@ ENV/
 .env.local
 .env.*.local
 
+# Security-sensitive files
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa*
+id_dsa*
+id_ed25519*
+id_ecdsa*
+secrets/
+
 # IDE
 .vscode/
 .idea/

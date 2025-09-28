@@ -9,21 +9,21 @@ import os
 
 
 @pytest.mark.e2e
-@pytest.mark.parametrize("browser_name", ["chromium", "firefox", "webkit"])
-def test_basic_functionality_cross_browser(chainlit_server, browser_name):
+@pytest.mark.parametrize("browser_type", ["chromium", "firefox", "webkit"])
+def test_basic_functionality_cross_browser(chainlit_server, browser_type):
     """Test basic chat functionality works across all supported browsers."""
     url = chainlit_server["url"]
 
     with sync_playwright() as p:
         # Launch browser based on parameter
-        if browser_name == "chromium":
+        if browser_type == "chromium":
             browser = p.chromium.launch(headless=True)
-        elif browser_name == "firefox":
+        elif browser_type == "firefox":
             browser = p.firefox.launch(headless=True)
-        elif browser_name == "webkit":
+        elif browser_type == "webkit":
             browser = p.webkit.launch(headless=True)
         else:
-            pytest.skip(f"Unsupported browser: {browser_name}")
+            pytest.skip(f"Unsupported browser: {browser_type}")
 
         context = browser.new_context(record_video_dir="test-results/videos/")
         page = context.new_page()
@@ -71,7 +71,7 @@ def test_basic_functionality_cross_browser(chainlit_server, browser_name):
                 # Verify response appears
                 page_content = page.content().lower()
                 assert "cwe-79" in page_content or len(page_content) > 2000, \
-                    f"Should get response in {browser_name}"
+                    f"Should get response in {browser_type}"
 
             # Check for critical errors
             critical_errors = [
@@ -83,9 +83,9 @@ def test_basic_functionality_cross_browser(chainlit_server, browser_name):
 
             # Assert no critical errors
             assert len(page_errors) == 0, \
-                f"Page errors in {browser_name}: {page_errors}"
+                f"Page errors in {browser_type}: {page_errors}"
             assert len(critical_errors) <= 1, \
-                f"Too many console errors in {browser_name}: {critical_errors}"
+                f"Too many console errors in {browser_type}: {critical_errors}"
 
         finally:
             page.close()
@@ -93,7 +93,7 @@ def test_basic_functionality_cross_browser(chainlit_server, browser_name):
                 os.makedirs('test-results/videos', exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as(f'test-results/videos/test_basic_functionality_{browser_name}.webm')
+                    video.save_as(f'test-results/videos/test_basic_functionality_{browser_type}.webm')
             except Exception:
                 pass
             context.close()
@@ -101,18 +101,18 @@ def test_basic_functionality_cross_browser(chainlit_server, browser_name):
 
 
 @pytest.mark.e2e
-@pytest.mark.parametrize("browser_name", ["chromium", "firefox"])  # webkit often has issues with file uploads
-def test_file_upload_cross_browser(chainlit_server, browser_name):
+@pytest.mark.parametrize("browser_type", ["chromium", "firefox"])  # webkit often has issues with file uploads
+def test_file_upload_cross_browser(chainlit_server, browser_type):
     """Test file upload functionality across browsers."""
     url = chainlit_server["url"]
 
     with sync_playwright() as p:
-        if browser_name == "chromium":
+        if browser_type == "chromium":
             browser = p.chromium.launch(headless=True)
-        elif browser_name == "firefox":
+        elif browser_type == "firefox":
             browser = p.firefox.launch(headless=True)
         else:
-            pytest.skip(f"File upload not tested on {browser_name}")
+            pytest.skip(f"File upload not tested on {browser_type}")
 
         context = browser.new_context(record_video_dir="test-results/videos/")
         page = context.new_page()
@@ -151,7 +151,7 @@ def test_file_upload_cross_browser(chainlit_server, browser_name):
             if upload_available:
                 # Create a simple test file
                 test_file_content = "Test document content for CWE testing"
-                test_file_path = f"/tmp/test_upload_{browser_name}.txt"
+                test_file_path = f"/tmp/test_upload_{browser_type}.txt"
 
                 try:
                     with open(test_file_path, "w") as f:
@@ -186,7 +186,7 @@ def test_file_upload_cross_browser(chainlit_server, browser_name):
                         pass
 
             # Verify application remains functional after upload attempt
-            assert page.url.startswith("http"), f"Application should remain functional in {browser_name}"
+            assert page.url.startswith("http"), f"Application should remain functional in {browser_type}"
 
         finally:
             page.close()
@@ -194,7 +194,7 @@ def test_file_upload_cross_browser(chainlit_server, browser_name):
                 os.makedirs('test-results/videos', exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as(f'test-results/videos/test_file_upload_{browser_name}.webm')
+                    video.save_as(f'test-results/videos/test_file_upload_{browser_type}.webm')
             except Exception:
                 pass
             context.close()
@@ -202,8 +202,8 @@ def test_file_upload_cross_browser(chainlit_server, browser_name):
 
 
 @pytest.mark.e2e
-@pytest.mark.parametrize("browser_name", ["chromium", "firefox", "webkit"])
-def test_responsive_design_cross_browser(chainlit_server, browser_name):
+@pytest.mark.parametrize("browser_type", ["chromium", "firefox", "webkit"])
+def test_responsive_design_cross_browser(chainlit_server, browser_type):
     """Test responsive design behavior across browsers."""
     url = chainlit_server["url"]
 
@@ -214,14 +214,14 @@ def test_responsive_design_cross_browser(chainlit_server, browser_name):
     ]
 
     with sync_playwright() as p:
-        if browser_name == "chromium":
+        if browser_type == "chromium":
             browser = p.chromium.launch(headless=True)
-        elif browser_name == "firefox":
+        elif browser_type == "firefox":
             browser = p.firefox.launch(headless=True)
-        elif browser_name == "webkit":
+        elif browser_type == "webkit":
             browser = p.webkit.launch(headless=True)
         else:
-            pytest.skip(f"Unsupported browser: {browser_name}")
+            pytest.skip(f"Unsupported browser: {browser_type}")
 
         for viewport in viewports:
             context = browser.new_context(
@@ -244,7 +244,7 @@ def test_responsive_design_cross_browser(chainlit_server, browser_name):
 
                 # Allow small tolerance for scrollbars
                 assert scroll_width <= viewport_width + 25, \
-                    f"Horizontal scrolling in {browser_name} at {viewport['name']} viewport: {scroll_width}px > {viewport_width}px"
+                    f"Horizontal scrolling in {browser_type} at {viewport['name']} viewport: {scroll_width}px > {viewport_width}px"
 
                 # Test basic interaction at this viewport
                 input_element = page.locator("textarea, input[type='text']").first
@@ -255,7 +255,7 @@ def test_responsive_design_cross_browser(chainlit_server, browser_name):
 
                     # Should remain functional
                     assert page.url.startswith("http"), \
-                        f"Should remain functional in {browser_name} at {viewport['name']} viewport"
+                        f"Should remain functional in {browser_type} at {viewport['name']} viewport"
 
             finally:
                 page.close()
@@ -263,7 +263,7 @@ def test_responsive_design_cross_browser(chainlit_server, browser_name):
                     os.makedirs('test-results/videos', exist_ok=True)
                     video = page.video
                     if video:
-                        video.save_as(f'test-results/videos/test_responsive_{browser_name}_{viewport["name"]}.webm')
+                        video.save_as(f'test-results/videos/test_responsive_{browser_type}_{viewport["name"]}.webm')
                 except Exception:
                     pass
                 context.close()
@@ -272,20 +272,20 @@ def test_responsive_design_cross_browser(chainlit_server, browser_name):
 
 
 @pytest.mark.e2e
-@pytest.mark.parametrize("browser_name", ["chromium", "firefox", "webkit"])
-def test_persona_selection_cross_browser(chainlit_server, browser_name, sample_roles):
+@pytest.mark.parametrize("browser_type", ["chromium", "firefox", "webkit"])
+def test_persona_selection_cross_browser(chainlit_server, browser_type, sample_roles):
     """Test persona/role selection functionality across browsers."""
     url = chainlit_server["url"]
 
     with sync_playwright() as p:
-        if browser_name == "chromium":
+        if browser_type == "chromium":
             browser = p.chromium.launch(headless=True)
-        elif browser_name == "firefox":
+        elif browser_type == "firefox":
             browser = p.firefox.launch(headless=True)
-        elif browser_name == "webkit":
+        elif browser_type == "webkit":
             browser = p.webkit.launch(headless=True)
         else:
-            pytest.skip(f"Unsupported browser: {browser_name}")
+            pytest.skip(f"Unsupported browser: {browser_type}")
 
         context = browser.new_context(record_video_dir="test-results/videos/")
         page = context.new_page()
@@ -312,12 +312,12 @@ def test_persona_selection_cross_browser(chainlit_server, browser_name, sample_r
 
                         # Should work without errors
                         assert page.url.startswith("http"), \
-                            f"Role selection for {role} should work in {browser_name}"
+                            f"Role selection for {role} should work in {browser_type}"
 
             # Verify final state
             final_content = page.content()
             assert len(final_content) > 1000, \
-                f"Should have substantial content after role tests in {browser_name}"
+                f"Should have substantial content after role tests in {browser_type}"
 
         finally:
             page.close()
@@ -325,7 +325,7 @@ def test_persona_selection_cross_browser(chainlit_server, browser_name, sample_r
                 os.makedirs('test-results/videos', exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as(f'test-results/videos/test_persona_selection_{browser_name}.webm')
+                    video.save_as(f'test-results/videos/test_persona_selection_{browser_type}.webm')
             except Exception:
                 pass
             context.close()
@@ -334,18 +334,18 @@ def test_persona_selection_cross_browser(chainlit_server, browser_name, sample_r
 
 @pytest.mark.e2e
 @pytest.mark.slow
-@pytest.mark.parametrize("browser_name", ["chromium", "firefox"])
-def test_javascript_compatibility_cross_browser(chainlit_server, browser_name):
+@pytest.mark.parametrize("browser_type", ["chromium", "firefox"])
+def test_javascript_compatibility_cross_browser(chainlit_server, browser_type):
     """Test JavaScript features and compatibility across browsers."""
     url = chainlit_server["url"]
 
     with sync_playwright() as p:
-        if browser_name == "chromium":
+        if browser_type == "chromium":
             browser = p.chromium.launch(headless=True)
-        elif browser_name == "firefox":
+        elif browser_type == "firefox":
             browser = p.firefox.launch(headless=True)
         else:
-            pytest.skip(f"Limited JavaScript testing on {browser_name}")
+            pytest.skip(f"Limited JavaScript testing on {browser_type}")
 
         context = browser.new_context(record_video_dir="test-results/videos/")
         page = context.new_page()
@@ -380,7 +380,7 @@ def test_javascript_compatibility_cross_browser(chainlit_server, browser_name):
 
             # Test 2: Fetch API (for AJAX requests)
             fetch_available = page.evaluate("typeof fetch !== 'undefined'")
-            assert fetch_available, f"Fetch API should be available in {browser_name}"
+            assert fetch_available, f"Fetch API should be available in {browser_type}"
 
             # Test 3: Promises (modern JavaScript)
             promises_work = page.evaluate("""
@@ -392,7 +392,7 @@ def test_javascript_compatibility_cross_browser(chainlit_server, browser_name):
                     }
                 })()
             """)
-            assert promises_work, f"Promises should work in {browser_name}"
+            assert promises_work, f"Promises should work in {browser_type}"
 
             # Test 4: Arrow functions (ES6)
             arrow_functions_work = page.evaluate("""
@@ -405,7 +405,7 @@ def test_javascript_compatibility_cross_browser(chainlit_server, browser_name):
                     }
                 })()
             """)
-            assert arrow_functions_work, f"Arrow functions should work in {browser_name}"
+            assert arrow_functions_work, f"Arrow functions should work in {browser_type}"
 
             # Test 5: Basic DOM manipulation
             dom_works = page.evaluate("""
@@ -419,7 +419,7 @@ def test_javascript_compatibility_cross_browser(chainlit_server, browser_name):
                     }
                 })()
             """)
-            assert dom_works, f"DOM manipulation should work in {browser_name}"
+            assert dom_works, f"DOM manipulation should work in {browser_type}"
 
             # Interact with the application to trigger JavaScript
             input_element = page.locator("textarea, input[type='text']").first
@@ -436,9 +436,9 @@ def test_javascript_compatibility_cross_browser(chainlit_server, browser_name):
                 ])
             ]
 
-            assert len(page_errors) == 0, f"JavaScript page errors in {browser_name}: {page_errors}"
+            assert len(page_errors) == 0, f"JavaScript page errors in {browser_type}: {page_errors}"
             assert len(critical_js_errors) <= 2, \
-                f"Too many JavaScript errors in {browser_name}: {critical_js_errors}"
+                f"Too many JavaScript errors in {browser_type}: {critical_js_errors}"
 
         finally:
             page.close()
@@ -446,7 +446,7 @@ def test_javascript_compatibility_cross_browser(chainlit_server, browser_name):
                 os.makedirs('test-results/videos', exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as(f'test-results/videos/test_javascript_compatibility_{browser_name}.webm')
+                    video.save_as(f'test-results/videos/test_javascript_compatibility_{browser_type}.webm')
             except Exception:
                 pass
             context.close()

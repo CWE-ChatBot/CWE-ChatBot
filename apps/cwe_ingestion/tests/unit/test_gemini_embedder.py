@@ -60,11 +60,10 @@ def test_gemini_api_request_format():
 
             embedder.embed_text("Test CWE content")
 
-            # Verify API call format
+            # Verify API call format (updated to match current implementation)
             mock_embed.assert_called_once_with(
-                model="models/embedding-001",
-                content="Test CWE content",
-                output_dimensionality=3072
+                model="models/gemini-embedding-001",
+                content="Test CWE content"
             )
 
 

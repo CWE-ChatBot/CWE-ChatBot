@@ -21,22 +21,19 @@ def test_pipeline_supports_gemini_embedder_selection():
     import pipeline
     from pipeline import CWEIngestionPipeline
 
-    temp_dir = tempfile.mkdtemp()
-    try:
-        with patch.dict(os.environ, {'GEMINI_API_KEY': 'test-key'}):
-            # Should be able to create pipeline with Gemini embedder
-            pipeline = CWEIngestionPipeline(
-                storage_path=temp_dir,
-                embedder_type="gemini"
-            )
+    with patch.dict(os.environ, {'GEMINI_API_KEY': 'test-key', 'DATABASE_URL': 'postgresql://test'}):
+        # Mock database components to prevent real connections
+        with patch('pipeline.PostgresChunkStore') as mock_store:
+            with patch('pipeline.CWEParser') as mock_parser:
+                # Should be able to create pipeline with Gemini embedder
+                pipeline = CWEIngestionPipeline(
+                    embedder_type="gemini"
+                )
 
-            # Verify Gemini embedder is used
-            assert hasattr(pipeline.embedder, 'api_key_masked')
-            assert pipeline.embedder.get_embedding_dimension() == 3072
-            assert not pipeline.embedder.is_local_model
-
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+                # Verify Gemini embedder is used
+                assert hasattr(pipeline.embedder, 'api_key_masked')
+                assert pipeline.embedding_dim == 3072
+                assert not pipeline.embedder.is_local_model
 
 
 def test_pipeline_defaults_to_local_embedder():
@@ -45,17 +42,16 @@ def test_pipeline_defaults_to_local_embedder():
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../'))
     from pipeline import CWEIngestionPipeline
 
-    temp_dir = tempfile.mkdtemp()
-    try:
-        # Default should use local embedder
-        pipeline = CWEIngestionPipeline(storage_path=temp_dir)
+    with patch.dict(os.environ, {'DATABASE_URL': 'postgresql://test'}):
+        # Mock database components to prevent real connections
+        with patch('pipeline.PostgresChunkStore') as mock_store:
+            with patch('pipeline.CWEParser') as mock_parser:
+                # Default should use local embedder
+                pipeline = CWEIngestionPipeline()
 
-        # Verify local embedder is used
-        assert pipeline.embedder.is_local_model
-        assert pipeline.embedder.get_embedding_dimension() == 384  # MiniLM default
-
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+                # Verify local embedder is used
+                assert pipeline.embedder.is_local_model
+                assert pipeline.embedding_dim == 384  # MiniLM default
 
 
 def test_pipeline_validates_embedder_type():
@@ -64,14 +60,12 @@ def test_pipeline_validates_embedder_type():
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../'))
     from pipeline import CWEIngestionPipeline
 
-    temp_dir = tempfile.mkdtemp()
-    try:
-        # Should raise error for invalid embedder type
-        with pytest.raises(ValueError, match="embedder_type"):
-            CWEIngestionPipeline(
-                storage_path=temp_dir,
-                embedder_type="invalid_type"
-            )
-
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+    with patch.dict(os.environ, {'DATABASE_URL': 'postgresql://test'}):
+        # Mock database components to prevent real connections
+        with patch('pipeline.PostgresChunkStore') as mock_store:
+            with patch('pipeline.CWEParser') as mock_parser:
+                # Should raise error for invalid embedder type
+                with pytest.raises(ValueError, match="embedder_type"):
+                    CWEIngestionPipeline(
+                        embedder_type="invalid_type"
+                    )

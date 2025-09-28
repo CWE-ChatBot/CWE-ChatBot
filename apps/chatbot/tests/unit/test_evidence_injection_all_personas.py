@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 
 
 PERSONAS = [
@@ -24,8 +25,9 @@ class DummyUserSession:
 
 
 class DummyMessage:
-    def __init__(self, content=""):
+    def __init__(self, content="", author=None):
         self.content = content
+        self.author = author
         self.elements = []
 
     async def send(self):
@@ -35,6 +37,18 @@ class DummyMessage:
         return None
 
     async def stream_token(self, _):
+        return None
+
+
+class DummyStep:
+    def __init__(self, name="", **kwargs):
+        self.name = name
+        self.output = ""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
         return None
 
 
@@ -78,6 +92,7 @@ async def test_evidence_pseudo_chunk_injected_for_every_persona(monkeypatch, per
     cl_session = DummyUserSession()
     monkeypatch.setattr(cl, "user_session", cl_session, raising=True)
     monkeypatch.setattr(cl, "Message", DummyMessage, raising=True)
+    monkeypatch.setattr(cl, "Step", DummyStep, raising=True)
 
     # Patch heavy dependencies by stubbing their modules before import
     import sys, types
@@ -92,34 +107,44 @@ async def test_evidence_pseudo_chunk_injected_for_every_persona(monkeypatch, per
 
     # Import after module stubs are in place
     from src.conversation import ConversationManager
+    from src.user_context import UserContext
 
-    # Create manager (uses DummyQH/DummyRG)
-    cm = ConversationManager(database_url="postgresql://user:pass@host/db", gemini_api_key="dummy")
+    # Mock database connections to prevent real connections
+    with patch('src.conversation.CWEQueryHandler', return_value=DummyQH()):
+        with patch('src.response_generator.ResponseGenerator', return_value=DummyRG()):
+            with patch('src.utils.session.get_user_context') as mock_get_user_context:
+                # Set up the user context mock to return a controllable context
+                test_context = UserContext()
+                test_context.persona = persona
+                mock_get_user_context.return_value = test_context
 
-    # Seed a session context and persona
-    session_id = "sess-test"
-    ctx = cm._get_or_create_user_context(session_id)
-    ctx.persona = persona
+                # Create manager (uses DummyQH/DummyRG)
+                cm = ConversationManager(database_url="postgresql://user:pass@host/db", gemini_api_key="dummy")
 
-    # Provide uploaded evidence via session
-    cl_session.set("uploaded_file_context", "Evidence: reflected XSS in search param")
+                # Seed a session context and persona
+                session_id = "sess-test"
+                ctx = cm.get_user_context(session_id)
+                ctx.persona = persona
 
-    # Spy on streaming to capture retrieval and evidence passing
-    calls = {}
+                # Provide uploaded evidence via session
+                cl_session.set("uploaded_file_context", "Evidence: reflected XSS in search param")
 
-    async def spy_generate_response_streaming(query, retrieved_chunks, user_persona, *, user_evidence=None):
-        calls["retrieved_chunks"] = list(retrieved_chunks)
-        calls["user_evidence"] = user_evidence
-        async for t in DummyRG().generate_response_streaming(query, retrieved_chunks, user_persona, user_evidence=user_evidence):
-            yield t
+                # Spy on streaming to capture retrieval and evidence passing
+                calls = {}
 
-    monkeypatch.setattr(cm.response_generator, "generate_response_streaming", spy_generate_response_streaming, raising=True)
+                async def spy_generate_response_streaming(query, retrieved_chunks, user_persona, *, user_evidence=None):
+                    calls["retrieved_chunks"] = list(retrieved_chunks)
+                    calls["user_evidence"] = user_evidence
+                    async for t in DummyRG().generate_response_streaming(query, retrieved_chunks, user_persona, user_evidence=user_evidence):
+                        yield t
 
-    # Execute streaming path (wrapper around core)
-    result = await cm.process_user_message_streaming(session_id, "Explain the risk of XSS", "msg-1")
+                monkeypatch.setattr(cm.response_generator, "generate_response_streaming", spy_generate_response_streaming, raising=True)
 
-    # Ensure response returned and our spy captured retrieval and evidence
-    assert "response" in result
-    retrieved = calls.get("retrieved_chunks")
-    assert retrieved is not None, "streaming should have been called with retrieval"
-    assert calls.get("user_evidence"), "Expected user evidence to be passed via user_evidence for all personas"
+                # Execute streaming path (wrapper around core)
+                result = await cm.process_user_message_streaming(session_id, "Explain the risk of XSS", "msg-1")
+
+                # Ensure response returned and our spy captured retrieval and evidence
+                assert "response" in result
+                retrieved = calls.get("retrieved_chunks")
+                assert retrieved is not None, "streaming should have been called with retrieval"
+                assert calls.get("user_evidence"), "Expected user evidence to be passed via user_evidence for all personas"

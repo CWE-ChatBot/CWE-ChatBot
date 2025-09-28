@@ -24,7 +24,11 @@ def test_cli_supports_gemini_embedder_option():
     runner = CliRunner()
 
     with patch.dict(os.environ, {'GEMINI_API_KEY': 'test-key', 'DATABASE_URL': 'postgresql://test'}):
-        with patch('pipeline.CWEIngestionPipeline.run', return_value=True):
+        # Mock the pipeline by patching its import and usage
+        with patch('cli.CWEIngestionPipeline') as mock_pipeline_class:
+            mock_pipeline = mock_pipeline_class.return_value
+            mock_pipeline.run.return_value = True
+
             result = runner.invoke(cli, [
                 'ingest',
                 '--embedder-type', 'gemini',
@@ -50,7 +54,11 @@ def test_cli_defaults_to_local_embedder():
     runner = CliRunner()
 
     with patch.dict(os.environ, {'DATABASE_URL': 'postgresql://test'}):
-        with patch('pipeline.CWEIngestionPipeline.run', return_value=True):
+        # Mock the pipeline by patching its import and usage
+        with patch('cli.CWEIngestionPipeline') as mock_pipeline_class:
+            mock_pipeline = mock_pipeline_class.return_value
+            mock_pipeline.run.return_value = True
+
             result = runner.invoke(cli, [
                 'ingest',
                 '--target-cwes', 'CWE-79'
