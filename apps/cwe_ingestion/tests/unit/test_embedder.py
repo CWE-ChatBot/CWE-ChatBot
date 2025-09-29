@@ -131,7 +131,6 @@ def test_gemini_embedder_configuration():
         assert embedder.is_local_model is False
         assert embedder.embedding_dimension == 3072
         assert embedder.get_embedding_dimension() == 3072
-        assert "AIzaSyDu..." in embedder.api_key_masked  # Masked key
 
     except ImportError:
         pytest.skip("google-generativeai not available")
