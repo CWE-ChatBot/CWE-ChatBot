@@ -166,6 +166,17 @@ class ConversationManager:
                     {"session_id": session_id, "security_flags": flags, "persona": context.persona},
                 )
 
+            # Handle /exit command for analyzer modes
+            if hasattr(context, 'analyzer_mode') and context.analyzer_mode and message_content.strip().lower() == '/exit':
+                context.analyzer_mode = None
+                from src.utils.session import set_user_context
+                set_user_context(context)
+
+                exit_response = "✅ **Exited analyzer mode.** You can now ask general CWE questions or start a new analysis."
+                msg = cl.Message(content=exit_response)
+                await msg.send()
+                return self._build_response_dict(exit_response, session_id, msg, context)
+
             # Set file evidence if present
             file_ctx = cl.user_session.get("uploaded_file_context")
             if file_ctx and isinstance(file_ctx, str) and file_ctx.strip():
@@ -277,8 +288,14 @@ class ConversationManager:
         context = self.get_user_context(session_id)
         old_persona = context.persona
         context.persona = new_persona
+
+        # Clear analysis context when changing personas to avoid contamination
+        context.last_chunks = []
+        context.last_recommendations = []
+        context.analyzer_mode = None  # Clear any active analyzer modes
+
         context.update_activity()
-        logger.info(f"Persona updated from {old_persona} to {new_persona} for session {session_id}")
+        logger.info(f"Persona updated from {old_persona} to {new_persona} for session {session_id}. Cleared analysis context.")
         return True
 
 

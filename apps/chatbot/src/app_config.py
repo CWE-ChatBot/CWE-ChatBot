@@ -47,9 +47,10 @@ class Config:
     # Content Processing Limits
     max_file_evidence_length: int = int(os.getenv("MAX_FILE_EVIDENCE_LENGTH", "16000"))
     max_attachment_summary_length: int = int(os.getenv("MAX_ATTACHMENT_SUMMARY_LENGTH", "1200"))
-    max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "2048"))
+    max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "4096"))
     max_document_snippet_length: int = int(os.getenv("MAX_DOCUMENT_SNIPPET_LENGTH", "1000"))
     max_context_length: int = int(os.getenv("MAX_CONTEXT_LENGTH", "16000"))
+    max_context_chunks: int = int(os.getenv("MAX_CONTEXT_CHUNKS", "100"))
 
     # LLM Configuration (Flexible defaults)
     llm_provider: str = os.getenv("LLM_PROVIDER", "google")

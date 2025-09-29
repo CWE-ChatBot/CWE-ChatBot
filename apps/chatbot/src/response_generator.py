@@ -191,6 +191,28 @@ Instructions:
 - If any information is missing, note it in the description.
 Response:""",
         )
+        load_prompt(
+            "CWE Analyzer Question",
+            """You are an expert CWE analyst answering a follow-up question about a previous vulnerability analysis.
+
+User Query: {user_query}
+
+CWE Context:
+{cwe_context}
+
+User-Provided Evidence:
+{user_evidence}
+
+Instructions:
+- Answer the user's question directly and comprehensively
+- Reference relevant CWE information from the context
+- Provide practical security guidance when appropriate
+- Maintain your expertise in vulnerability-to-weakness mapping
+- Do NOT perform a new full CWE analysis - just answer the specific question asked
+- Cite specific CWE IDs when relevant to the answer
+
+Response:""",
+        )
         return mapping
 
     async def generate_response_streaming(

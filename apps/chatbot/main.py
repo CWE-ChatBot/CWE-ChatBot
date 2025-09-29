@@ -500,17 +500,31 @@ async def main(message: cl.Message):
         current_persona = (current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value)
         logger.info(f"Processing user query: '{user_query[:100]}...' for persona: {current_persona}")
 
-        # Main Processing Pipeline with Step Visualization
-        async with cl.Step(name="Analyze security query", type="tool") as analysis_step:
-            analysis_step.input = f"Query: '{user_query[:100]}...' | Persona: {current_persona}"
-            analysis_step.output = "Query validated and ready for CWE analysis"
+        # Check if this is a follow-up question (don't show analysis step for follow-ups)
+        current_ctx = conversation_manager.get_session_context(session_id)
+        is_followup = (current_ctx and
+                      current_ctx.persona == "CWE Analyzer" and
+                      getattr(current_ctx, 'analyzer_mode', None) in ['question', 'compare'])
 
-            # Process message using conversation manager with streaming (true streaming)
+        if is_followup:
+            # For follow-up questions, process without showing "Analyze security query" step
             result = await conversation_manager.process_user_message_streaming(
                 session_id=session_id,
                 message_content=user_query,
                 message_id=message.id
             )
+        else:
+            # For new analysis, show the analysis step
+            async with cl.Step(name="Analyze security query", type="tool") as analysis_step:
+                analysis_step.input = f"Query: '{user_query[:100]}...' | Persona: {current_persona}"
+                analysis_step.output = "Query validated and ready for CWE analysis"
+
+                # Process message using conversation manager with streaming (true streaming)
+                result = await conversation_manager.process_user_message_streaming(
+                    session_id=session_id,
+                    message_content=user_query,
+                    message_id=message.id
+                )
 
         # Create source cards as Chainlit Elements if we have retrieved chunks
         elements = []
@@ -542,8 +556,73 @@ async def main(message: cl.Message):
         if file_ctx:
             cl.user_session.set("uploaded_file_context", None)
 
-        # Log successful interaction
+        # Add Action buttons for CWE Analyzer persona (after response is complete)
         current_ctx = conversation_manager.get_session_context(session_id)
+        if current_ctx:
+            logger.info(f"Debug: persona={current_ctx.persona}, analyzer_mode={getattr(current_ctx, 'analyzer_mode', 'MISSING')}")
+
+            analyzer_mode = getattr(current_ctx, 'analyzer_mode', None)
+            if current_ctx.persona == "CWE Analyzer":
+                if not analyzer_mode:
+                    # Initial analysis complete - show "Ask Question" button
+                    logger.info("Creating Action buttons for CWE Analyzer (initial)")
+                    try:
+                        actions = [
+                        cl.Action(name="ask_question", label="❓ Ask a Question", description="Ask a follow-up question about the analysis", payload={"action": "ask"})
+                    ]
+                        logger.info(f"Actions created successfully: {[a.name for a in actions]}")
+
+                        message = cl.Message(
+                            content="**Next steps for this analysis:**",
+                            actions=actions,
+                            author="System"
+                        )
+                        logger.info("Message with actions created successfully")
+
+                        await message.send()
+                        logger.info("Action buttons sent successfully")
+                    except Exception as action_error:
+                        logger.error(f"Action button error type: {type(action_error)}")
+                        logger.error(f"Action button error message: {str(action_error)}")
+                        logger.error(f"Action button error details: {repr(action_error)}")
+                        if hasattr(action_error, 'errors'):
+                            logger.error(f"Validation errors: {action_error.errors()}")
+                        logger.log_exception("Failed to create/send Action buttons", action_error)
+                        # Send message without actions as fallback
+                        await cl.Message(
+                            content="**Next steps:** Type '/ask' to ask a question about the analysis, or '/compare' to compare CWE IDs.",
+                            author="System"
+                        ).send()
+                elif analyzer_mode == "question":
+                    # Question mode active - show "Exit Question Mode" button
+                    logger.info("Creating Exit button for CWE Analyzer (question mode)")
+                    try:
+                        actions = [
+                            cl.Action(name="exit_question_mode", label="🚪 Exit Question Mode", description="Return to analysis mode", payload={"action": "exit"})
+                        ]
+                        logger.info(f"Exit action created successfully: {[a.name for a in actions]}")
+                        message = cl.Message(
+                            content="**Question mode active.**",
+                            actions=actions,
+                            author="System"
+                        )
+                        await message.send()
+                        logger.info("Exit button sent successfully")
+                    except Exception as action_error:
+                        logger.log_exception("Failed to create Exit button", action_error)
+                        # Fallback to text hint
+                        await cl.Message(
+                            content="**Question mode active.** Type '/exit' to leave question mode.",
+                            author="System"
+                        ).send()
+                else:
+                    logger.info(f"No action buttons for analyzer_mode: {analyzer_mode}")
+            else:
+                logger.info(f"Not showing Action buttons - persona: {current_ctx.persona}, analyzer_mode: {analyzer_mode}")
+        else:
+            logger.warning("No current context found - cannot show Action buttons")
+
+        # Log successful interaction
         current_persona = current_ctx.persona if current_ctx else persona
         logger.info(f"Successfully processed query for {current_persona}, retrieved {result.get('chunk_count', 0)} chunks")
 
@@ -554,7 +633,80 @@ async def main(message: cl.Message):
         await cl.Message(content=error_response).send()
 
 
-# Actions removed: follow-ups now driven by slash commands (/ask, /compare, /exit)
+@cl.action_callback("ask_question")
+async def on_ask_action(action: cl.Action):
+    """Handle 'Ask Question' action button for CWE Analyzer."""
+
+    # Authentication enforcement - require OAuth authentication if enabled
+    if requires_authentication() and not is_user_authenticated():
+        await cl.Message(
+            content="🔒 Authentication required. Please authenticate to use actions.",
+            author="System"
+        ).send()
+        return
+
+    try:
+        # Get user context using centralized helper
+        context = get_user_context()
+
+        # Activate question mode
+        context.analyzer_mode = "question"
+
+        # Save the updated context back to the session (critical step)
+        from src.utils.session import set_user_context
+        set_user_context(context)
+
+        await cl.Message(
+            content="**❓ Question mode activated.** Ask a follow-up question about the analysis above.",
+            author="System"
+        ).send()
+
+        logger.info(f"Action 'ask_question' activated analyzer mode: {context.analyzer_mode}")
+
+    except Exception as e:
+        logger.log_exception("Error handling ask action", e)
+        await cl.Message(
+            content="Sorry, there was an error processing that action. Please try again.",
+            author="System"
+        ).send()
+
+
+@cl.action_callback("exit_question_mode")
+async def on_exit_question_action(action: cl.Action):
+    """Handle 'Exit Question Mode' action button for CWE Analyzer."""
+
+    # Authentication enforcement - require OAuth authentication if enabled
+    if requires_authentication() and not is_user_authenticated():
+        await cl.Message(
+            content="🔒 Authentication required. Please authenticate to use actions.",
+            author="System"
+        ).send()
+        return
+
+    try:
+        # Get user context using centralized helper
+        context = get_user_context()
+
+        # Exit question mode
+        context.analyzer_mode = None
+
+        # Save the updated context back to the session (critical step)
+        from src.utils.session import set_user_context
+        set_user_context(context)
+
+        await cl.Message(
+            content="✅ **Exited question mode.** You can now ask general CWE questions or start a new analysis.",
+            author="System"
+        ).send()
+
+        logger.info(f"Action 'exit_question_mode' deactivated analyzer mode")
+
+    except Exception as e:
+        logger.log_exception("Error handling exit question mode action", e)
+        await cl.Message(
+            content="Sorry, there was an error processing that action. Please try again.",
+            author="System"
+        ).send()
 
 
 @cl.on_settings_update
