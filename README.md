@@ -6,6 +6,16 @@ A conversational AI application designed to revolutionize interaction with the M
 
 The CWE ChatBot enables cybersecurity professionals to interact with CWE data through natural language conversations, providing contextual, role-based responses for vulnerability analysis and prevention.
 
+## Project Structure
+
+This project consists of **2 separate parts**:
+
+1. **CWE Corpus Ingestion** (`apps/cwe_ingestion/`) - Ingestion of CWE corpus to a database with both text and embeddings
+   - [📖 CWE Ingestion README](apps/cwe_ingestion/README.md)
+
+2. **Chatbot Application** (`apps/chatbot/`) - Interactive conversational interface for CWE analysis
+   - [📖 Chatbot README](apps/chatbot/README.md)
+
 ## Personas
 
 The CWE ChatBot provides different personas to tailor the conversation to your specific needs. You can select a persona from the dropdown menu in the chat interface.
@@ -71,15 +81,20 @@ The following documents were created in order during the project planning phase:
 
 ## Architecture
 
-This project uses a monorepo structure:
+This project uses a monorepo structure with two main applications:
 
 ```
-CWE-ChatBot/
+cwe_chatbot_bmad/
 ├── apps/
-│   └── chatbot/           # Main Chainlit application
+│   ├── cwe_ingestion/     # CWE corpus data ingestion pipeline
+│   │   ├── src/
+│   │   ├── tests/
+│   │   ├── scripts/
+│   │   └── README.md
+│   └── chatbot/           # Main Chainlit conversational interface
 │       ├── src/
-│       └── tests/
-├── shared/                # Shared utilities and libraries
+│       ├── tests/
+│       └── README.md
 ├── docs/                  # Project documentation
 ├── scripts/               # Utility scripts
 ├── pyproject.toml         # Project configuration

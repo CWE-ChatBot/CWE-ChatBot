@@ -22,12 +22,10 @@ This pipeline downloads the CWE XML from MITRE, parses and normalizes entries, g
 
 ### 🚀 Embeddings
 
-  * **Gemini (`gemini-embedding-001`)** – 3072-D (recommended for production)
+  * **Gemini (`gemini-embedding-001`)** – 3072-D (production ready)
       * **Smart batch processing**: Sequential for small batches, parallel for large batches
       * **Intelligent rate limiting**: Conditional delays, exponential backoff on failures
       * **High throughput**: Thread pool parallelization for production workloads
-  * **Local Mock Embedder** – 384-D deterministic fallback (no external dependencies)
-  * **Optional Sentence Transformers** – 384-D if library is available (development only)
 
 ### 🧠 Retrieval (Hybrid)
 
@@ -137,7 +135,7 @@ CREATE TABLE IF NOT EXISTS cwe_embeddings (
     setweight(to_tsvector('english', COALESCE(name,'')), 'B') ||
     setweight(to_tsvector('english', COALESCE(full_text,'')), 'C')
   ) STORED,
-  embedding            vector(3072) NOT NULL,      -- 384 if local embeddings
+  embedding            vector(3072) NOT NULL,
   created_at           timestamptz DEFAULT now(),
   updated_at           timestamptz DEFAULT now()
 );
@@ -177,7 +175,7 @@ CREATE TABLE IF NOT EXISTS cwe_chunks (
     setweight(to_tsvector('english', COALESCE(name,'')), 'B') ||
     setweight(to_tsvector('english', COALESCE(full_text,'')), 'C')
   ) STORED,
-  embedding            vector(3072) NOT NULL,     -- 384 if local embeddings
+  embedding            vector(3072) NOT NULL,
   created_at           timestamptz DEFAULT now()
 );
 
@@ -202,9 +200,6 @@ CREATE INDEX IF NOT EXISTS cwe_chunks_ivf_cos ON cwe_chunks
 # Install core dependencies via Poetry
 poetry install
 
-# Optional: Install sentence-transformers for local embeddings
-poetry install --extras local-embeddings
-
 # Verify installation
 poetry run python --version
 poetry run python -c "import psycopg; print('✅ psycopg installed')"
@@ -223,15 +218,14 @@ poetry run python -c "import psycopg; print('✅ psycopg installed')"
 
 ### Optional Dependencies (Auto-installed)
 
-  * `sentence-transformers` - Optional local embedding models (fallback if available)
-  * `google-generativeai` - Gemini API integration for production embeddings (recommended)
+  * `google-generativeai` - Gemini API integration for production embeddings
 
 ### Development & Testing
 
   * `pytest` - Testing framework (if in dev dependencies)
   * All dependencies are managed via Poetry for consistent environments
 
-**Note**: Core dependencies are automatically installed with `poetry install`. The system works perfectly with just these core dependencies using mock embeddings. For actual sentence-transformers local embeddings, use `poetry install --extras local-embeddings`.
+**Note**: Core dependencies are automatically installed with `poetry install`. Production deployment uses Gemini embeddings for optimal quality and performance.
 
 -----
 
@@ -316,8 +310,8 @@ This validates:
 **4. Ready to Ingest\!**
 
 ```bash
-# Ingest CWE data (chunked + local embeddings)
-poetry run python cli.py ingest --chunked
+# Ingest CWE data (chunked + Gemini embeddings)
+poetry run python cli.py ingest --chunked --embedder-type gemini
 
 # Test queries
 poetry run python cli.py query -q "cross site scripting" --hybrid --chunked
@@ -408,7 +402,7 @@ poetry run python cli.py --help
 
   - **`--only-cwes-file PATH`** - Process only CWEs listed in file (supports incremental updates)
   - **`-c, --target-cwes ID`** - Target specific CWE IDs (can be combined with file)
-  - **`--embedder-type {local,gemini}`** - Choose embedding provider
+  - **`--embedder-type gemini`** - Use Gemini embedding provider (production ready)
   - **`--chunked/--single`** - Storage mode (chunked recommended)
 
 ### 💰 Multi-Database Ingestion (Cost-Optimized)
@@ -426,8 +420,8 @@ gcloud auth application-default login
 # Ingest to both databases with embeddings generated once (Gemini)
 poetry run python cli.py ingest-multi --embedder-type gemini
 
-# Ingest to both databases with local embeddings
-poetry run python cli.py ingest-multi --embedder-type local
+# Ingest to both databases with Gemini embeddings (recommended)
+poetry run python cli.py ingest-multi --embedder-type gemini
 
 # Target specific CWEs and control storage modes
 poetry run python cli.py ingest-multi \
@@ -494,17 +488,14 @@ poetry run python cli.py ingest-multi \
 ### 📊 Single Database Ingestion
 
 ```bash
-# Mock embeddings (384-D), CHUNKED (recommended for development)
-poetry run python cli.py ingest --chunked
-
-# Gemini embeddings (3072-D), CHUNKED
+# Gemini embeddings (3072-D), CHUNKED (recommended)
 poetry run python cli.py ingest --chunked --embedder-type gemini
 
 # Single-row mode (not chunked)
 poetry run python cli.py ingest --single --embedder-type gemini
 
 # Target only specific CWEs
-poetry run python cli.py ingest --chunked -c CWE-79 -c CWE-89 -c CWE-20
+poetry run python cli.py ingest --chunked -c CWE-79 -c CWE-89 -c CWE-20 --embedder-type gemini
 ```
 
 ### Query (Hybrid Retrieval)
@@ -1138,7 +1129,7 @@ poetry run python test_halfvec_performance.py
 
 ### 🚀 Performance & Query Issues
 
-  * **`gemini-embedding-001` errors** → check `GEMINI_API_KEY` and network egress; fall back to local model with `--embedder-type local`
+  * **`gemini-embedding-001` errors** → check `GEMINI_API_KEY` and network egress
   * **Slow queries**:
       * Ensure ANN index exists (HNSW preferred; else IVFFlat with appropriate `lists`)
       * Use reasonable vector K (e.g., `k_vec=50–150`) and `limit_chunks` (10–30)
@@ -1178,7 +1169,7 @@ This codebase contains the following key files:
 
   - **`downloader.py`** - MITRE CWE XML download and extraction
   - **`parser.py`** - Secure XML parsing with Pydantic models
-  - **`embedder.py`** - Local (Sentence Transformers) and Gemini embedding generation
+  - **`embedder.py`** - Gemini embedding generation with production optimizations
   - **`models.py`** - Pydantic models with embedding optimization techniques
 
 ### 🧪 Testing & Utilities
@@ -1217,7 +1208,7 @@ This codebase contains the following key files:
 
 1.  TDD (write tests first).
 2.  Keep security-first principles.
-3.  Maintain backward compatibility across embedder choices (Gemini/local).
+3.  Maintain backward compatibility and performance optimizations.
 4.  Update README when changing retrieval/ranking.
 5.  Test chunked and single-row paths.
 
@@ -1240,7 +1231,7 @@ This project is part of the CWE ChatBot BMad implementation, for **defensive sec
 docker compose up -d
 export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/cwe"
 poetry run python test_db_connection.py
-poetry run python cli.py ingest --chunked --embedder-type local
+poetry run python cli.py ingest --chunked --embedder-type gemini
 ```
 
 **For Production:**
@@ -1268,7 +1259,6 @@ Start with **chunked + hybrid** and tune based on query type:
 
 1.  **Always use `ingest-multi`** when you have multiple databases
 2.  **Use Gemini embeddings** for production quality with cost optimization
-3.  **Test with local embeddings** first to validate your setup
 4.  **Monitor embedding API usage** - multi-database can reduce costs by 50%
 
 ### ⚡ Performance Optimization
