@@ -1,3 +1,4 @@
+docs/stories/4.1
 .files
 apps/cwe_ingestion/cwe_embeddings_cache_shared
 apps/cwe_ingestion/cwe_vector_db_local/

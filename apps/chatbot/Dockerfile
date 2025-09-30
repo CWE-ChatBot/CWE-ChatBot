@@ -66,7 +66,7 @@ USER appuser
 # Expose port
 EXPOSE 8080
 
-# Secure health check
+# Secure health check using root endpoint (Chainlit)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python /app/healthcheck.py
 

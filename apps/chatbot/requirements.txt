@@ -15,3 +15,9 @@ structlog>=23.0.0,<24.0.0
 
 # AI/LLM integration
 google-cloud-aiplatform>=1.38.0,<2.0.0
+
+# Cloud SQL Connector (for production Cloud Run deployment)
+sqlalchemy>=2.0.0,<3.0.0
+pg8000>=1.29.0,<2.0.0
+cloud-sql-python-connector[pg8000]>=1.9.2,<2.0.0
+google-cloud-secret-manager>=2.16.0,<3.0.0

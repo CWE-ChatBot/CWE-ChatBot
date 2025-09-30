@@ -12,9 +12,10 @@ import urllib.error
 def main():
     """Perform health check on the Chainlit application."""
     try:
-        # Configurable endpoint; default to Chainlit's 8000
-        url = os.getenv('HEALTHCHECK_URL', 'http://localhost:8000/health')
-        # Use localhost health endpoint with timeout
+        # Chainlit doesn't have built-in /health endpoint, check root page
+        port = os.getenv('CHAINLIT_PORT', '8080')
+        url = f'http://localhost:{port}/'
+        # Use localhost root endpoint with timeout
         with urllib.request.urlopen(url, timeout=5) as response:
             if response.status == 200:
                 sys.exit(0)  # Healthy
