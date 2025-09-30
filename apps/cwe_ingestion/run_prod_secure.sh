@@ -11,7 +11,7 @@ echo "=================================================="
 PROJECT_ID="cwechatbot"
 CLOUD_SQL_INSTANCE="cwechatbot:us-central1:cwe-postgres-prod"
 PROXY_PORT=5433
-DATABASE_NAME="postgres"   # TODO: migrate to cwe_prod
+DATABASE_NAME="postgres"   # override with --db cwe_prod once migrated
 ENV_CONTEXT=production
 
 # Proxy binary detection (prefer official name)
@@ -21,6 +21,13 @@ PROXY_BIN="./cloud-sql-proxy"
 usage(){
   cat <<USAGE
 Usage: $0 [--test-connection|--ingest-corpus|--import-policy|--performance-test|--health-check|--start-proxy-only|--stop-proxy] [options]
+
+Options:
+  --embedder-type TYPE    Embedding model type (default: gemini)
+  --chunked              Use chunked storage mode (default)
+  --single               Use single storage mode
+  --target-cwes LIST     Comma-separated list of CWE numbers
+  --db NAME              Database name (default: postgres)
 
 Security features:
   ✅ ADC (no SA keys) with SA impersonation
@@ -39,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     --chunked) STORAGE_MODE="--chunked"; shift;;
     --single) STORAGE_MODE="--single"; shift;;
     --target-cwes) TARGET_CWES="$2"; shift 2;;
+    --db) DATABASE_NAME="$2"; shift 2;;
     --help) usage; exit 0;;
     *) echo -e "${RED}❌ Unknown option: $1${NC}"; usage; exit 1;;
   esac
@@ -48,6 +56,8 @@ done
 # Prechecks
 command -v poetry >/dev/null || { echo -e "${RED}❌ Poetry not found${NC}"; exit 1; }
 command -v gcloud >/dev/null || { echo -e "${RED}❌ gcloud not found${NC}"; exit 1; }
+PORT_CHECK_MISSING=""
+command -v nc >/dev/null || PORT_CHECK_MISSING=1
 
 # Verify ADC present (no guarantee of SA identity, that is okay; DB will tell us current_user)
 echo -e "${BLUE}🔐 Verifying Application Default Credentials...${NC}"
@@ -94,9 +104,13 @@ start_proxy(){
       echo -e "${YELLOW}   Check: gcloud auth application-default login --impersonate-service-account=cwe-postgres-sa@cwechatbot.iam.gserviceaccount.com${NC}"
       exit 1
     fi
-    # Check if port is available
-    if nc -z 127.0.0.1 "$PROXY_PORT" 2>/dev/null; then
+    # Check if port is available (skip if nc not available)
+    if [[ -z "$PORT_CHECK_MISSING" ]] && nc -z 127.0.0.1 "$PROXY_PORT" 2>/dev/null; then
       echo -e "${GREEN}✅ Proxy ready on :$PROXY_PORT${NC}"
+      return 0
+    elif [[ -n "$PORT_CHECK_MISSING" ]] && [[ $i -eq 10 ]]; then
+      # If nc is missing, wait longer and assume proxy is ready
+      echo -e "${GREEN}✅ Proxy startup time elapsed (nc not available for port check)${NC}"
       return 0
     fi
   done
@@ -108,9 +122,18 @@ stop_proxy(){
   echo -e "${GREEN}✅ Proxy stopped${NC}"
 }
 
+# Hardening status
+print_hardening_status(){
+  echo -e "${BLUE}🔎 Instance hardening status${NC}"
+  gcloud sql instances describe "$CLOUD_SQL_INSTANCE" --project="$PROJECT_ID" \
+    --format='table(name,settings.ipConfiguration.ipv4Enabled,settings.ipConfiguration.sslMode,settings.databaseFlags)' 2>/dev/null || \
+    echo -e "${YELLOW}⚠️ Could not retrieve instance status${NC}"
+}
+
 # Ops
 test_connection(){
   echo -e "${CYAN}🔍 Testing secure production DB connection${NC}"
+  print_hardening_status
   poetry run python - <<'PY'
 import os, psycopg
 url=os.environ['PROD_DATABASE_URL']
@@ -156,7 +179,14 @@ case "$OP" in
     start_proxy
     echo -e "${BLUE}Proxy on 127.0.0.1:$PROXY_PORT (Ctrl+C to stop)${NC}"
     trap 'stop_proxy; exit 0' INT TERM
-    while sleep 30; do nc -z 127.0.0.1 "$PROXY_PORT" || { echo -e "${RED}Proxy down${NC}"; break; }; done
+    while sleep 30; do
+      if [[ -z "$PORT_CHECK_MISSING" ]]; then
+        nc -z 127.0.0.1 "$PROXY_PORT" || { echo -e "${RED}Proxy down${NC}"; break; }
+      else
+        # If nc not available, just check if process is still running
+        kill -0 "$PROXY_PID" 2>/dev/null || { echo -e "${RED}Proxy process died${NC}"; break; }
+      fi
+    done
     ;;
   test-connection|ingest-corpus|import-policy|performance-test|health-check)
     trap 'stop_proxy; exit 1' INT TERM ERR

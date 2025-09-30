@@ -85,6 +85,11 @@ The `run_prod_secure.sh` script provides production-ready operations:
 ./run_prod_secure.sh --health-check         # Check system health
 ./run_prod_secure.sh --start-proxy-only     # Start proxy and keep running
 ./run_prod_secure.sh --stop-proxy          # Stop running proxy
+
+# Options:
+./run_prod_secure.sh --db cwe_prod --test-connection    # Use specific database
+./run_prod_secure.sh --embedder-type gemini             # Specify embedding model
+./run_prod_secure.sh --target-cwes 79,89 --ingest      # Target specific CWEs
 ```
 
 ### **Security Features (Active)**
@@ -93,7 +98,9 @@ The `run_prod_secure.sh` script provides production-ready operations:
 - ✅ **Automatic SSL/TLS handling** (no certificate management required)
 - ✅ Gemini API key retrieval from Secret Manager
 - ✅ TLS encryption enforced at database level
+- ✅ **Instance hardening status display** (shows current security settings)
 - ✅ Production-grade error handling and user guidance
+- ✅ **Robustness improvements** (handles missing nc command gracefully)
 
 ---
 
@@ -187,22 +194,116 @@ The production script automatically:
 
 ---
 
+## Transition Steps (Low-Risk Security Hardening)
+
+### **Step 1: Prep Private Access**
+
+**If your ops will run from Google Cloud:**
+```bash
+# Option A: Use Cloud Workstations (recommended)
+# Console → Cloud Workstations → Create workstation in target VPC
+
+# Option B: Create GCE bastion in target VPC
+gcloud compute instances create cwe-bastion \
+  --zone=us-central1-a \
+  --machine-type=e2-micro \
+  --subnet=default \
+  --project=cwechatbot
+```
+
+**If apps run on Cloud Run/GKE/GCE:** Ensure they can reach Private IP or PSC.
+
+### **Step 2: Enable Private Connectivity**
+
+**Console method (recommended):**
+1. Instance → Connections → Add network → Private IP
+2. Select VPC network and allocated IP range
+3. Confirm connectivity from your runtime
+
+**CLI method:**
+```bash
+# Enable private IP (requires VPC setup)
+gcloud sql instances patch cwe-postgres-prod \
+  --project=cwechatbot \
+  --network=projects/cwechatbot/global/networks/default
+```
+
+### **Step 3: Disable Public Exposure**
+
+⚠️ **Only after private connectivity is confirmed working**
+
+```bash
+gcloud sql instances patch cwe-postgres-prod \
+  --project=cwechatbot \
+  --no-assign-ip \
+  --authorized-networks=""
+```
+
+### **Step 4: TLS Backstop** (protects any future raw TCP)
+
+```bash
+gcloud sql instances patch cwe-postgres-prod \
+  --project=cwechatbot \
+  --ssl-mode=ENCRYPTED_ONLY
+```
+
+### **Step 5: Enable pgAudit**
+
+```bash
+# Instance flags (restart required)
+gcloud sql instances patch cwe-postgres-prod \
+  --project=cwechatbot \
+  --database-flags=cloudsql.enable_pgaudit=on,pgaudit.log=write,ddl
+
+# Then, in each database via psql
+CREATE EXTENSION IF NOT EXISTS pgaudit;
+```
+
+### **Step 6: Migrate to cwe_prod** (one-time, privileged session via proxy)
+
+```sql
+-- Create dedicated database and app role
+CREATE DATABASE cwe_prod;
+\c cwe_prod
+CREATE ROLE cwe_app;
+CREATE SCHEMA cwe AUTHORIZATION cwe_app;
+
+-- Set up default privileges
+ALTER DEFAULT PRIVILEGES IN SCHEMA cwe
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO cwe_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA cwe
+  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO cwe_app;
+
+-- Grant role to service account
+GRANT cwe_app TO "cwe-postgres-sa@cwechatbot.iam";
+
+-- Move existing objects (example)
+\c postgres
+ALTER TABLE public.cwe_chunks SET SCHEMA cwe;
+ALTER TABLE cwe.cwe_chunks OWNER TO cwe_app;
+ALTER TABLE public.cwe_policy_labels SET SCHEMA cwe;
+ALTER TABLE cwe.cwe_policy_labels OWNER TO cwe_app;
+```
+
+**After the move, point scripts to cwe_prod:**
+```bash
+./run_prod_secure.sh --db cwe_prod --test-connection
+```
+
+---
+
 ## Current TODO Items
 
-### **Phase 2: Network Security Hardening**
-1. **Private IP Setup**: Configure VPC peering for private-only access
-2. **Remove Public IP**: Once private connectivity is established
+### **Immediate (Next Sprint)**
+1. **VPC Setup**: Configure private IP connectivity
+2. **Database Migration**: Execute `postgres` → `cwe_prod` migration
+3. **Script Enhancement**: Add `--db` option and hardening status
 
-### **Phase 3: Database Migration**
-1. **Create `cwe_prod` Database**: Migrate from `postgres` to dedicated database
-2. **Schema Setup**: Implement `cwe` schema with proper ownership
-3. **Data Migration**: Move existing tables to new schema structure
-
-### **Phase 4: Enterprise Features**
-1. **pgAudit**: Enable comprehensive audit logging
-2. **CMEK**: Customer-managed encryption keys
-3. **High Availability**: Regional HA configuration
-4. **Monitoring**: Comprehensive alerting and SLO setup
+### **Future Security Hardening**
+1. **Disable Public IP**: Once private connectivity is confirmed
+2. **Enable pgAudit**: Comprehensive audit logging
+3. **TLS Enforcement**: `ENCRYPTED_ONLY` mode for raw TCP protection
+4. **Enterprise Features**: CMEK, HA, monitoring setup
 
 ---
 
