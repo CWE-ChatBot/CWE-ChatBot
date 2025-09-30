@@ -1,4 +1,3 @@
-Of course, here is the updated `README.md` with the information about the Cloud SQL Proxy.
 
 # CWE Data Ingestion Pipeline (PostgreSQL + pgvector)
 
