@@ -368,6 +368,180 @@ class PostgresChunkStore:
                 "dimensions": self.dims
             }
 
+    def query_hybrid(
+        self,
+        query_text: str,
+        query_embedding: List[float],
+        limit_chunks: int = 10,
+        w_vec: float = 0.65,
+        w_fts: float = 0.25,
+        w_alias: float = 0.10,
+        section_intent_boost: Optional[str] = None,
+        section_boost_value: float = 0.15,
+    ) -> List[Dict[str, Any]]:
+        """
+        Hybrid retrieval with RRF-style weighted ranking for chunked CWE data.
+        Combines vector similarity, full-text search, and alias matching.
+        Supports optional section-specific boosting for persona-based queries.
+
+        Args:
+            query_text: User query string
+            query_embedding: Query embedding vector
+            limit_chunks: Maximum number of chunks to return
+            w_vec: Weight for vector similarity
+            w_fts: Weight for full-text search
+            w_alias: Weight for alias matching
+            section_intent_boost: Optional section name to boost (e.g., "Mitigations")
+            section_boost_value: Boost multiplier for matching sections
+
+        Returns:
+            List of chunks with metadata and scores
+        """
+        with self._get_connection() as conn, self._cursor(conn) as cur:
+            # Normalize embedding
+            qe = query_embedding
+            if isinstance(qe, np.ndarray):
+                qe = qe.astype(float).tolist()
+            elif not isinstance(qe, list):
+                qe = list(qe)
+
+            if self._using_pg8000:
+                vec_param = self._to_vector_literal(qe)
+                halfvec_cast = "%s::halfvec"
+            else:
+                vec_param = qe
+                halfvec_cast = "%s::halfvec"
+
+            # Build hybrid query with RRF-style weighted ranking
+            # Prefer halfvec for performance
+            try:
+                sql = f"""
+                WITH vec AS (
+                    SELECT id, cwe_id, section, section_rank, name, full_text, alternate_terms_text,
+                           (embedding_halfvec <=> {halfvec_cast}) AS cos_dist
+                      FROM cwe_chunks
+                  ORDER BY embedding_halfvec <=> {halfvec_cast}
+                     LIMIT 50
+                ),
+                fts AS (
+                    SELECT id, ts_rank(tsv, websearch_to_tsquery('english', %s)) AS fts_rank
+                      FROM cwe_chunks
+                     WHERE tsv @@ websearch_to_tsquery('english', %s)
+                ),
+                joined AS (
+                    SELECT v.*, COALESCE(f.fts_rank, 0) AS fts_rank,
+                           GREATEST(
+                               similarity(lower(v.alternate_terms_text), lower(%s)),
+                               similarity(lower(regexp_replace(v.alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
+                           ) AS alias_sim
+                      FROM vec v
+                 LEFT JOIN fts f USING (id)
+                ),
+                agg AS (
+                    SELECT *,
+                           COALESCE(1 - (cos_dist / NULLIF((SELECT MAX(cos_dist) FROM joined), 0)), 0) AS vec_sim_norm,
+                           COALESCE(fts_rank / NULLIF(GREATEST((SELECT MAX(fts_rank) FROM joined), 1e-9), 0), 0) AS fts_norm,
+                           COALESCE(alias_sim / NULLIF((SELECT MAX(alias_sim) FROM joined), 0), 0) AS alias_norm
+                      FROM joined
+                )
+                SELECT id, cwe_id, section, section_rank, name, full_text,
+                       vec_sim_norm, fts_norm, alias_norm,
+                       (%s * COALESCE(vec_sim_norm,0)) +
+                       (%s * COALESCE(fts_norm,0)) +
+                       (%s * COALESCE(alias_norm,0)) AS hybrid_score
+                  FROM agg
+              ORDER BY hybrid_score DESC NULLS LAST
+                 LIMIT %s;
+                """
+                params = (
+                    vec_param, vec_param,  # vector search
+                    query_text, query_text,  # FTS
+                    query_text, query_text,  # alias matching
+                    w_vec, w_fts, w_alias, limit_chunks
+                )
+                cur.execute(sql, params)
+            except Exception:
+                # Fallback to regular vector column if halfvec fails
+                sql = f"""
+                WITH vec AS (
+                    SELECT id, cwe_id, section, section_rank, name, full_text, alternate_terms_text,
+                           (embedding <=> %s::vector) AS cos_dist
+                      FROM cwe_chunks
+                  ORDER BY embedding <=> %s::vector
+                     LIMIT 50
+                ),
+                fts AS (
+                    SELECT id, ts_rank(tsv, websearch_to_tsquery('english', %s)) AS fts_rank
+                      FROM cwe_chunks
+                     WHERE tsv @@ websearch_to_tsquery('english', %s)
+                ),
+                joined AS (
+                    SELECT v.*, COALESCE(f.fts_rank, 0) AS fts_rank,
+                           GREATEST(
+                               similarity(lower(v.alternate_terms_text), lower(%s)),
+                               similarity(lower(regexp_replace(v.alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
+                           ) AS alias_sim
+                      FROM vec v
+                 LEFT JOIN fts f USING (id)
+                ),
+                agg AS (
+                    SELECT *,
+                           COALESCE(1 - (cos_dist / NULLIF((SELECT MAX(cos_dist) FROM joined), 0)), 0) AS vec_sim_norm,
+                           COALESCE(fts_rank / NULLIF(GREATEST((SELECT MAX(fts_rank) FROM joined), 1e-9), 0), 0) AS fts_norm,
+                           COALESCE(alias_sim / NULLIF((SELECT MAX(alias_sim) FROM joined), 0), 0) AS alias_norm
+                      FROM joined
+                )
+                SELECT id, cwe_id, section, section_rank, name, full_text,
+                       vec_sim_norm, fts_norm, alias_norm,
+                       (%s * COALESCE(vec_sim_norm,0)) +
+                       (%s * COALESCE(fts_norm,0)) +
+                       (%s * COALESCE(alias_norm,0)) AS hybrid_score
+                  FROM agg
+              ORDER BY hybrid_score DESC NULLS LAST
+                 LIMIT %s;
+                """
+                params = (
+                    vec_param, vec_param,  # vector search
+                    query_text, query_text,  # FTS
+                    query_text, query_text,  # alias matching
+                    w_vec, w_fts, w_alias, limit_chunks
+                )
+                cur.execute(sql, params)
+
+            rows = cur.fetchall()
+
+        # Format results
+        results: List[Dict[str, Any]] = []
+        for r in rows:
+            chunk = {
+                "chunk_id": str(r[0]),
+                "metadata": {
+                    "cwe_id": r[1],
+                    "section": r[2],
+                    "section_rank": r[3],
+                    "name": r[4],
+                },
+                "document": r[5],
+                "scores": {
+                    "vec": float(r[6]) if r[6] is not None else 0.0,
+                    "fts": float(r[7]) if r[7] is not None else 0.0,
+                    "alias": float(r[8]) if r[8] is not None else 0.0,
+                    "hybrid": float(r[9]),
+                }
+            }
+
+            # Apply section boost if specified
+            if section_intent_boost and r[2] == section_intent_boost:
+                chunk["scores"]["hybrid"] *= (1.0 + section_boost_value)
+
+            results.append(chunk)
+
+        # Re-sort if section boost was applied
+        if section_intent_boost:
+            results.sort(key=lambda x: x["scores"]["hybrid"], reverse=True)
+
+        return results
+
     def test_connection(self) -> bool:
         """Test database connectivity."""
         try:
