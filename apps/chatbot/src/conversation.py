@@ -7,6 +7,11 @@ Manages conversation flow, session state, and message handling for Chainlit inte
 import logging
 from typing import Dict, List, Any, Optional, AsyncGenerator, TYPE_CHECKING
 
+try:
+    from sqlalchemy.engine import Engine
+except ImportError:
+    Engine = None
+
 if TYPE_CHECKING:
     from src.processing.pipeline import PipelineResult
 from dataclasses import dataclass, field
@@ -55,21 +60,21 @@ class ConversationManager:
     - Error handling and graceful degradation
     """
 
-    def __init__(self, database_url: str, gemini_api_key: str):
+    def __init__(self, database_url: str, gemini_api_key: str, engine: Optional[Any] = None):
         """
         Initialize conversation manager with required components.
 
         Args:
             database_url: Database connection string for CWE retrieval
             gemini_api_key: Gemini API key for embeddings and response generation
-            context_manager: Optional user context manager (creates new if None)
+            engine: Optional SQLAlchemy engine for Cloud SQL Connector (Cloud Run mode)
         """
         try:
             # Initialize core components
             # no local context manager; state now lives in cl.user_session
             self.input_sanitizer = InputSanitizer()
             self.security_validator = SecurityValidator()
-            self.query_handler = CWEQueryHandler(database_url, gemini_api_key)
+            self.query_handler = CWEQueryHandler(database_url, gemini_api_key, engine=engine)
             self.response_generator = ResponseGenerator(gemini_api_key)
             self.query_processor = QueryProcessor()
 

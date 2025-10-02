@@ -1,0 +1,19 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: [
+    'build',
+    '-t', 'us-central1-docker.pkg.dev/cwechatbot/chatbot/chatbot:latest',
+    '-f', 'apps/chatbot/Dockerfile',
+    '.'
+  ]
+- name: 'gcr.io/cloud-builders/docker'
+  args: [
+    'push',
+    'us-central1-docker.pkg.dev/cwechatbot/chatbot/chatbot:latest'
+  ]
+
+images:
+- 'us-central1-docker.pkg.dev/cwechatbot/chatbot/chatbot:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

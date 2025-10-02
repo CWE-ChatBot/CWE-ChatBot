@@ -1,0 +1,362 @@
+# apps/cwe_ingestion/pg_chunk_store.py
+import os
+import logging
+import contextlib
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+import numpy as np
+
+try:
+    import psycopg
+    HAS_PSYCOPG = True
+except ImportError:
+    # Allow import of this module even without psycopg for type definitions
+    psycopg = None
+    HAS_PSYCOPG = False
+
+try:
+    import sqlalchemy as sa
+    from sqlalchemy.engine import Engine
+    HAS_SQLALCHEMY = True
+except ImportError:
+    sa = None
+    Engine = None
+    HAS_SQLALCHEMY = False
+
+logger = logging.getLogger(__name__)
+
+DDL_CHUNKED = """
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- for gen_random_uuid on PG < 13 (on some installs)
+
+-- Table with multiple rows per CWE (one per semantic section)
+CREATE TABLE IF NOT EXISTS cwe_chunks (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cwe_id              TEXT NOT NULL,             -- 'CWE-79'
+  section             TEXT NOT NULL,             -- 'Title','Abstract','Extended','Mitigations','Examples','Related','Aliases'
+  section_rank        INT  NOT NULL,             -- 0..N order for aggregation
+  name                TEXT NOT NULL,             -- CWE Name (duplicated per chunk for convenience)
+  alternate_terms_text TEXT DEFAULT '',
+  full_text           TEXT NOT NULL,
+  tsv                 tsvector GENERATED ALWAYS AS (
+    setweight(to_tsvector('english', COALESCE(alternate_terms_text,'')), 'A') ||
+    setweight(to_tsvector('english', COALESCE(name,'')), 'B') ||
+    setweight(to_tsvector('english', COALESCE(full_text,'')), 'C')
+  ) STORED,
+  embedding           vector(%(dims)s) NOT NULL,
+  created_at          TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS cwe_chunks_cwe_id_idx   ON cwe_chunks(cwe_id);
+CREATE INDEX IF NOT EXISTS cwe_chunks_section_idx  ON cwe_chunks(section);
+CREATE INDEX IF NOT EXISTS cwe_chunks_name_idx     ON cwe_chunks(name);
+CREATE INDEX IF NOT EXISTS cwe_chunks_tsv_idx      ON cwe_chunks USING gin(tsv);
+CREATE INDEX IF NOT EXISTS cwe_chunks_emb_idx      ON cwe_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+"""
+
+DDL_HALFVEC = """
+-- Add halfvec column if not exists
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'cwe_chunks' AND column_name = 'embedding_halfvec') THEN
+        ALTER TABLE cwe_chunks ADD COLUMN embedding_halfvec halfvec(%(dims)s);
+    END IF;
+END
+$$;
+
+-- Create halfvec index if not exists
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'cwe_chunks_halfvec_idx') THEN
+        CREATE INDEX cwe_chunks_halfvec_idx ON cwe_chunks USING hnsw (embedding_halfvec halfvec_cosine_ops) WITH (m = 16, ef_construction = 64);
+    END IF;
+END
+$$;
+"""
+
+
+class PostgresChunkStore:
+    """
+    Postgres + pgvector store with HYBRID retrieval over chunked sections.
+    Table: cwe_chunks
+
+    Clean dependency injection approach:
+    - If SQLAlchemy Engine provided, use engine.raw_connection() (Cloud SQL + pg8000)
+    - Otherwise, fall back to psycopg.connect(database_url) (local/proxy)
+    """
+    def __init__(self,
+                 dims: int = 3072,
+                 database_url: Optional[str] = None,
+                 engine: Optional["Engine"] = None):
+        self.dims = int(dims)
+        self.database_url = database_url or os.environ.get("DATABASE_URL")
+        self._engine = engine
+
+        if not self.database_url and self._engine is None:
+            raise ValueError("Either database_url or engine must be provided")
+
+        if self._engine is None and not HAS_PSYCOPG:
+            raise ImportError(
+                "psycopg (v3) is required for PostgresChunkStore. Install with: pip install psycopg[binary]"
+            )
+
+        # Initialize schema
+        self._ensure_schema()
+
+    @contextlib.contextmanager
+    def _get_connection(self):
+        """
+        Connection factory:
+          - If an SQLAlchemy Engine was provided, use engine.raw_connection()
+            (DBAPI connection via Cloud SQL Connector + pg8000 in Cloud Run).
+          - Otherwise, fall back to psycopg.connect(self.database_url) for local/proxy.
+        """
+        if self._engine is not None:
+            logger.debug("Using SQLAlchemy engine for database connection")
+            conn = self._engine.raw_connection()
+            try:
+                yield conn
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        else:
+            logger.debug("Using psycopg for database connection")
+            conn = psycopg.connect(self.database_url)
+            try:
+                yield conn
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def _ensure_schema(self):
+        logger.info("Ensuring Postgres chunked schema exists...")
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            try:
+                # Create extensions
+                cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+                cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+                cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+                try:
+                    cur.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
+                except Exception:
+                    logger.warning("unaccent extension not available, continuing without it")
+
+                # Create table and indexes
+                cur.execute(DDL_CHUNKED % {"dims": self.dims})
+
+                # Add halfvec optimization if available
+                try:
+                    cur.execute(DDL_HALFVEC % {"dims": self.dims})
+                    logger.info("halfvec optimization enabled")
+                except Exception as e:
+                    logger.warning(f"halfvec optimization not available: {e}")
+
+                conn.commit()
+            finally:
+                cur.close()
+
+    def store_chunks(self, chunks: Sequence[Dict[str, Any]]) -> int:
+        """Store multiple chunks in batch."""
+        if not chunks:
+            return 0
+
+        logger.info(f"Storing {len(chunks)} chunks...")
+
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+
+            try:
+                # Clear existing data
+                cur.execute("DELETE FROM cwe_chunks;")
+
+                # Prepare data for batch insert
+                values = []
+                for chunk in chunks:
+                    values.append((
+                        chunk["cwe_id"],
+                        chunk["section"],
+                        chunk["section_rank"],
+                        chunk["name"],
+                        chunk.get("alternate_terms_text", ""),
+                        chunk["full_text"],
+                        chunk["embedding"]
+                    ))
+
+                # Batch insert
+                insert_sql = """
+                    INSERT INTO cwe_chunks (cwe_id, section, section_rank, name, alternate_terms_text, full_text, embedding)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """
+                cur.executemany(insert_sql, values)
+
+                # Update halfvec if available
+                try:
+                    cur.execute("UPDATE cwe_chunks SET embedding_halfvec = embedding::halfvec;")
+                    logger.info("Updated halfvec embeddings")
+                except Exception:
+                    pass
+
+                conn.commit()
+            finally:
+                try:
+                    cur.close()
+                except:
+                    pass
+
+        logger.info(f"Successfully stored {len(chunks)} chunks")
+        return len(chunks)
+
+    def hybrid_search(self,
+                     query_embedding: List[float],
+                     query_text: str = "",
+                     limit: int = 5,
+                     similarity_threshold: float = 0.1) -> List[Dict[str, Any]]:
+        """Perform hybrid search combining vector similarity and text search."""
+
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+
+            try:
+                # Try halfvec first, fallback to regular vector
+                try:
+                    search_sql = """
+                    WITH vector_search AS (
+                        SELECT *, (embedding_halfvec <=> %s::halfvec) AS vec_distance
+                        FROM cwe_chunks
+                        WHERE (embedding_halfvec <=> %s::halfvec) <= %s
+                        ORDER BY embedding_halfvec <=> %s::halfvec
+                        LIMIT %s
+                    ),
+                    text_search AS (
+                        SELECT *, ts_rank(tsv, plainto_tsquery('english', %s)) AS text_rank
+                        FROM cwe_chunks
+                        WHERE tsv @@ plainto_tsquery('english', %s)
+                        ORDER BY ts_rank(tsv, plainto_tsquery('english', %s)) DESC
+                        LIMIT %s
+                    )
+                    SELECT DISTINCT ON (id) *
+                    FROM (
+                        SELECT *, vec_distance, 0 as text_rank FROM vector_search
+                        UNION ALL
+                        SELECT *, 999 as vec_distance, text_rank FROM text_search
+                    ) combined
+                    ORDER BY id, LEAST(vec_distance, 1.0 - text_rank)
+                    LIMIT %s;
+                    """
+
+                    params = [
+                        query_embedding, query_embedding, 1.0 - similarity_threshold, query_embedding, limit * 2,
+                        query_text, query_text, query_text, limit * 2,
+                        limit
+                    ]
+
+                except Exception:
+                    # Fallback to regular vector
+                    search_sql = """
+                    WITH vector_search AS (
+                        SELECT *, (embedding <=> %s) AS vec_distance
+                        FROM cwe_chunks
+                        WHERE (embedding <=> %s) <= %s
+                        ORDER BY embedding <=> %s
+                        LIMIT %s
+                    ),
+                    text_search AS (
+                        SELECT *, ts_rank(tsv, plainto_tsquery('english', %s)) AS text_rank
+                        FROM cwe_chunks
+                        WHERE tsv @@ plainto_tsquery('english', %s)
+                        ORDER BY ts_rank(tsv, plainto_tsquery('english', %s)) DESC
+                        LIMIT %s
+                    )
+                    SELECT DISTINCT ON (id) *
+                    FROM (
+                        SELECT *, vec_distance, 0 as text_rank FROM vector_search
+                        UNION ALL
+                        SELECT *, 999 as vec_distance, text_rank FROM text_search
+                    ) combined
+                    ORDER BY id, LEAST(vec_distance, 1.0 - text_rank)
+                    LIMIT %s;
+                    """
+
+                    params = [
+                        query_embedding, query_embedding, 1.0 - similarity_threshold, query_embedding, limit * 2,
+                        query_text, query_text, query_text, limit * 2,
+                        limit
+                    ]
+
+                cur.execute(search_sql, params)
+                rows = cur.fetchall()
+
+                # Convert to dictionaries
+                columns = [desc[0] for desc in cur.description]
+                results = []
+                for row in rows:
+                    result = dict(zip(columns, row))
+                    results.append(result)
+
+                return results
+            finally:
+                try:
+                    cur.close()
+                except:
+                    pass
+
+    def get_collection_stats(self) -> Dict[str, Any]:
+        """Get statistics about the stored chunks."""
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+
+            try:
+                cur.execute("SELECT COUNT(*) FROM cwe_chunks;")
+                count = cur.fetchone()[0]
+
+                cur.execute("SELECT COUNT(DISTINCT cwe_id) FROM cwe_chunks;")
+                unique_cwes = cur.fetchone()[0]
+
+                cur.execute("SELECT COUNT(DISTINCT section) FROM cwe_chunks;")
+                unique_sections = cur.fetchone()[0]
+
+                # Check if halfvec is available
+                try:
+                    cur.execute("SELECT COUNT(*) FROM cwe_chunks WHERE embedding_halfvec IS NOT NULL;")
+                    halfvec_count = cur.fetchone()[0]
+                    has_halfvec = halfvec_count > 0
+                except Exception:
+                    has_halfvec = False
+
+        return {
+            "total_chunks": count,
+            "unique_cwes": unique_cwes,
+            "unique_sections": unique_sections,
+            "has_halfvec_optimization": has_halfvec,
+            "dimensions": self.dims
+        }
+            finally:
+                try:
+                    cur.close()
+                except:
+                    pass
+
+    def test_connection(self) -> bool:
+        """Test database connectivity."""
+        try:
+            with self._get_connection() as conn:
+                cur = conn.cursor()
+
+                try:
+                    cur.execute("SELECT 1;")
+                    result = cur.fetchone()
+                    return result[0] == 1
+                finally:
+                    try:
+                        cur.close()
+                    except:
+                        pass
+        except Exception as e:
+            logger.error(f"Connection test failed: {e}")
+            return False

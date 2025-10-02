@@ -59,7 +59,7 @@ class CWEQueryHandler:
     - GeminiEmbedder: Production Gemini embeddings (3072D)
     """
 
-    def __init__(self, database_url: str, gemini_api_key: str, hybrid_weights: Optional[Dict[str, float]] = None) -> None:
+    def __init__(self, database_url: str, gemini_api_key: str, hybrid_weights: Optional[Dict[str, float]] = None, engine=None) -> None:
         """
         Initialize handler with Story 1.5 production components.
 
@@ -67,10 +67,21 @@ class CWEQueryHandler:
             database_url: PostgreSQL connection string for production database
             gemini_api_key: Gemini API key for embeddings
             hybrid_weights: RRF weights dict with w_vec, w_fts, w_alias keys (defaults to validated config values)
+            engine: Optional SQLAlchemy engine for Cloud SQL Connector (Cloud Run mode)
         """
         try:
             # Use existing production components from Story 1.5
-            self.store = PostgresChunkStore(dims=3072, database_url=database_url)
+            # Use dependency injection: prefer engine (Cloud SQL) over database_url (local/proxy)
+            # Skip schema initialization in Cloud Run - schema already exists from ingestion pipeline
+            skip_schema = engine is not None  # Skip when using Cloud SQL (production Cloud Run)
+
+            if engine is not None:
+                logger.info("Using SQLAlchemy engine for Cloud SQL Connector (skipping schema init)")
+                self.store = PostgresChunkStore(dims=3072, engine=engine, skip_schema_init=skip_schema)
+            else:
+                logger.info("Using psycopg with database URL")
+                self.store = PostgresChunkStore(dims=3072, database_url=database_url, skip_schema_init=skip_schema)
+
             self.embedder = GeminiEmbedder(api_key=gemini_api_key)
 
             # Initialize query processor for proper CWE extraction and query analysis
@@ -220,40 +231,38 @@ class CWEQueryHandler:
         if not cwe_ids:
             return meta
         try:
-            conn = getattr(self.store, "conn", None)
-            if conn is None:
-                return meta
-            # Normalize IDs to uppercase
-            ids = [str(cid).upper() for cid in cwe_ids]
-            placeholders = ",".join(["%s"] * len(ids))
-            # Prefer cwe_catalog if present; fallback to cwe_embeddings
-            with conn.cursor() as cur:
-                try:
-                    cur.execute(
-                        f"SELECT cwe_id, name, abstraction, status FROM cwe_catalog WHERE UPPER(cwe_id) IN ({placeholders})",
-                        ids,
-                    )
-                    rows = cur.fetchall()
-                    if rows:
+            with self.store._get_connection() as conn:
+                # Normalize IDs to uppercase
+                ids = [str(cid).upper() for cid in cwe_ids]
+                placeholders = ",".join(["%s"] * len(ids))
+                # Prefer cwe_catalog if present; fallback to cwe_embeddings
+                with self.store._cursor(conn) as cur:
+                    try:
+                        cur.execute(
+                            f"SELECT cwe_id, name, abstraction, status FROM cwe_catalog WHERE UPPER(cwe_id) IN ({placeholders})",
+                            ids,
+                        )
+                        rows = cur.fetchall()
+                        if rows:
+                            for cwe_id, name, abstraction, status in rows:
+                                meta[str(cwe_id).upper()] = {
+                                    "name": name or "",
+                                    "abstraction": abstraction or "",
+                                    "status": status or "",
+                                }
+                    except Exception:
+                        # Fall back to embeddings if catalog is missing
+                        cur.execute(
+                            f"SELECT cwe_id, name, abstraction, status FROM cwe_embeddings WHERE UPPER(cwe_id) IN ({placeholders})",
+                            ids,
+                        )
+                        rows = cur.fetchall()
                         for cwe_id, name, abstraction, status in rows:
                             meta[str(cwe_id).upper()] = {
                                 "name": name or "",
                                 "abstraction": abstraction or "",
                                 "status": status or "",
                             }
-                except Exception:
-                    # Fall back to embeddings if catalog is missing
-                    cur.execute(
-                        f"SELECT cwe_id, name, abstraction, status FROM cwe_embeddings WHERE UPPER(cwe_id) IN ({placeholders})",
-                        ids,
-                    )
-                    rows = cur.fetchall()
-                    for cwe_id, name, abstraction, status in rows:
-                        meta[str(cwe_id).upper()] = {
-                            "name": name or "",
-                            "abstraction": abstraction or "",
-                            "status": status or "",
-                        }
         except Exception as e:
             # Downgrade noise when tables are not present
             msg = str(e)
@@ -261,11 +270,6 @@ class CWEQueryHandler:
                 logger.info("Canonical CWE metadata table(s) not available; skipping")
             else:
                 logger.log_exception("Failed to fetch canonical CWE metadata", e)
-            try:
-                if conn is not None:
-                    conn.rollback()
-            except Exception:
-                pass
         return meta
 
     def get_cwe_policy_labels(self, cwe_ids: List[str]) -> Dict[str, Dict[str, str]]:
@@ -284,31 +288,27 @@ class CWEQueryHandler:
         if not cwe_ids:
             return labels
         try:
-            conn = getattr(self.store, "conn", None)
-            if conn is None:
-                return labels
-            ids = [str(cid).upper() for cid in cwe_ids]
-            placeholders = ",".join(["%s"] * len(ids))
-            sql = f"""
-                SELECT cwe_id, mapping_label, COALESCE(notes, '')
-                  FROM cwe_policy_labels
-                 WHERE UPPER(cwe_id) IN ({placeholders})
-            """
-            with conn.cursor() as cur:
-                cur.execute(sql, ids)
-                for cwe_id, mapping_label, notes in cur.fetchall():
-                    labels[str(cwe_id).upper()] = {
-                        "mapping_label": mapping_label or "",
-                        "notes": notes or "",
-                    }
-        except Exception as e:
-            # Table may not exist; log at info to avoid noise, and rollback transaction if needed
-            logger.info(f"Policy labels table not available or fetch failed: {e}")
-            try:
-                if conn is not None:
-                    conn.rollback()
-            except Exception:
-                pass
+            with self.store._get_connection() as conn:
+                ids = [str(cid).upper() for cid in cwe_ids]
+                placeholders = ",".join(["%s"] * len(ids))
+                sql = f"""
+                    SELECT cwe_id, mapping_label, COALESCE(notes, '')
+                      FROM cwe_policy_labels
+                     WHERE UPPER(cwe_id) IN ({placeholders})
+                """
+                with self.store._cursor(conn) as cur:
+                    try:
+                        cur.execute(sql, ids)
+                        for cwe_id, mapping_label, notes in cur.fetchall():
+                            labels[str(cwe_id).upper()] = {
+                                "mapping_label": mapping_label or "",
+                                "notes": notes or "",
+                            }
+                    except Exception as e:
+                        # Table may not exist; log at info to avoid noise
+                        logger.info(f"Policy labels table not available or fetch failed: {e}")
+        except Exception:
+            pass
         return labels
 
     def health_check(self) -> Dict[str, bool]:
@@ -347,32 +347,30 @@ class CWEQueryHandler:
         """
         rows: List[Dict[str, Any]] = []
         try:
-            conn = getattr(self.store, "conn", None)
-            if conn is None:
-                return rows
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, cwe_id, section, section_rank, name, full_text
-                    FROM cwe_chunks
-                    WHERE UPPER(cwe_id) = %s
-                    ORDER BY section_rank ASC
-                    LIMIT %s
-                    """,
-                    (cwe_id.upper(), int(limit)),
-                )
-                for (chunk_id, cid, section, section_rank, name, full_text) in cur.fetchall():
-                    rows.append({
-                        "chunk_id": str(chunk_id),
-                        "metadata": {
-                            "cwe_id": cid,
-                            "section": section,
-                            "section_rank": section_rank,
-                            "name": name,
-                        },
-                        "document": full_text,
-                        "scores": {"vec": 0.0, "fts": 0.0, "alias": 0.0, "hybrid": 0.0},
-                    })
+            with self.store._get_connection() as conn:
+                with self.store._cursor(conn) as cur:
+                    cur.execute(
+                        """
+                        SELECT id, cwe_id, section, section_rank, name, full_text
+                        FROM cwe_chunks
+                        WHERE UPPER(cwe_id) = %s
+                        ORDER BY section_rank ASC
+                        LIMIT %s
+                        """,
+                        (cwe_id.upper(), int(limit)),
+                    )
+                    for (chunk_id, cid, section, section_rank, name, full_text) in cur.fetchall():
+                        rows.append({
+                            "chunk_id": str(chunk_id),
+                            "metadata": {
+                                "cwe_id": cid,
+                                "section": section,
+                                "section_rank": section_rank,
+                                "name": name,
+                            },
+                            "document": full_text,
+                            "scores": {"vec": 0.0, "fts": 0.0, "alias": 0.0, "hybrid": 0.0},
+                        })
         except Exception as e:
             logger.log_exception("Forced CWE section fetch failed", e)
         return rows

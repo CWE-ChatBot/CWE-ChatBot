@@ -131,20 +131,21 @@ class Config:
     def validate_config(self, *, offline_ai: bool = False) -> None:
         """Validate configuration and raise errors for missing required values."""
         errors = []
-        
-        # Check required database configuration
-        if not self.pg_password:
-            errors.append("POSTGRES_PASSWORD environment variable is required")
-        
+
+        # Check database configuration - skip password check if using IAM authentication
+        using_iam_auth = bool(os.getenv("DB_IAM_USER")) or bool(os.getenv("INSTANCE_CONN_NAME"))
+        if not self.pg_password and not using_iam_auth:
+            errors.append("POSTGRES_PASSWORD environment variable is required (or use IAM authentication)")
+
         # Check Gemini API key
         if not self.gemini_api_key and not offline_ai:
             errors.append("GEMINI_API_KEY environment variable is required")
-        
+
         # Validate RRF weights sum to 1.0
         total_weight = self.w_vec + self.w_fts + self.w_alias
         if not abs(total_weight - 1.0) < 1e-6:
             errors.append(f"RRF weights (w_vec + w_fts + w_alias) must sum to 1.0, got {total_weight}")
-        
+
         if errors:
             raise ValueError(f"Configuration errors: {'; '.join(errors)}")
 

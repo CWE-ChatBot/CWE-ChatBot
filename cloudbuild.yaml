@@ -1,0 +1,9 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-f', 'apps/chatbot/Dockerfile', '-t', '$_IMAGE_NAME', '.']
+images:
+- '$_IMAGE_NAME'
+substitutions:
+  _IMAGE_NAME: 'us-central1-docker.pkg.dev/cwechatbot/chatbot/chatbot:v1'
+options:
+  logging: CLOUD_LOGGING_ONLY

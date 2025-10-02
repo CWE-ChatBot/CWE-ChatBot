@@ -10,8 +10,12 @@ RUN apt-get update && \
     apt-get clean
 
 # Install Python dependencies
-COPY requirements.txt .
+COPY apps/chatbot/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Install cwe_ingestion package (required by chatbot)
+COPY apps/cwe_ingestion/ /tmp/cwe_ingestion/
+RUN pip install --no-cache-dir --user /tmp/cwe_ingestion/
 
 # Production stage
 FROM python:3.11-slim@sha256:8df0e8faf75b3c17ac33dc90d76787bbbcae142679e11da8c6f16afae5605ea7
@@ -47,10 +51,11 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Copy application files with secure permissions
-COPY --chown=appuser:appuser main_simple.py ./main.py
-COPY --chown=appuser:appuser healthcheck.py .
-COPY --chown=appuser:appuser .chainlit/ ./.chainlit/
-COPY --chown=appuser:appuser public/ ./public/
+COPY --chown=appuser:appuser apps/chatbot/main.py ./main.py
+COPY --chown=appuser:appuser apps/chatbot/healthcheck.py .
+# Create directories - let Chainlit auto-generate config.toml with correct format
+RUN mkdir -p ./.chainlit ./public
+COPY --chown=appuser:appuser apps/chatbot/src/ ./src/
 
 # Create directories with proper permissions
 RUN mkdir -p /app/logs && \

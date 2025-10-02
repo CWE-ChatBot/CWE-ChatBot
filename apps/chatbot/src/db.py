@@ -7,9 +7,18 @@ import os
 from google.cloud.sql.connector import Connector, IPTypes
 import sqlalchemy as sa
 
-INSTANCE = os.environ["INSTANCE_CONN_NAME"]  # e.g. cwechatbot:us-central1:cwe-postgres-prod
-DB_NAME = os.environ.get("DB_NAME", "postgres")  # use 'cwe_prod' after migration
-DB_USER = os.environ.get("DB_IAM_USER", "cwe-postgres-sa@cwechatbot.iam")
+try:
+    INSTANCE = os.environ["INSTANCE_CONN_NAME"]  # e.g. cwechatbot:us-central1:cwe-postgres-prod
+    DB_NAME = os.environ.get("DB_NAME", "postgres")  # use 'cwe_prod' after migration
+    DB_USER = os.environ.get("DB_IAM_USER", "cwe-postgres-sa@cwechatbot.iam")
+except KeyError as e:
+    print(f"ERROR: Missing required environment variable: {e}")
+    print(f"Available environment variables: {list(os.environ.keys())}")
+    raise
+
+# Make IP type configurable
+IP_PREF = os.getenv("CLOUDSQL_IP_TYPE", "PUBLIC").upper()
+IP_MODE = IPTypes.PRIVATE if IP_PREF == "PRIVATE" else IPTypes.PUBLIC
 
 _connector = None
 _engine = None
@@ -19,7 +28,7 @@ def _getconn():
     """Get a connection to Cloud SQL using the Cloud SQL Connector."""
     global _connector
     if _connector is None:
-        _connector = Connector(ip_type=IPTypes.PRIVATE)  # Private IP path
+        _connector = Connector(ip_type=IP_MODE)
     return _connector.connect(INSTANCE, "pg8000", user=DB_USER, db=DB_NAME, enable_iam_auth=True)
 
 

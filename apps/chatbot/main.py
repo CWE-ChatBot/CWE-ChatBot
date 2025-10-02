@@ -68,54 +68,112 @@ def initialize_components() -> bool:
     """Initialize all Story 2.1 chatbot components with error handling."""
     global conversation_manager, input_sanitizer, security_validator, file_processor, _init_ok
 
+    # DEBUG: Log initialization attempt
+    print("=" * 80)
+    print("🔍 DEBUG: initialize_components() called")
+    print(f"🔍 DEBUG: _init_ok={_init_ok}, conversation_manager={'present' if conversation_manager else 'None'}")
+    print("=" * 80)
+
     # Prevent double initialization
     if _init_ok and conversation_manager is not None:
         logger.info("Components already initialized, skipping initialization")
+        print("🔍 DEBUG: Skipping - already initialized")
         return True
 
     try:
+        print("🔍 DEBUG: Starting initialization...")
+
         # Validate config once; if it fails, we will surface a UI error and disable handlers
         try:
+            print("🔍 DEBUG: Validating configuration...")
             app_config.validate_config()
+            print("🔍 DEBUG: Configuration validation passed")
         except Exception as cfg_err:
+            print(f"❌ DEBUG: Configuration validation FAILED: {cfg_err}")
             logger.log_exception("Configuration validation failed", cfg_err, extra_context={
                 "component": "startup",
             })
             _init_ok = False
             # Still attempt partial initialization to provide a helpful UI message
-        
-        # Prefer explicit URLs if provided (for dev/prod parity)
+
+        # Check for Cloud SQL Connector environment (production Cloud Run)
+        cloud_sql_instance = os.getenv('INSTANCE_CONN_NAME')
         database_url = os.getenv('DATABASE_URL') or os.getenv('LOCAL_DATABASE_URL')
         gemini_api_key = os.getenv('GEMINI_API_KEY') or app_config.gemini_api_key
         offline_ai = os.getenv('DISABLE_AI') == '1' or os.getenv('GEMINI_OFFLINE') == '1'
 
-        if not database_url:
-            # Derive URL from POSTGRES_* if available
-            if app_config.pg_user and app_config.pg_password:
-                database_url = f"postgresql://{app_config.pg_user}:{app_config.pg_password}@{app_config.pg_host}:{app_config.pg_port}/{app_config.pg_database}"
-        if not database_url:
-            raise ValueError("Missing required configuration: database URL")
+        print(f"🔍 DEBUG: Environment variables:")
+        print(f"  - INSTANCE_CONN_NAME: {cloud_sql_instance}")
+        print(f"  - DATABASE_URL: {database_url[:50] if database_url else 'None'}...")
+        print(f"  - GEMINI_API_KEY: {'present' if gemini_api_key else 'missing'}")
+        print(f"  - DB_NAME: {os.getenv('DB_NAME')}")
+        print(f"  - DB_IAM_USER: {os.getenv('DB_IAM_USER')}")
+        print(f"  - CLOUDSQL_IP_TYPE: {os.getenv('CLOUDSQL_IP_TYPE')}")
+        print(f"  - offline_ai: {offline_ai}")
+
+        # Initialize database connection
+        db_engine = None
+        if cloud_sql_instance:
+            # Use Cloud SQL Connector for production
+            print(f"🔍 DEBUG: Using Cloud SQL Connector for instance: {cloud_sql_instance}")
+            logger.info(f"Using Cloud SQL Connector for instance: {cloud_sql_instance}")
+            try:
+                print("🔍 DEBUG: Importing src.db module...")
+                from src.db import engine
+                print("🔍 DEBUG: Calling engine() to create SQLAlchemy engine...")
+                db_engine = engine()
+                database_url = "cloud-sql-connector"  # Placeholder since engine is used
+                print("✅ DEBUG: Cloud SQL Connector engine initialized successfully")
+                logger.info("Cloud SQL Connector engine initialized successfully")
+            except Exception as e:
+                print(f"❌ DEBUG: Cloud SQL Connector initialization FAILED: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
+                logger.log_exception("Failed to initialize Cloud SQL Connector", e)
+                raise ValueError(f"Cloud SQL Connector initialization failed: {e}")
+        else:
+            print("🔍 DEBUG: No Cloud SQL instance, using traditional database URL")
+            # Use traditional database URL for local development
+            if not database_url:
+                # Derive URL from POSTGRES_* if available
+                if app_config.pg_user and app_config.pg_password:
+                    database_url = f"postgresql://{app_config.pg_user}:{app_config.pg_password}@{app_config.pg_host}:{app_config.pg_port}/{app_config.pg_database}"
+            if not database_url:
+                print("❌ DEBUG: No database configuration found!")
+                raise ValueError("Missing required configuration: database URL or Cloud SQL instance")
+
         if not gemini_api_key and not offline_ai:
+            print("❌ DEBUG: GEMINI_API_KEY is missing!")
             raise ValueError("Missing required configuration: GEMINI_API_KEY (set DISABLE_AI=1 for offline mode)")
 
+        print(f"🔍 DEBUG: Initializing with database: {database_url[:50]}...")
         logger.info(f"Initializing with database: {database_url[:50]}...")
 
         # Initialize security components
+        print("🔍 DEBUG: Initializing security components...")
         input_sanitizer = InputSanitizer()
         security_validator = SecurityValidator()
         file_processor = FileProcessor()
+        print("✅ DEBUG: Security components initialized")
 
         # Initialize conversation manager with all Story 2.1 components
+        print("🔍 DEBUG: Initializing ConversationManager...")
         conversation_manager = ConversationManager(
             database_url=database_url,
-            gemini_api_key=gemini_api_key
+            gemini_api_key=gemini_api_key,
+            engine=db_engine
         )
+        print("✅ DEBUG: ConversationManager created")
 
         # Test database connection
+        print("🔍 DEBUG: Testing database connection...")
         health = conversation_manager.get_system_health()
+        print(f"🔍 DEBUG: Health check result: {health}")
         if not health.get('database', False):
+            print("❌ DEBUG: Database health check FAILED!")
             raise RuntimeError("Database health check failed")
 
+        print("✅ DEBUG: Database health check passed")
         logger.info("Story 2.1 components initialized successfully")
         logger.info(f"Database health: {health}")
 
@@ -136,8 +194,18 @@ def initialize_components() -> bool:
                 logger.info("OAuth mode: enabled but no provider credentials found (running in open access mode)")
 
         _init_ok = True
+        print("=" * 80)
+        print("✅ DEBUG: Initialization completed successfully!")
+        print("=" * 80)
         return _init_ok
     except Exception as e:
+        print("=" * 80)
+        print(f"❌ DEBUG: Initialization FAILED with exception:")
+        print(f"  Exception type: {type(e).__name__}")
+        print(f"  Exception message: {e}")
+        print("=" * 80)
+        import traceback
+        traceback.print_exc()
         logger.log_exception("Component initialization failed", e, extra_context={"component": "startup"})
         _init_ok = False
         return _init_ok
@@ -234,7 +302,16 @@ async def start():
     """Initialize the chat session with settings-based persona configuration."""
     global conversation_manager
 
+    print("=" * 80)
+    print("🔍 DEBUG: @cl.on_chat_start triggered - User connected to chat")
+    print(f"🔍 DEBUG: conversation_manager={'present' if conversation_manager else 'None'}")
+    print(f"🔍 DEBUG: _init_ok={_init_ok}")
+    print("=" * 80)
+
     if not conversation_manager or not _init_ok:
+        print("❌ DEBUG: Initialization check FAILED - showing error to user")
+        print(f"  - conversation_manager: {conversation_manager}")
+        print(f"  - _init_ok: {_init_ok}")
         await cl.Message(content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB).").send()
         return
 
@@ -841,7 +918,24 @@ def main_cli():
 
 
 # Initialize components when module loads for Chainlit
-initialize_components()
+# Wrap in try/except to allow Chainlit to start even if initialization fails
+# This ensures the web server starts and can display error messages to users
+try:
+    print("=" * 80)
+    print("🔍 DEBUG: Module-level initialization starting...")
+    print("=" * 80)
+    initialize_components()
+    print("=" * 80)
+    print("✅ DEBUG: Module-level initialization completed")
+    print("=" * 80)
+except Exception as e:
+    print("=" * 80)
+    print(f"❌ DEBUG: Module-level initialization FAILED: {type(e).__name__}: {e}")
+    print("  Chainlit will start but components will be unavailable")
+    print("=" * 80)
+    import traceback
+    traceback.print_exc()
+    # Don't re-raise - let Chainlit start anyway so users get helpful error messages
 
 
 @cl.on_stop
