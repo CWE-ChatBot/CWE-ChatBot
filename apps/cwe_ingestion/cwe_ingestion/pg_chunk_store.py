@@ -103,17 +103,41 @@ class PostgresChunkStore:
                  database_url: Optional[str] = None,
                  engine: Optional["Engine"] = None,
                  skip_schema_init: bool = False):
+        """
+        Always reuse connections:
+          - Prefer a pooled SQLAlchemy Engine (created here if not provided).
+          - If SQLAlchemy isn't available, fall back to a single persistent psycopg connection.
+        """
         self.dims = int(dims)
         self.database_url = database_url or os.environ.get("DATABASE_URL")
-        self._engine = engine
+        self._engine: Optional["Engine"] = engine
+        self._persistent_conn = None  # psycopg connection kept open if engine is unavailable
 
         if not self.database_url and self._engine is None:
             raise ValueError("Either database_url or engine must be provided")
 
-        if self._engine is None and not HAS_PSYCOPG:
-            raise ImportError(
-                "psycopg (v3) is required for PostgresChunkStore. Install with: pip install psycopg[binary]"
+        # Ensure we have a pooled engine if SQLAlchemy is available and no engine was passed.
+        if self._engine is None and HAS_SQLALCHEMY and self.database_url:
+            # Reasonable defaults; adjust via central factory if desired.
+            self._engine = sa.create_engine(
+                self.database_url,
+                pool_size=5,
+                max_overflow=10,
+                pool_pre_ping=True,
+                pool_recycle=1800,
+                future=True,
             )
+            logger.info("Created pooled SQLAlchemy engine for PostgresChunkStore")
+
+        # If we still have no engine, keep a single persistent psycopg connection.
+        if self._engine is None:
+            if not HAS_PSYCOPG:
+                raise ImportError(
+                    "psycopg (v3) or SQLAlchemy is required. Install one of: "
+                    "pip install psycopg[binary]  OR  pip install sqlalchemy"
+                )
+            # Lazy-open on first use inside _get_connection()
+            logger.info("Using single persistent psycopg connection (no SQLAlchemy engine detected)")
 
         # Initialize schema (skip if flag set - used in Cloud Run where schema already exists)
         if not skip_schema_init:
@@ -123,8 +147,11 @@ class PostgresChunkStore:
 
     @property
     def _using_pg8000(self) -> bool:
-        """Check if we're using pg8000 driver (Cloud SQL)."""
-        return self._engine is not None
+        """True iff the SQLAlchemy engine is present and uses pg8000 driver."""
+        try:
+            return self._engine is not None and getattr(self._engine.dialect, "driver", "") == "pg8000"
+        except Exception:
+            return False
 
     @staticmethod
     def _to_vector_literal(embedding: List[float]) -> str:
@@ -134,31 +161,26 @@ class PostgresChunkStore:
     @contextlib.contextmanager
     def _get_connection(self):
         """
-        Connection factory:
-          - If an SQLAlchemy Engine was provided, use engine.raw_connection()
-            (DBAPI connection via Cloud SQL Connector + pg8000 in Cloud Run).
-          - Otherwise, fall back to psycopg.connect(self.database_url) for local/proxy.
+        Connection factory (no per-query handshakes):
+          - With Engine: checkout a DBAPI connection from the pool; close() returns to pool.
+          - Without Engine: reuse one persistent psycopg connection for the process.
         """
         if self._engine is not None:
-            logger.debug("Using SQLAlchemy engine for database connection")
+            logger.debug("Using SQLAlchemy pooled connection")
             conn = self._engine.raw_connection()
             try:
                 yield conn
             finally:
                 try:
-                    conn.close()
+                    conn.close()  # return to pool (keeps underlying TCP/TLS/IAM alive)
                 except Exception:
                     pass
         else:
-            logger.debug("Using psycopg for database connection")
-            conn = psycopg.connect(self.database_url)
-            try:
-                yield conn
-            finally:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+            # Lazy init persistent psycopg connection
+            if self._persistent_conn is None:
+                logger.debug("Opening persistent psycopg connection")
+                self._persistent_conn = psycopg.connect(self.database_url)
+            yield self._persistent_conn
 
     def _ensure_schema(self):
         logger.info("Ensuring Postgres chunked schema exists...")
