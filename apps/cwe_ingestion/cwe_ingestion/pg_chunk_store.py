@@ -413,7 +413,8 @@ class PostgresChunkStore:
                 halfvec_cast = "%s::halfvec"
 
             # Build hybrid query with RRF-style weighted ranking
-            # Prefer halfvec for performance
+            # Try halfvec first for performance, fallback to regular vector if not available
+            use_halfvec = True
             try:
                 sql = f"""
                 WITH vec AS (
@@ -431,8 +432,8 @@ class PostgresChunkStore:
                 alias AS (
                     SELECT id,
                            CASE
-                               WHEN lower(alternate_terms_text) LIKE '%' || lower(%s) || '%' THEN 1.0
-                               WHEN lower(name) LIKE '%' || lower(%s) || '%' THEN 0.5
+                               WHEN lower(alternate_terms_text) LIKE '%%' || lower(%s) || '%%' THEN 1.0
+                               WHEN lower(name) LIKE '%%' || lower(%s) || '%%' THEN 0.5
                                ELSE 0.0
                            END AS alias_sim
                       FROM cwe_chunks
@@ -468,7 +469,10 @@ class PostgresChunkStore:
                     w_vec, w_fts, w_alias, limit_chunks
                 )
                 cur.execute(sql, params)
-            except Exception:
+            except Exception as e:
+                # Rollback failed transaction and retry with regular vector column
+                conn.rollback()
+                use_halfvec = False
                 # Fallback to regular vector column if halfvec fails
                 sql = f"""
                 WITH vec AS (
@@ -486,8 +490,8 @@ class PostgresChunkStore:
                 alias AS (
                     SELECT id,
                            CASE
-                               WHEN lower(alternate_terms_text) LIKE '%' || lower(%s) || '%' THEN 1.0
-                               WHEN lower(name) LIKE '%' || lower(%s) || '%' THEN 0.5
+                               WHEN lower(alternate_terms_text) LIKE '%%' || lower(%s) || '%%' THEN 1.0
+                               WHEN lower(name) LIKE '%%' || lower(%s) || '%%' THEN 0.5
                                ELSE 0.0
                            END AS alias_sim
                       FROM cwe_chunks
