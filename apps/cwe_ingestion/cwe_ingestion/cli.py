@@ -218,8 +218,15 @@ def stats(chunked):
             stats = store.get_collection_stats()
             click.echo(f"✅ Database connection: OK")
             click.echo(f"📦 Storage type: {store_type}")
-            click.echo(f"🎯 Collection: {stats['collection_name']}")
-            click.echo(f"📈 Record count: {stats['count']:,}")
+
+            # Handle different store types
+            if store_type == "chunked":
+                click.echo(f"🎯 Table: cwe_chunks")
+                click.echo(f"📈 Rows (chunks): {stats['count']:,}")
+                click.echo(f"🔢 Distinct CWEs: {stats['unique_cwes']:,}")
+            else:
+                click.echo(f"🎯 Collection: {stats['collection_name']}")
+                click.echo(f"📈 Record count: {stats['count']:,}")
 
             if stats['count'] > 0:
                 click.echo(f"💡 Vector dimensions: {store.dims}")
@@ -351,9 +358,6 @@ def ingest_multi(target_cwes, only_cwes_file, embedding_model, embedder_type, lo
         click.echo(f"❌ Multi-database ingestion failed: {e}")
         sys.exit(1)
 
-if __name__ == '__main__':
-    cli()
-
 @cli.command(name='policy-import')
 @click.option('--xml', type=str, help='Path to CWE XML file (e.g., cwec_v4.18.xml)')
 @click.option('--url', type=str, help='Remote URL to CWE XML or ZIP (e.g., https://.../cwec_latest.xml.zip)')
@@ -385,3 +389,7 @@ def policy_import(xml, url, db, infer_by_abstraction, limit, dry_run, env_file, 
     # Reinvoke importer's main with constructed argv
     sys.argv = ["import_policy_from_xml.py"] + argv
     policy_import_main()
+
+
+if __name__ == '__main__':
+    cli()

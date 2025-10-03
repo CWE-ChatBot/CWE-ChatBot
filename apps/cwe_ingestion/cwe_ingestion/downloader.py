@@ -8,12 +8,14 @@ import zipfile
 from pathlib import Path
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
 
 class CWEDownloader:
-    """Secure downloader for CWE data from MITRE."""
+    """Secure downloader for CWE data from MITRE with resilient retries."""
 
     def __init__(
         self,
@@ -26,7 +28,18 @@ class CWEDownloader:
         self.timeout = timeout
         self.verify_ssl = verify_ssl
 
-        logger.info(f"CWEDownloader initialized with URL: {source_url}")
+        # Configure resilient session with retries
+        self.session = requests.Session()
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+        )
+        self.session.mount("https://", HTTPAdapter(max_retries=retries))
+        self.session.mount("http://", HTTPAdapter(max_retries=retries))
+
+        logger.info(f"CWEDownloader initialized with URL: {source_url} (with retries)")
 
     def download_file(self, output_path: str) -> bool:
         """
@@ -47,7 +60,7 @@ class CWEDownloader:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
 
-            response = requests.get(
+            response = self.session.get(
                 self.source_url,
                 timeout=self.timeout,
                 verify=self.verify_ssl,
@@ -72,12 +85,33 @@ class CWEDownloader:
             raise
 
     def _extract_cwe_xml(self, zip_path: str, output_path: str) -> str:
-        """Extract CWE XML file from downloaded ZIP archive."""
+        """
+        Extract CWE XML file from downloaded ZIP archive with security checks.
+
+        Security measures:
+        - Path traversal prevention
+        - Zipbomb defense (file count and size limits)
+        """
         try:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
 
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                # Security: Zipbomb defense - check file count
+                if len(zip_ref.namelist()) > 10_000:
+                    raise ValueError(f"ZIP contains too many files ({len(zip_ref.namelist())}), possible zipbomb")
+
+                # Security: Check individual file sizes and paths
+                for info in zip_ref.infolist():
+                    # Check file size (200MB limit per file)
+                    if info.file_size > 200 * 1024 * 1024:
+                        raise ValueError(f"ZIP contains oversized entry: {info.filename} ({info.file_size} bytes)")
+
+                    # Security: Path traversal defense
+                    p = Path(info.filename)
+                    if p.is_absolute() or ".." in p.parts:
+                        raise ValueError(f"Unsafe path in ZIP entry: {info.filename}")
+
                 # Find XML file in ZIP
                 xml_files = [f for f in zip_ref.namelist() if f.endswith('.xml')]
 
@@ -93,7 +127,7 @@ class CWEDownloader:
                 if extracted_path != output_file:
                     extracted_path.rename(output_file)
 
-                logger.info(f"CWE XML extracted to {output_path}")
+                logger.info(f"CWE XML extracted safely to {output_path}")
                 return str(output_path)
 
         except Exception as e:

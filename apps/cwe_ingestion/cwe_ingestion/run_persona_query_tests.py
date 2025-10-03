@@ -54,12 +54,12 @@ def format_results_summary(results: List[Dict[str, Any]]) -> str:
         if i >= 3:  # Limit to top 3 CWEs
             break
 
-        best_result = max(cwe_results, key=lambda x: x.get('score', 0))
+        best_result = max(cwe_results, key=lambda x: x.get("scores", {}).get("hybrid", 0.0))
         sections = [r['metadata']['section'] for r in cwe_results]
 
         summary_lines.append(
             f"  {cwe_id}: {best_result['metadata']['name'][:50]}..."
-            f" (score={best_result.get('score', 0):.2f}, sections={','.join(sections[:2])})"
+            f" (score={best_result.get('scores', {}).get('hybrid', 0.0):.2f}, sections={','.join(sections[:2])})"
         )
 
     if len(cwe_groups) > 3:

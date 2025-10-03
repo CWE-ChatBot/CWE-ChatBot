@@ -163,6 +163,14 @@ class PostgresChunkStore:
     def _ensure_schema(self):
         logger.info("Ensuring Postgres chunked schema exists...")
         with self._get_connection() as conn, self._cursor(conn) as cur:
+            # Set PostgreSQL tuning parameters for better performance
+            try:
+                cur.execute("SET statement_timeout = '300s';")  # 5 minute timeout
+                cur.execute("SET hnsw.ef_search = 100;")  # HNSW search quality
+                logger.debug("Applied PostgreSQL performance tuning")
+            except Exception as e:
+                logger.warning(f"Could not apply some GUCs: {e}")
+
             # Create extensions
             cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
             cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
@@ -192,8 +200,8 @@ class PostgresChunkStore:
         logger.info(f"Storing {len(chunks)} chunks...")
 
         with self._get_connection() as conn, self._cursor(conn) as cur:
-            # Clear existing data
-            cur.execute("DELETE FROM cwe_chunks;")
+            # Clear existing data (TRUNCATE is faster and keeps stats healthy)
+            cur.execute("TRUNCATE TABLE cwe_chunks RESTART IDENTITY;")
 
             # Prepare data for batch insert
             values = []
