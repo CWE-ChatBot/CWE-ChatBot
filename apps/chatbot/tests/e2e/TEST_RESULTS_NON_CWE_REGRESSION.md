@@ -364,18 +364,34 @@ Chunks retrieved: 0
 - Verify logger level is INFO not DEBUG
 - Add explicit try/except logging for stats query
 
-### 2. Database Query Performance Gap
+### 2. Database Query Performance Gap ⚠️ **ROOT CAUSE IDENTIFIED**
 
 **Observed:** 1.1-1.6s DB query time (vs ~150ms local)
 **Gap:** ~1200ms additional latency
 
-**Root Cause:** Network latency between Cloud Run and Cloud SQL (cross-region or cross-zone)
+**Root Cause:** Connection opened and closed on EVERY query (pg_chunk_store.py:144-161)
+- Verified: Both Cloud Run and Cloud SQL are co-located in us-central1 ✅
+- Problem: `_get_connection()` context manager closes connection immediately after use
+- Impact: Each query incurs full IAM auth + SSL/TLS handshake (~1s overhead)
+- SQLAlchemy pool exists but is defeated by immediate connection closure
+
+**Code Analysis:**
+```python
+# pg_chunk_store.py line 144-150
+conn = self._engine.raw_connection()  # Get from pool
+try:
+    yield conn
+finally:
+    conn.close()  # Immediately return to pool (overhead!)
+```
 
 **Recommendations:**
-1. ✅ Verify Cloud SQL and Cloud Run are in same zone
-2. ⏭️ Add connection pooling (PgBouncer in transaction mode)
-3. ⏭️ Use Cloud SQL Connector instead of proxy for lower overhead
-4. ⏭️ Enable prepared statements for vector queries
+1. 🔥 **CRITICAL:** Refactor connection management to reuse connections
+   - Option A: Keep connection object at instance level
+   - Option B: Use SQLAlchemy sessions instead of raw_connection()
+   - Expected: ~1000-1200ms improvement (1345ms → 150-200ms)
+2. ⏭️ Add prepared statements for vector queries (additional ~20-50ms gain)
+3. ⏭️ Consider PgBouncer for connection pooling at database level (if needed)
 
 ### 3. XSS Query Accuracy
 

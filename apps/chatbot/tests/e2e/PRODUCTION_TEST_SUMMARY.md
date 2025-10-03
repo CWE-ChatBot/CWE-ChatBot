@@ -82,11 +82,18 @@ Successfully captured real production timing and retrieval metrics from 5 test q
    - Likely cause: Silent exception in stats query
    - Impact: Diagnostic data missing (functionality unaffected)
 
-2. **Database Performance Gap**
+2. **Database Performance Gap** ⚠️ **ROOT CAUSE IDENTIFIED**
    - Target: ~200ms
    - Actual: ~1345ms
-   - Gap: ~1200ms network latency
-   - Cause: Cross-region/zone communication between Cloud Run and Cloud SQL
+   - Gap: ~1200ms per query
+   - **Root Cause:** Connection not reused between queries (pg_chunk_store.py:144-161)
+     - `_get_connection()` opens connection
+     - Query executes
+     - Connection immediately closed (defeats pooling!)
+   - **Evidence:**
+     - Both app and DB ARE co-located (us-central1) ✅
+     - SQLAlchemy pool exists but connections closed immediately
+     - Each query incurs IAM auth + SSL/TLS handshake overhead (~1s)
    - Impact: User experience (1.4s response time vs 0.2s target)
 
 3. **XSS Query Accuracy**
@@ -105,15 +112,17 @@ Successfully captured real production timing and retrieval metrics from 5 test q
 
 ## Recommendations
 
-### Immediate (Performance)
+### Immediate (Performance) ⚠️ **CORRECTED**
 
-1. **Co-locate Application and Database**
-   - Deploy Cloud Run in same zone as Cloud SQL
-   - Expected improvement: ~1000ms reduction in DB query time
+1. **Fix Connection Reuse in pg_chunk_store.py** 🔥 **CRITICAL**
+   - **Problem:** Connections closed immediately after each query (lines 144-161)
+   - **Solution:** Keep connection open across queries OR use SQLAlchemy sessions properly
+   - **Expected improvement:** ~1000-1200ms reduction (from 1345ms → ~150-200ms)
+   - **Priority:** HIGH - This is the main performance bottleneck
 
-2. **Add Connection Pooling**
-   - Implement PgBouncer in transaction mode
-   - Expected improvement: ~100-200ms reduction
+2. ~~**Co-locate Application and Database**~~ ✅ **ALREADY DONE**
+   - Both are in us-central1 (verified)
+   - No cross-region latency
 
 3. **Fix Candidate Pooling Logging**
    - Add explicit error logging in pg_chunk_store.py:525
