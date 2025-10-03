@@ -496,6 +496,34 @@ LIMIT %s;
                 w_vec, w_fts, w_alias, limit_chunks,
             ]
             rows = _exec(sql, params)
+
+            # Log candidate pooling stats for debugging
+            try:
+                stats_sql = f"""
+WITH
+vec AS (SELECT id FROM cwe_chunks ORDER BY embedding_halfvec <=> {halfvec_cast} LIMIT %s),
+fts AS (SELECT id FROM cwe_chunks WHERE %s <> '' AND tsv @@ websearch_to_tsquery('english', %s) LIMIT %s),
+alias_hits AS (SELECT id FROM cwe_chunks WHERE %s <> '' AND (alternate_terms_text ILIKE %s OR name ILIKE %s))
+SELECT
+    (SELECT COUNT(*) FROM vec) as vec_count,
+    (SELECT COUNT(*) FROM fts) as fts_count,
+    (SELECT COUNT(*) FROM alias_hits) as alias_count,
+    (SELECT COUNT(DISTINCT id) FROM (
+        SELECT id FROM vec UNION SELECT id FROM fts UNION SELECT id FROM alias_hits
+    ) cand) as total_candidates;
+                """
+                stats_params = [
+                    vec_param, k_vec,
+                    q_clean, q_clean, k_vec,
+                    q_clean, alias_pattern, alias_pattern
+                ]
+                stats_rows = _exec(stats_sql, stats_params)
+                if stats_rows:
+                    vec_cnt, fts_cnt, alias_cnt, total_cnt = stats_rows[0]
+                    logger.info(f"Candidate pooling: vec={vec_cnt}, fts={fts_cnt}, alias={alias_cnt}, total={total_cnt}")
+            except Exception as e:
+                logger.debug(f"Could not log candidate stats: {e}")
+
         except Exception:
             # Fallback to main vector column
             sql = f"""

@@ -132,6 +132,9 @@ class CWEQueryHandler:
             List of raw retrieved chunks with metadata and scores
         """
         try:
+            import time
+            query_start = time.time()
+
             logger.info(f"Processing query: '{query[:50]}...' for persona: {user_context.get('persona', 'unknown')}")
 
             # Use QueryProcessor to properly extract CWE IDs and analyze query
@@ -140,8 +143,10 @@ class CWEQueryHandler:
             logger.debug(f"Extracted CWE IDs: {extracted_cwe_ids}")
 
             # Generate embedding using existing Gemini embedder from Story 1.5 (non-blocking)
+            embed_start = time.time()
             query_embedding = await asyncio.to_thread(self.embedder.embed_text, query)
-            logger.debug(f"Generated {len(query_embedding)}D embedding")
+            embed_time = (time.time() - embed_start) * 1000
+            logger.info(f"✓ Embedding generated: {len(query_embedding)}D in {embed_time:.1f}ms")
 
             # Use centralized hybrid weights from Config (Story 1.5 validated weights)
             weights = hybrid_weights_override or self.hybrid_weights
@@ -168,14 +173,19 @@ class CWEQueryHandler:
                 logger.debug(f"Applied section boost: {section_boost}")
 
             # Execute hybrid search using Story 1.5 production system
+            db_start = time.time()
             results = await asyncio.to_thread(self.store.query_hybrid, **query_params)
+            db_time = (time.time() - db_start) * 1000
 
-            logger.info(f"Retrieved {len(results)} raw chunks from database")
+            total_time = (time.time() - query_start) * 1000
+
+            logger.info(f"✓ Retrieved {len(results)} chunks in {db_time:.1f}ms (total: {total_time:.1f}ms)")
 
             # Log top results for debugging
             if results:
                 top_cwes = [r["metadata"]["cwe_id"] for r in results[:3]]
-                logger.debug(f"Top CWEs: {top_cwes}")
+                top_scores = [r["scores"]["hybrid"] for r in results[:3]]
+                logger.info(f"Top results: {list(zip(top_cwes, [f'{s:.2f}' for s in top_scores]))}")
 
             return results
 
