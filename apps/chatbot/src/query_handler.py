@@ -152,6 +152,7 @@ class CWEQueryHandler:
                 "query_text": query,
                 "query_embedding": query_embedding,
                 "limit_chunks": 10,
+                "k_vec": 50,  # vector candidate pool size
                 **weights
             }
 
