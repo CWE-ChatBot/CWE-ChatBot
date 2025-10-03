@@ -6,6 +6,7 @@ Integrates with existing production hybrid retrieval system from Story 1.5.
 
 import asyncio
 import logging
+import os
 from typing import Dict, List, Any, Optional, TypedDict, Literal
 from src.security.secure_logging import get_secure_logger
 from src.processing.query_processor import QueryProcessor
@@ -99,12 +100,15 @@ class CWEQueryHandler:
             logger.info("CWEQueryHandler initialized with Story 1.5 production infrastructure")
             logger.info(f"RRF weights: {self.hybrid_weights}")
 
-            # Verify database connection
-            stats = self.store.get_collection_stats()
-            logger.info(f"Connected to production database: {stats['count']} chunks available")
+            # Verify database connection (skip if SKIP_DB_STATS=true for quick deployment)
+            if os.getenv('SKIP_DB_STATS', '').lower() != 'true':
+                stats = self.store.get_collection_stats()
+                logger.info(f"Connected to production database: {stats['count']} chunks available")
 
-            if stats['count'] == 0:
-                logger.warning("Production database appears empty. Verify Story 1.5 ingestion completed.")
+                if stats['count'] == 0:
+                    logger.warning("Production database appears empty. Verify Story 1.5 ingestion completed.")
+            else:
+                logger.warning("Skipping database stats check (SKIP_DB_STATS=true)")
 
         except Exception as e:
             logger.log_exception("Failed to initialize CWEQueryHandler", e)
