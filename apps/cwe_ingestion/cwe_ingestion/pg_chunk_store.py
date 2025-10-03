@@ -424,18 +424,26 @@ class PostgresChunkStore:
                      LIMIT 50
                 ),
                 fts AS (
-                    SELECT id, ts_rank(tsv, websearch_to_tsquery('english', %s)) AS fts_rank
+                    SELECT id, ts_rank(tsv, plainto_tsquery('english', %s)) AS fts_rank
                       FROM cwe_chunks
-                     WHERE tsv @@ websearch_to_tsquery('english', %s)
+                     WHERE tsv @@ plainto_tsquery('english', %s)
+                ),
+                alias AS (
+                    SELECT id,
+                           CASE
+                               WHEN lower(alternate_terms_text) LIKE '%' || lower(%s) || '%' THEN 1.0
+                               WHEN lower(name) LIKE '%' || lower(%s) || '%' THEN 0.5
+                               ELSE 0.0
+                           END AS alias_sim
+                      FROM cwe_chunks
                 ),
                 joined AS (
-                    SELECT v.*, COALESCE(f.fts_rank, 0) AS fts_rank,
-                           GREATEST(
-                               similarity(lower(v.alternate_terms_text), lower(%s)),
-                               similarity(lower(regexp_replace(v.alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
-                           ) AS alias_sim
+                    SELECT v.*,
+                           COALESCE(f.fts_rank, 0) AS fts_rank,
+                           COALESCE(a.alias_sim, 0) AS alias_sim
                       FROM vec v
                  LEFT JOIN fts f USING (id)
+                 LEFT JOIN alias a USING (id)
                 ),
                 agg AS (
                     SELECT *,
@@ -471,18 +479,26 @@ class PostgresChunkStore:
                      LIMIT 50
                 ),
                 fts AS (
-                    SELECT id, ts_rank(tsv, websearch_to_tsquery('english', %s)) AS fts_rank
+                    SELECT id, ts_rank(tsv, plainto_tsquery('english', %s)) AS fts_rank
                       FROM cwe_chunks
-                     WHERE tsv @@ websearch_to_tsquery('english', %s)
+                     WHERE tsv @@ plainto_tsquery('english', %s)
+                ),
+                alias AS (
+                    SELECT id,
+                           CASE
+                               WHEN lower(alternate_terms_text) LIKE '%' || lower(%s) || '%' THEN 1.0
+                               WHEN lower(name) LIKE '%' || lower(%s) || '%' THEN 0.5
+                               ELSE 0.0
+                           END AS alias_sim
+                      FROM cwe_chunks
                 ),
                 joined AS (
-                    SELECT v.*, COALESCE(f.fts_rank, 0) AS fts_rank,
-                           GREATEST(
-                               similarity(lower(v.alternate_terms_text), lower(%s)),
-                               similarity(lower(regexp_replace(v.alternate_terms_text, '[^a-z0-9 ]', ' ', 'gi')), lower(%s))
-                           ) AS alias_sim
+                    SELECT v.*,
+                           COALESCE(f.fts_rank, 0) AS fts_rank,
+                           COALESCE(a.alias_sim, 0) AS alias_sim
                       FROM vec v
                  LEFT JOIN fts f USING (id)
+                 LEFT JOIN alias a USING (id)
                 ),
                 agg AS (
                     SELECT *,
