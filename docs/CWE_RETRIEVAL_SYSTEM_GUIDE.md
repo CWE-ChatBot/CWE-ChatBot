@@ -20,6 +20,24 @@ The CWE ChatBot uses a sophisticated hybrid retrieval system that combines vecto
 2. **Multi-Signal Retrieval**: Combines semantic (vector), lexical (FTS), and exact (alias) matching
 3. **Performance-First**: Optimized for <200ms database query time
 4. **Scalability**: Handles 969 CWEs with 7,913 semantic chunks efficiently
+5. **Cost-Constrained**: Architecture decisions prioritize low monthly costs (see [ADR: Database Choice](../ADR/database.md))
+
+### Cost vs Performance Tradeoff
+
+Per [ADR: Database Choice](../ADR/database.md), the system uses **Cloud SQL PostgreSQL db-f1-micro** (~$8-10/month) instead of higher-performance alternatives:
+
+**Current Configuration** (Cost-Optimized):
+- Instance: db-f1-micro (shared-core, 614 MB RAM)
+- Monthly cost: ~$8-10
+- Performance: 172ms avg query time, p95 <280ms
+- **Tradeoff**: Predictable low cost vs maximum speed
+
+**Performance Scaling Options** (Higher Cost):
+- **db-custom-1-3840** (1 vCPU, 3.75 GB): ~$30/month → 1.5-2x faster
+- **db-custom-2-7680** (2 vCPU, 7.68 GB): ~$100/month → 3-4x faster
+- **AlloyDB** (2 vCPU, 16 GB with ScaNN): ~$227/month → 5-10x faster with advanced vector indexes
+
+**Design Decision**: The current db-f1-micro meets performance targets (<500ms p95) at minimal cost, making it ideal for MVP deployment. The architecture supports scaling up if usage grows, but cost efficiency is prioritized for initial launch.
 
 ## Database Architecture
 
@@ -405,13 +423,62 @@ LIMIT 10;
 - **Query time**: 289ms (DB) = **2.1x improvement**
 - **Issue**: Hints applied to ALL queries (not just vector queries)
 
-#### Phase 3: Private IP Connection
+#### Phase 3: Private IP Connection with Password Auth
 - **Change**: Direct Private IP (10.43.0.3) with password auth
 - **Removed**: Cloud SQL Connector overhead
 - **Benefits**:
   - No SSL handshake per query (connection pooling)
   - No IAM token validation
   - Lower latency (~10ms network vs ~100ms proxy)
+
+**Authentication Choice: Password vs IAM**
+
+While IAM authentication is generally preferred for GCP best practices (no password management, better audit trail), we chose **password authentication for the application** due to Cloud Run's connection patterns.
+
+**Why Password Auth for the Application:**
+
+Our Cloud Run traffic pattern creates frequent new database connections due to:
+- **Scale-to-zero behavior**: Instances spin up on demand
+- **Autoscaling**: New instances create new connections during traffic spikes
+- **Bursty concurrency**: Short-lived connections from rapid request bursts
+
+The **IAM + Cloud SQL Connector handshake adds ~100-300ms per new connection**:
+- OAuth/IAM token validation overhead
+- Connector proxy layer initialization
+- This overhead is paid on **every new connection**, not per query
+- With warm pooled connections, IAM works fine—but Cloud Run churns connections frequently
+
+**Private IP + Password Auth eliminates this connect tax:**
+- Direct connection to database (10.43.0.3, no proxy)
+- Connection pooling reuses authenticated connections
+- New connections faster (~50-100ms vs ~200-400ms with IAM)
+- Critical for meeting <200ms per-query target with our traffic pattern
+
+**Note**: If connections were stable (steady instances, large pool, no churn), IAM overhead would be negligible. Our serverless pattern makes connection establishment the bottleneck.
+
+**Hybrid Auth Model** (Current Production):
+- **Application (chatbot)**: Password auth via `app_user`
+  - Optimized for Cloud Run's bursty, scale-to-zero pattern
+  - Real-time performance critical (<200ms target)
+- **Data Ingestion**: IAM auth via `cwe-postgres-sa@cwechatbot.iam`
+  - Batch operation, connection overhead acceptable
+  - Better audit trail for data modifications
+
+**Security Measures for Password Auth:**
+- ✅ **Short-lived passwords**: Automatic rotation via Secret Manager versions
+- ✅ **Least-privilege role**: `app_user` has SELECT-only on cwe_chunks
+- ✅ **TLS encryption**: `sslmode=require` on private IP connection
+- ✅ **TCP keepalives**: Prevent server-side connection drops
+- ✅ **Pool tuning**: `pool_size=4 ≥ typical concurrency`, `pool_recycle=1800s`
+- ✅ **Secret Manager**: Password stored securely, not in code/env vars
+- ✅ **Monitoring**: Connection pool metrics, failed auth attempts logged
+
+**Trade-offs Accepted:**
+- Password rotation complexity (mitigated by Secret Manager automation)
+- Less detailed audit trail for queries (IAM provides per-operation attribution)
+- Password storage dependency (Secret Manager is single point of trust)
+
+**Decision**: Performance wins for user-facing queries. IAM overhead would prevent achieving <200ms target.
 
 #### Phase 4: Transaction-Scoped Hints (Current)
 - **Change**: Apply hints per-transaction, not per-connection
