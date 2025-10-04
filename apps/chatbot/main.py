@@ -96,25 +96,46 @@ def initialize_components() -> bool:
             _init_ok = False
             # Still attempt partial initialization to provide a helpful UI message
 
-        # Check for Cloud SQL Connector environment (production Cloud Run)
+        # Check for database configuration
+        # Option 1: Private IP with password auth (new production setup)
+        # Option 2: Cloud SQL Connector with IAM (legacy)
+        # Option 3: Traditional database URL (local dev)
+        use_private_ip = os.getenv('DB_HOST') and os.getenv('DB_USER') and os.getenv('DB_PASSWORD')
         cloud_sql_instance = os.getenv('INSTANCE_CONN_NAME')
         database_url = os.getenv('DATABASE_URL') or os.getenv('LOCAL_DATABASE_URL')
         gemini_api_key = os.getenv('GEMINI_API_KEY') or app_config.gemini_api_key
         offline_ai = os.getenv('DISABLE_AI') == '1' or os.getenv('GEMINI_OFFLINE') == '1'
 
         print(f"🔍 DEBUG: Environment variables:")
+        print(f"  - DB_HOST: {os.getenv('DB_HOST')}")
+        print(f"  - DB_USER: {os.getenv('DB_USER')}")
         print(f"  - INSTANCE_CONN_NAME: {cloud_sql_instance}")
         print(f"  - DATABASE_URL: {database_url[:50] if database_url else 'None'}...")
         print(f"  - GEMINI_API_KEY: {'present' if gemini_api_key else 'missing'}")
-        print(f"  - DB_NAME: {os.getenv('DB_NAME')}")
-        print(f"  - DB_IAM_USER: {os.getenv('DB_IAM_USER')}")
-        print(f"  - CLOUDSQL_IP_TYPE: {os.getenv('CLOUDSQL_IP_TYPE')}")
         print(f"  - offline_ai: {offline_ai}")
 
         # Initialize database connection
         db_engine = None
-        if cloud_sql_instance:
-            # Use Cloud SQL Connector for production
+        if use_private_ip:
+            # Use Private IP direct connection (new production setup)
+            print(f"🔍 DEBUG: Using Private IP connection to {os.getenv('DB_HOST')}")
+            logger.info(f"Using Private IP connection to {os.getenv('DB_HOST')}")
+            try:
+                print("🔍 DEBUG: Importing src.db module...")
+                from src.db import engine
+                print("🔍 DEBUG: Calling engine() to create SQLAlchemy engine...")
+                db_engine = engine()
+                database_url = "private-ip-connection"  # Placeholder since engine is used
+                print("✅ DEBUG: Private IP database engine initialized successfully")
+                logger.info("Private IP database engine initialized successfully")
+            except Exception as e:
+                print(f"❌ DEBUG: Private IP connection initialization FAILED: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
+                logger.log_exception("Failed to initialize Private IP connection", e)
+                raise ValueError(f"Private IP connection initialization failed: {e}")
+        elif cloud_sql_instance:
+            # Use Cloud SQL Connector for production (legacy)
             print(f"🔍 DEBUG: Using Cloud SQL Connector for instance: {cloud_sql_instance}")
             logger.info(f"Using Cloud SQL Connector for instance: {cloud_sql_instance}")
             try:
@@ -132,7 +153,7 @@ def initialize_components() -> bool:
                 logger.log_exception("Failed to initialize Cloud SQL Connector", e)
                 raise ValueError(f"Cloud SQL Connector initialization failed: {e}")
         else:
-            print("🔍 DEBUG: No Cloud SQL instance, using traditional database URL")
+            print("🔍 DEBUG: No Private IP or Cloud SQL instance, using traditional database URL")
             # Use traditional database URL for local development
             if not database_url:
                 # Derive URL from POSTGRES_* if available
@@ -140,7 +161,7 @@ def initialize_components() -> bool:
                     database_url = f"postgresql://{app_config.pg_user}:{app_config.pg_password}@{app_config.pg_host}:{app_config.pg_port}/{app_config.pg_database}"
             if not database_url:
                 print("❌ DEBUG: No database configuration found!")
-                raise ValueError("Missing required configuration: database URL or Cloud SQL instance")
+                raise ValueError("Missing required configuration: database URL, Private IP config, or Cloud SQL instance")
 
         if not gemini_api_key and not offline_ai:
             print("❌ DEBUG: GEMINI_API_KEY is missing!")

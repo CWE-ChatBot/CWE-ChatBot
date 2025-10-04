@@ -21,9 +21,7 @@ google-generativeai>=0.7.0,<1.0.0
 numpy>=1.24.0,<2.0.0
 psycopg[binary]>=3.1.0,<4.0.0
 pydantic>=2.0.0,<3.0.0
-
-# Cloud SQL Connector (for production Cloud Run deployment)
 sqlalchemy>=2.0.0,<3.0.0
-pg8000>=1.29.0,<2.0.0
-cloud-sql-python-connector[pg8000]>=1.9.2,<2.0.0
+
+# Secret Manager for database credentials
 google-cloud-secret-manager>=2.16.0,<3.0.0

@@ -162,19 +162,17 @@ class PostgresChunkStore:
     def _get_connection(self):
         """
         Connection factory (no per-query handshakes):
-          - With Engine: checkout a DBAPI connection from the pool; close() returns to pool.
+          - With Engine: checkout a pooled connection from SQLAlchemy; close() returns to pool.
           - Without Engine: reuse one persistent psycopg connection for the process.
         """
         if self._engine is not None:
             logger.debug("Using SQLAlchemy pooled connection")
+            # Use raw_connection() for transaction control
             conn = self._engine.raw_connection()
             try:
                 yield conn
             finally:
-                try:
-                    conn.close()  # return to pool (keeps underlying TCP/TLS/IAM alive)
-                except Exception:
-                    pass
+                conn.close()  # return to pool
         else:
             # Lazy init persistent psycopg connection
             if self._persistent_conn is None:
@@ -437,15 +435,21 @@ class PostgresChunkStore:
             halfvec_cast = "%s::halfvec"
             vector_cast  = "%s::vector"
 
-        def _exec(sql: str, params: Sequence[Any]) -> List[tuple]:
-            with self._get_connection() as conn, self._cursor(conn) as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
-                return rows
+        def _begin_with_knn_hints(cur, ef_search: int = 32):
+            """Apply transaction-scoped planner hints for HNSW KNN queries."""
+            cur.execute("BEGIN;")
+            cur.execute("SET LOCAL enable_seqscan = off;")
+            cur.execute("SET LOCAL jit = off;")
+            cur.execute(f"SET LOCAL hnsw.ef_search = {ef_search};")  # Direct value, not parameter
+            cur.execute("SET LOCAL random_page_cost = 1.1;")
 
         # --- Try halfvec fast path; fallback to main vector column ---
         try:
-            sql = f"""
+            with self._get_connection() as conn, self._cursor(conn) as cur:
+                # Apply transaction-scoped hints for HNSW optimization
+                _begin_with_knn_hints(cur, ef_search=32)
+
+                sql = f"""
 WITH
 vec AS (
   SELECT id, (embedding_halfvec <=> {halfvec_cast}) AS dist
@@ -517,9 +521,10 @@ LIMIT %s;
                 # weights + limit
                 w_vec, w_fts, w_alias, limit_chunks,
             ]
-            rows = _exec(sql, params)
+            cur.execute(sql, params)
+            rows = cur.fetchall()
 
-            # Log candidate pooling stats for debugging
+            # Log candidate pooling stats within same transaction
             try:
                 stats_sql = f"""
 WITH
@@ -539,16 +544,26 @@ SELECT
                     q_clean, q_clean, k_vec,
                     q_clean, alias_pattern, alias_pattern
                 ]
-                stats_rows = _exec(stats_sql, stats_params)
+                cur.execute(stats_sql, stats_params)
+                stats_rows = cur.fetchall()
                 if stats_rows:
                     vec_cnt, fts_cnt, alias_cnt, total_cnt = stats_rows[0]
                     logger.info(f"Candidate pooling: vec={vec_cnt}, fts={fts_cnt}, alias={alias_cnt}, total={total_cnt}")
             except Exception as e:
                 logger.debug(f"Could not log candidate stats: {e}")
 
-        except Exception:
-            # Fallback to main vector column
-            sql = f"""
+            # Commit transaction
+            conn.commit()
+
+        except Exception as e:
+            # Halfvec transaction automatically rolled back by context manager exit
+            logger.warning(f"halfvec query failed, falling back to vector column: {e}")
+
+            # Fallback to main vector column with transaction-scoped hints
+            with self._get_connection() as conn, self._cursor(conn) as cur:
+                _begin_with_knn_hints(cur, ef_search=32)
+
+                sql = f"""
 WITH
 vec AS (
   SELECT id, (embedding <=> {vector_cast}) AS dist
@@ -606,16 +621,20 @@ FROM scored, maxes
 ORDER BY hybrid_score DESC NULLS LAST
 LIMIT %s;
 """
-            params = [
-                vec_param, k_vec,
-                q_clean, q_clean, q_clean, k_vec,
-                q_clean, alias_pattern, alias_pattern,
-                vec_param,
-                q_clean,
-                q_clean, q_clean, q_clean,
-                w_vec, w_fts, w_alias, limit_chunks,
-            ]
-            rows = _exec(sql, params)
+                params = [
+                    vec_param, k_vec,
+                    q_clean, q_clean, q_clean, k_vec,
+                    q_clean, alias_pattern, alias_pattern,
+                    vec_param,
+                    q_clean,
+                    q_clean, q_clean, q_clean,
+                    w_vec, w_fts, w_alias, limit_chunks,
+                ]
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+                # Commit transaction
+                conn.commit()
 
         # Format results
         results: List[Dict[str, Any]] = []

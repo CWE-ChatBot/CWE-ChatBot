@@ -107,16 +107,8 @@ def engine():
 
     logger.info(f"✓ Created connection pool: size={eng.pool.size()}, overflow={eng.pool.overflow()}, sslmode={sslmode}")
 
-    # Configure each connection for optimal vector query performance
-    @event.listens_for(eng, "connect")
-    def _on_connect(dbapi_conn, conn_record):
-        """Set session parameters for HNSW index usage."""
-        with dbapi_conn.cursor() as cur:
-            cur.execute("SET jit = off;")                    # Disable JIT compilation
-            cur.execute("SET enable_seqscan = off;")         # Force index usage
-            cur.execute("SET random_page_cost = 1.1;")       # Optimize for SSD
-            cur.execute("SET hnsw.ef_search = 64;")          # HNSW search quality
-        logger.debug(f"Connection {id(dbapi_conn)} configured for vector queries")
+    # Note: Planner hints (enable_seqscan, hnsw.ef_search, etc.) are now applied
+    # via transaction-scoped SET LOCAL in pg_chunk_store.py for better control
 
     # Warm the pool if enabled (default: true)
     if os.getenv("DB_WARM_POOL", "true").lower() == "true":
