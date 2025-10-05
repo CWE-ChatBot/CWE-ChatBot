@@ -40,3 +40,22 @@ AI-powered assistant for MITRE Common Weakness Enumeration (CWE) analysis and cy
 Use the paperclip icon or "Attach Evidence" action to upload vulnerability reports. Supported formats: PDF, text, markdown, JSON. Content is analyzed and incorporated into responses.
 
 Start by selecting your role and asking your first question!
+
+---
+
+[UI]
+# OAuth Authentication Configuration
+# Enables login buttons for specified OAuth providers
+# The 'name' must match the provider_id in the oauth_callback function
+providers = [
+  {
+    "name": "google",
+    "display_name": "Google",
+    "icon": "/public/google.svg"
+  },
+  {
+    "name": "github",
+    "display_name": "GitHub",
+    "icon": "/public/github.svg"
+  }
+]

@@ -65,8 +65,17 @@ class Config:
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     section_boost_value: float = float(os.getenv("SECTION_BOOST_VALUE", "0.15"))
 
-    # Authentication Configuration
+    # Authentication / OAuth / Chainlit
     enable_oauth: bool = os.getenv("ENABLE_OAUTH", "true").lower() == "true"
+    chainlit_url: str = os.getenv("CHAINLIT_URL", "http://localhost:8081")
+    chainlit_auth_secret: Optional[str] = os.getenv("CHAINLIT_AUTH_SECRET")
+    # Providers
+    oauth_google_client_id: Optional[str] = os.getenv("OAUTH_GOOGLE_CLIENT_ID")
+    oauth_google_client_secret: Optional[str] = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET")
+    oauth_github_client_id: Optional[str] = os.getenv("OAUTH_GITHUB_CLIENT_ID")
+    oauth_github_client_secret: Optional[str] = os.getenv("OAUTH_GITHUB_CLIENT_SECRET")
+    # Whitelist (comma-separated emails or @domain suffixes)
+    allowed_users_raw: Optional[str] = os.getenv("ALLOWED_USERS")
     
     def get_pg_config(self) -> Dict[str, Any]:
         """Get PostgreSQL connection configuration."""
@@ -128,6 +137,53 @@ class Config:
             "safety_settings": self.get_llm_safety_settings()
         }
     
+    # ------- OAuth helpers (centralize logic used by the app) -------
+    @property
+    def google_oauth_configured(self) -> bool:
+        return bool(self.oauth_google_client_id and self.oauth_google_client_secret)
+
+    @property
+    def github_oauth_configured(self) -> bool:
+        return bool(self.oauth_github_client_id and self.oauth_github_client_secret)
+
+    @property
+    def oauth_providers_configured(self) -> bool:
+        return self.google_oauth_configured or self.github_oauth_configured
+
+    @property
+    def oauth_ready(self) -> bool:
+        """True if OAuth is enabled, at least one provider is configured, and Chainlit can sign tokens."""
+        return self.enable_oauth and self.oauth_providers_configured and bool(self.chainlit_auth_secret)
+
+    def get_allowed_users(self) -> list[str]:
+        if not self.allowed_users_raw:
+            return []
+        return [u.strip().lower() for u in self.allowed_users_raw.split(",") if u.strip()]
+
+    def is_user_allowed(self, email: str) -> bool:
+        """Email allowlist check supporting full address or @domain suffix."""
+        allow = self.get_allowed_users()
+        if not allow:
+            return True  # no list => allow all authenticated users
+        email_l = (email or "").lower()
+        for rule in allow:
+            if rule.startswith("@"):
+                if email_l.endswith(rule):
+                    return True
+            elif email_l == rule:
+                return True
+        return False
+
+    def validate_oauth(self) -> None:
+        """Optional stricter checks to call at startup when you want to enforce OAuth correctness."""
+        if not self.enable_oauth:
+            return
+        if not self.oauth_providers_configured:
+            # Not fatal if you want "open mode when no providers", but usually this is a misconfig.
+            raise ValueError("ENABLE_OAUTH=true but no OAuth provider is configured (set Google or GitHub client id/secret).")
+        if not self.chainlit_auth_secret:
+            raise ValueError("CHAINLIT_AUTH_SECRET must be set when OAuth is enabled (Chainlit needs it to sign tokens).")
+
     def validate_config(self, *, offline_ai: bool = False) -> None:
         """Validate configuration and raise errors for missing required values."""
         errors = []

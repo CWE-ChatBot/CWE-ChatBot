@@ -45,14 +45,8 @@ _init_ok: bool = False
 
 def requires_authentication() -> bool:
     """Check if authentication is required based on configuration and available providers."""
-    if not app_config.enable_oauth:
-        return False
-
-    # Check if OAuth credentials are actually configured
-    has_google_oauth = bool(os.getenv("OAUTH_GOOGLE_CLIENT_ID") and os.getenv("OAUTH_GOOGLE_CLIENT_SECRET"))
-    has_github_oauth = bool(os.getenv("OAUTH_GITHUB_CLIENT_ID") and os.getenv("OAUTH_GITHUB_CLIENT_SECRET"))
-
-    return has_google_oauth or has_github_oauth
+    # Require auth only when OAuth is enabled AND at least one provider is configured.
+    return app_config.enable_oauth and app_config.oauth_providers_configured
 
 
 def is_user_authenticated() -> bool:
@@ -95,6 +89,13 @@ def initialize_components() -> bool:
             })
             _init_ok = False
             # Still attempt partial initialization to provide a helpful UI message
+
+        # Optional: Validate OAuth configuration if enabled
+        try:
+            app_config.validate_oauth()
+        except Exception as oauth_err:
+            logger.log_exception("OAuth configuration error", oauth_err, extra_context={"component": "startup"})
+            # Warning only - don't fail startup, will run in open mode
 
         # Check for database configuration
         # Option 1: Private IP with password auth (new production setup)
@@ -202,8 +203,8 @@ def initialize_components() -> bool:
         if not app_config.enable_oauth:
             logger.info("OAuth mode: disabled (open access)")
         else:
-            has_google_oauth = bool(os.getenv("OAUTH_GOOGLE_CLIENT_ID") and os.getenv("OAUTH_GOOGLE_CLIENT_SECRET"))
-            has_github_oauth = bool(os.getenv("OAUTH_GITHUB_CLIENT_ID") and os.getenv("OAUTH_GITHUB_CLIENT_SECRET"))
+            has_google_oauth = app_config.google_oauth_configured
+            has_github_oauth = app_config.github_oauth_configured
             if has_google_oauth or has_github_oauth:
                 providers = []
                 if has_google_oauth:
@@ -265,7 +266,21 @@ def oauth_callback(
             name = raw_user_data.get("name")
             avatar_url = raw_user_data.get("picture")
         elif provider_id == "github":
+            # GitHub email might be in different places depending on privacy settings
             email = raw_user_data.get("email")
+            # If email is None or empty, try to get from emails array (for private emails)
+            if not email and "emails" in raw_user_data:
+                # GitHub returns emails as array, get primary verified email
+                for email_obj in raw_user_data.get("emails", []):
+                    if email_obj.get("primary") and email_obj.get("verified"):
+                        email = email_obj.get("email")
+                        break
+                # Fallback to first verified email
+                if not email:
+                    for email_obj in raw_user_data.get("emails", []):
+                        if email_obj.get("verified"):
+                            email = email_obj.get("email")
+                            break
             name = raw_user_data.get("name") or raw_user_data.get("login")
             avatar_url = raw_user_data.get("avatar_url")
         else:
@@ -277,26 +292,9 @@ def oauth_callback(
             return None
 
         # Check if the user is in the whitelist
-        allowed_users_str = os.getenv("ALLOWED_USERS")
-        if allowed_users_str:
-            allowed_users = [user.strip() for user in allowed_users_str.split(",")]
-            
-            is_allowed = False
-            for allowed_user in allowed_users:
-                if allowed_user.startswith("@"):
-                    # Domain-based check
-                    if email.endswith(allowed_user):
-                        is_allowed = True
-                        break
-                else:
-                    # Email-based check
-                    if email == allowed_user:
-                        is_allowed = True
-                        break
-            
-            if not is_allowed:
-                logger.warning(f"Unauthorized user: {email}")
-                return None
+        if not app_config.is_user_allowed(email):
+            logger.warning(f"Unauthorized user: {email}")
+            return None
 
         # Create user with provider-specific data
         user = cl.User(
@@ -975,9 +973,8 @@ async def on_stop() -> None:
 
 # Conditionally register OAuth callback only if OAuth is enabled AND provider credentials are set
 if app_config.enable_oauth:
-    # Check if any OAuth provider credentials are actually configured
-    has_google_oauth = bool(os.getenv("OAUTH_GOOGLE_CLIENT_ID") and os.getenv("OAUTH_GOOGLE_CLIENT_SECRET"))
-    has_github_oauth = bool(os.getenv("OAUTH_GITHUB_CLIENT_ID") and os.getenv("OAUTH_GITHUB_CLIENT_SECRET"))
+    has_google_oauth = app_config.google_oauth_configured
+    has_github_oauth = app_config.github_oauth_configured
 
     if has_google_oauth or has_github_oauth:
         # Register the OAuth callback decorator

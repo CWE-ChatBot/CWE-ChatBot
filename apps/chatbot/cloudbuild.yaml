@@ -1,52 +1,29 @@
 # Cloud Build configuration for CWE ChatBot deployment
 steps:
-  # Build the Docker image
+  # Build the Docker image from project root (Dockerfile expects apps/chatbot/... paths)
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
-      - '--tag=us-central1-docker.pkg.dev/$PROJECT_ID/chatbot-repo/cwe-chatbot:$SHORT_SHA'
-      - '--tag=us-central1-docker.pkg.dev/$PROJECT_ID/chatbot-repo/cwe-chatbot:latest'
-      - './apps/chatbot'
-  
-  # Push the Docker image to Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/chatbot-repo/cwe-chatbot:$SHORT_SHA'
-  
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/chatbot-repo/cwe-chatbot:latest'
-  
-  # Deploy to Cloud Run with secure configuration
-  - name: 'gcr.io/cloud-builders/gcloud'
-    args:
-      - 'run'
-      - 'deploy'
-      - 'cwe-chatbot'
-      - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/chatbot-repo/cwe-chatbot:$SHORT_SHA'
-      - '--region=us-central1'
-      - '--service-account=cwe-chatbot-sa@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--ingress=internal-and-cloud-load-balancing'
-      - '--allow-unauthenticated'
-      - '--port=8080'
-      - '--memory=512Mi'
-      - '--cpu=1000m'
-      - '--min-instances=0'
-      - '--max-instances=10'
-      - '--timeout=300'
-      - '--set-env-vars=ENVIRONMENT=production'
+      - '--tag=gcr.io/$PROJECT_ID/cwe-chatbot:latest'
+      - '--tag=gcr.io/$PROJECT_ID/cwe-chatbot:oauth-refactor'
+      - '-f'
+      - 'apps/chatbot/Dockerfile'
+      - '.'
 
-# Build configuration
-options:
-  logging: CLOUD_LOGGING_ONLY
-  machineType: E2_STANDARD_2
+  # Push the Docker image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/cwe-chatbot:latest'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/cwe-chatbot:oauth-refactor'
 
 # Timeout for the entire build
 timeout: 1800s
 
-# Substitutions for dynamic values
-substitutions:
-  _REGION: us-central1
-  _SERVICE_NAME: cwe-chatbot
+# Build configuration
+options:
+  logging: CLOUD_LOGGING_ONLY
