@@ -1,3 +1,5 @@
+.auditor_venv
+.pf
 docs/stories/3.5
 docs/stories/4.1
 .files
