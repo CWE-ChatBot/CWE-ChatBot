@@ -6,6 +6,7 @@ Prevents re-generation of expensive embeddings on failures.
 import json
 import pickle
 import hashlib
+import re
 import numpy as np
 from pathlib import Path
 from datetime import datetime
@@ -59,10 +60,33 @@ class EmbeddingCache:
         return hashlib.md5(key_data.encode()).hexdigest()
 
     def _get_cache_filename(self, cache_key: str, cwe_id: str = None) -> Path:
-        """Get cache file path for embedding with optional CWE ID."""
+        """
+        Get cache file path for embedding with optional CWE ID.
+
+        Security: Sanitizes CWE ID to prevent path traversal attacks.
+
+        Args:
+            cache_key: MD5 hash of embedding metadata
+            cwe_id: Optional CWE identifier (e.g., "CWE-79")
+
+        Returns:
+            Path: Safe cache file path
+
+        Raises:
+            ValueError: If CWE ID format is invalid or contains path traversal
+        """
         if cwe_id:
+            # Security: Sanitize CWE ID to prevent path traversal (CRIT-001)
+            # Remove all characters except alphanumeric, dash, and underscore
+            safe_id = re.sub(r'[^a-zA-Z0-9\-_]', '', cwe_id)
+
+            # Validate format: must start with "CWE-" and have numeric ID
+            if not safe_id or not re.match(r'^CWE-\d+$', safe_id):
+                logger.error(f"Invalid CWE ID format rejected: {cwe_id}")
+                raise ValueError(f"Invalid CWE ID format: {cwe_id}")
+
             # Include CWE ID in filename for easier identification
-            return self.cache_dir / f"embedding_{cwe_id}_{cache_key}.pkl"
+            return self.cache_dir / f"embedding_{safe_id}_{cache_key}.pkl"
         else:
             # Fallback to original format
             return self.cache_dir / f"embedding_{cache_key}.pkl"

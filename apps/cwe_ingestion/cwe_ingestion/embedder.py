@@ -11,6 +11,7 @@ and align all embeddings to 3072 dimensions used in production (pgvector).
 import asyncio
 import logging
 import os
+import uuid
 from typing import Any, List, Optional, Tuple, cast
 
 import numpy as np
@@ -169,10 +170,11 @@ class GeminiEmbedder:
                 "Please set it with your Google AI API key."
             )
 
-        # Store only masked version for error handling
-        self.api_key_masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "[PROTECTED]"
+        # Security: Generate correlation ID for error tracking without exposing API key (HIGH-001)
+        self.correlation_id = str(uuid.uuid4())[:8]
         self.is_local_model = False
         self.embedding_dimension = 3072  # Requested 3072D for enhanced semantic precision
+        logger.info(f"GeminiEmbedder initialized (correlation: {self.correlation_id})")
 
         # Configure the Gemini API
         try:
@@ -253,9 +255,10 @@ class GeminiEmbedder:
             return embedding
 
         except Exception as e:
-            logger.error(f"Failed to generate Gemini embedding: {e}")
-            # Use masked API key in error messages - no raw key exposure
-            raise Exception(f"Gemini API error (key: {self.api_key_masked}): {str(e)}")
+            # Security: Use correlation ID instead of API key for error tracking (HIGH-001)
+            error_type = type(e).__name__
+            logger.error(f"Gemini API error (correlation: {self.correlation_id}): {error_type}")
+            raise Exception(f"Gemini API error (correlation: {self.correlation_id})")
 
     def embed_batch(self, texts: List[str], max_workers: int = 5) -> List[np.ndarray]:
         """
