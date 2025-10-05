@@ -4,7 +4,7 @@ It loads the environment and then defines the Config object.
 """
 import os
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from .config.env_loader import load_environments
 
 # Load context-specific environment variables from .env files if available.
@@ -104,7 +104,7 @@ class Config:
             "top_k": self.llm_top_k,
         }
 
-    def get_llm_safety_settings(self) -> Optional[Dict[str, Any]]:
+    def get_llm_safety_settings(self) -> Optional[List[Dict[str, Any]]]:
         """Get LLM safety settings based on configuration."""
         if not self.llm_safety_permissive:
             # Use default safety settings (more restrictive)
