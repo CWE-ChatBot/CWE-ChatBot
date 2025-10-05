@@ -234,16 +234,18 @@ def initialize_components() -> bool:
 
 
 @cl.set_chat_profiles
-def set_profiles():
+async def set_profiles(user: Optional[cl.User] = None):
     """Expose personas as top-bar chat profiles for quick access."""
     return create_chat_profiles()
 
 
-def oauth_callback(
+@cl.oauth_callback
+async def oauth_callback(
     provider_id: str,
     token: str,
-    raw_user_data: Dict[str, str],
+    raw_user_data: Dict[str, Any],
     default_user: cl.User,
+    id_token: Optional[str] = None,
 ) -> Optional[cl.User]:
     """
     Handle OAuth callback for Google and GitHub providers.
@@ -251,7 +253,7 @@ def oauth_callback(
     Args:
         provider_id: OAuth provider ("google" or "github")
         token: OAuth access token
-        raw_user_data: Raw user data from OAuth provider
+        raw_user_data: Raw user data from OAuth provider (can contain nested dicts/lists)
         default_user: Default user object from Chainlit
 
     Returns:
@@ -664,7 +666,7 @@ async def main(message: cl.Message):
                     logger.info("Creating Action buttons for CWE Analyzer (initial)")
                     try:
                         actions = [
-                        cl.Action(name="ask_question", label="❓ Ask a Question", description="Ask a follow-up question about the analysis", payload={"action": "ask"})
+                        cl.Action(name="ask_question", label="❓ Ask a Question", payload={"action": "ask"})
                     ]
                         logger.info(f"Actions created successfully: {[a.name for a in actions]}")
 
@@ -682,7 +684,7 @@ async def main(message: cl.Message):
                         logger.error(f"Action button error message: {str(action_error)}")
                         logger.error(f"Action button error details: {repr(action_error)}")
                         if hasattr(action_error, 'errors'):
-                            logger.error(f"Validation errors: {action_error.errors()}")
+                            logger.error(f"Validation errors: {action_error.errors()}")  # type: ignore[attr-defined]
                         logger.log_exception("Failed to create/send Action buttons", action_error)
                         # Send message without actions as fallback
                         await cl.Message(
@@ -694,7 +696,7 @@ async def main(message: cl.Message):
                     logger.info("Creating Exit button for CWE Analyzer (question mode)")
                     try:
                         actions = [
-                            cl.Action(name="exit_question_mode", label="🚪 Exit Question Mode", description="Return to analysis mode", payload={"action": "exit"})
+                            cl.Action(name="exit_question_mode", label="🚪 Exit Question Mode", payload={"action": "exit"})
                         ]
                         logger.info(f"Exit action created successfully: {[a.name for a in actions]}")
                         message = cl.Message(
@@ -719,7 +721,7 @@ async def main(message: cl.Message):
             logger.warning("No current context found - cannot show Action buttons")
 
         # Log successful interaction
-        current_persona = current_ctx.persona if current_ctx else persona
+        current_persona = current_ctx.persona if current_ctx else "unknown"
         logger.info(f"Successfully processed query for {current_persona}, retrieved {result.get('chunk_count', 0)} chunks")
 
     except Exception as e:
@@ -853,9 +855,11 @@ async def collect_detailed_feedback():
         if feedback_prompt:
             # Store detailed feedback for analysis
             session_id = cl.context.session.id
+            # feedback_prompt is a dict with 'output' key containing the user's response
+            feedback_content = feedback_prompt.get("output", "") if isinstance(feedback_prompt, dict) else str(feedback_prompt)
             cl.user_session.set("detailed_feedback", {
                 "timestamp": time.time(),
-                "content": feedback_prompt.content,
+                "content": feedback_content,
                 "session_id": session_id
             })
 
@@ -971,14 +975,13 @@ async def on_stop() -> None:
         logger.log_exception("Shutdown cleanup failed", e)
 
 
-# Conditionally register OAuth callback only if OAuth is enabled AND provider credentials are set
+# Log OAuth configuration status
 if app_config.enable_oauth:
     has_google_oauth = app_config.google_oauth_configured
     has_github_oauth = app_config.github_oauth_configured
 
     if has_google_oauth or has_github_oauth:
-        # Register the OAuth callback decorator
-        oauth_callback = cl.oauth_callback(oauth_callback)
+        # OAuth callback already registered via @cl.oauth_callback decorator
         providers = []
         if has_google_oauth:
             providers.append("Google")
