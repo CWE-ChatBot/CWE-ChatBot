@@ -16,8 +16,6 @@ import logging
 import os
 from typing import Any, Dict, Tuple
 
-from flask import Flask, Request, Response, jsonify, request
-
 # Optional imports - will fail gracefully if not available
 try:
     import pikepdf
@@ -30,8 +28,6 @@ try:
     HAS_PDFMINER = True
 except ImportError:
     HAS_PDFMINER = False
-
-app = Flask(__name__)
 
 # Configure logging (metadata only, no content)
 logging.basicConfig(
@@ -46,86 +42,16 @@ MAX_PAGES = 50
 MAX_OUTPUT_CHARS = 1_000_000
 
 
-@app.after_request
-def add_security_headers(response: Response) -> Response:
-    """Add security headers to all responses."""
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['Referrer-Policy'] = 'no-referrer'
-    response.headers['X-Frame-Options'] = 'DENY'
-    return response
-
-
-@app.route('/', methods=['POST'])
-def handle_pdf() -> Tuple[Response, int]:
-    """
-    Handle PDF processing request.
-
-    Expected: POST with Content-Type: application/pdf
-    Returns: JSON with {text: str, pages: int, sanitized: bool}
-    """
-    # Validate Content-Type
-    if request.content_type != 'application/pdf':
-        logger.warning(f"Invalid Content-Type: {request.content_type}")
-        return jsonify({'error': 'invalid_content_type'}), 415
-
-    # Get raw PDF data
-    raw_data = request.get_data(cache=False, as_text=False)
-
-    # Validate size
-    if not raw_data or len(raw_data) > MAX_BYTES:
-        logger.warning(f"Payload size violation: {len(raw_data) if raw_data else 0} bytes")
-        return jsonify({'error': 'too_large'}), 413
-
-    # Validate PDF magic bytes
-    if not raw_data.startswith(b'%PDF-'):
-        logger.warning("PDF magic bytes missing")
-        return jsonify({'error': 'pdf_magic_missing'}), 422
-
-    # Check dependencies
-    if not HAS_PIKEPDF or not HAS_PDFMINER:
-        logger.error("PDF processing libraries not available")
-        return jsonify({'error': 'pdf_processing_unavailable'}), 500
-
-    # Sanitize PDF
-    try:
-        sanitized_data = sanitize_pdf(raw_data)
-    except ValueError as e:
-        logger.warning(f"PDF sanitization failed: {str(e)}")
-        return jsonify({'error': str(e)}), 422
-    except Exception as e:
-        logger.error(f"PDF sanitization error: {type(e).__name__}")
-        return jsonify({'error': 'sanitization_failed'}), 422
-
-    # Extract text
-    try:
-        text = extract_text_from_pdf(sanitized_data, max_pages=MAX_PAGES)
-    except Exception as e:
-        logger.error(f"Text extraction error: {type(e).__name__}")
-        return jsonify({'error': 'extraction_failed'}), 422
-
-    # Count pages
-    page_count = count_pages(sanitized_data)
-
-    # Truncate text
-    if len(text) > MAX_OUTPUT_CHARS:
-        text = text[:MAX_OUTPUT_CHARS]
-        logger.info(f"Text truncated from {len(text)} to {MAX_OUTPUT_CHARS} chars")
-
-    # Log metadata only
-    logger.info(f"PDF processed: {page_count} pages, {len(text)} chars")
-
-    return jsonify({
-        'text': text,
-        'pages': page_count,
-        'sanitized': True
-    }), 200
-
-
 def sanitize_pdf(pdf_data: bytes) -> bytes:
     """
-    Sanitize PDF by removing dangerous features.
+    Sanitize PDF by removing dangerous elements.
 
-    Security: Removes JavaScript, embedded files, XFA forms, auto-actions.
+    Removes:
+    - /OpenAction (auto-execute on open)
+    - /AA (additional actions)
+    - JavaScript
+    - XFA forms
+    - Embedded files
 
     Args:
         pdf_data: Raw PDF bytes
@@ -134,77 +60,73 @@ def sanitize_pdf(pdf_data: bytes) -> bytes:
         Sanitized PDF bytes
 
     Raises:
-        ValueError: If PDF is encrypted or invalid
+        Exception: If PDF cannot be sanitized
     """
-    try:
-        pdf = pikepdf.open(io.BytesIO(pdf_data))
-    except pikepdf.PasswordError:
-        raise ValueError('encrypted_pdf_unsupported')
-    except Exception as e:
-        logger.error(f"Failed to open PDF: {type(e).__name__}")
-        raise ValueError('invalid_pdf')
+    if not HAS_PIKEPDF:
+        raise ImportError("pikepdf not available")
 
-    # Check if PDF has any content (not image-only)
-    # This is a basic check - more sophisticated checks could be added
-    if len(pdf.pages) > MAX_PAGES:
-        raise ValueError('too_many_pages')
+    pdf = pikepdf.open(io.BytesIO(pdf_data))
 
-    # Remove dangerous features
-    try:
-        # Remove auto-execute actions
-        if '/OpenAction' in pdf.root:
-            del pdf.root['/OpenAction']
+    # Remove auto-execute actions
+    if '/OpenAction' in pdf.Root:
+        del pdf.Root['/OpenAction']
 
-        if '/AA' in pdf.root:
-            del pdf.root['/AA']
+    if '/AA' in pdf.Root:
+        del pdf.Root['/AA']
 
-        # Remove JavaScript
-        if '/Names' in pdf.root and '/JavaScript' in pdf.root['/Names']:
-            del pdf.root['/Names']['/JavaScript']
+    # Remove JavaScript
+    if '/Names' in pdf.Root:
+        names = pdf.Root['/Names']
+        if '/JavaScript' in names:
+            del names['/JavaScript']
 
-        # Remove XFA forms (can contain embedded code)
-        if '/AcroForm' in pdf.root:
-            acro_form = pdf.root['/AcroForm']
-            if '/XFA' in acro_form:
-                del acro_form['/XFA']
-            if '/NeedAppearances' in acro_form:
-                del acro_form['/NeedAppearances']
+    # Remove XFA forms
+    if '/AcroForm' in pdf.Root:
+        acro_form = pdf.Root['/AcroForm']
+        if '/XFA' in acro_form:
+            del acro_form['/XFA']
 
-        # Remove embedded files
-        if '/Names' in pdf.root and '/EmbeddedFiles' in pdf.root['/Names']:
-            del pdf.root['/Names']['/EmbeddedFiles']
+    # Remove embedded files
+    if '/Names' in pdf.Root:
+        names = pdf.Root['/Names']
+        if '/EmbeddedFiles' in names:
+            del names['/EmbeddedFiles']
 
-    except Exception as e:
-        logger.warning(f"Error during PDF sanitization: {type(e).__name__}")
-        # Continue with partially sanitized PDF
+    # Save to bytes
+    output = io.BytesIO()
+    pdf.save(output)
+    pdf.close()
 
-    # Save to BytesIO (memory only, no disk writes)
-    output_buffer = io.BytesIO()
-    pdf.save(output_buffer)
-    return output_buffer.getvalue()
+    return output.getvalue()
 
 
-def extract_text_from_pdf(pdf_data: bytes, max_pages: int = MAX_PAGES) -> str:
+def extract_pdf_text(pdf_data: bytes) -> str:
     """
-    Extract text from sanitized PDF.
+    Extract text from PDF using pdfminer.
 
     Args:
         pdf_data: Sanitized PDF bytes
-        max_pages: Maximum pages to process
 
     Returns:
         Extracted text
+
+    Raises:
+        Exception: If text extraction fails
     """
-    try:
-        text = extract_text(io.BytesIO(pdf_data), maxpages=max_pages) or ''
-        return text
-    except Exception as e:
-        logger.error(f"pdfminer extraction failed: {type(e).__name__}")
-        # Check if it's an image-only PDF
-        raise ValueError('extraction_failed')
+    if not HAS_PDFMINER:
+        raise ImportError("pdfminer.six not available")
+
+    text = extract_text(io.BytesIO(pdf_data))
+
+    # Truncate to max chars
+    if len(text) > MAX_OUTPUT_CHARS:
+        text = text[:MAX_OUTPUT_CHARS]
+        text += "\n\n[Content truncated at 1,000,000 characters]"
+
+    return text
 
 
-def count_pages(pdf_data: bytes) -> int:
+def count_pdf_pages(pdf_data: bytes) -> int:
     """
     Count pages in PDF.
 
@@ -212,21 +134,147 @@ def count_pages(pdf_data: bytes) -> int:
         pdf_data: PDF bytes
 
     Returns:
-        Page count
+        Number of pages
     """
+    if not HAS_PIKEPDF:
+        return 0
+
     try:
-        with pikepdf.open(io.BytesIO(pdf_data)) as pdf:
-            return len(pdf.pages)
+        pdf = pikepdf.open(io.BytesIO(pdf_data))
+        page_count = len(pdf.pages)
+        pdf.close()
+        return page_count
     except Exception:
         return 0
 
 
-# Cloud Functions v2 entry point
-def function_entry(request: Request) -> Tuple[Response, int]:
+def pdf_worker(request):
     """
-    Cloud Functions v2 entry point.
+    Cloud Functions v2 entry point for PDF processing.
 
-    This function is called by Cloud Functions runtime.
+    This is a simple HTTP function that processes PDFs with:
+    - Magic byte validation
+    - Size limits (10MB, 50 pages)
+    - PDF sanitization (remove JavaScript, etc.)
+    - Text extraction
+    - Memory-only processing (no disk writes)
+
+    Args:
+        request: Flask request object from Cloud Functions
+
+    Returns:
+        Tuple of (response_body, status_code, headers)
     """
-    with app.app_context():
-        return app.full_dispatch_request()
+    # Security headers
+    headers = {
+        'Content-Type': 'application/json',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'X-Frame-Options': 'DENY',
+    }
+
+    # Only accept POST
+    if request.method != 'POST':
+        return (
+            json.dumps({'error': 'method_not_allowed'}),
+            405,
+            headers
+        )
+
+    # Check library availability
+    if not HAS_PIKEPDF or not HAS_PDFMINER:
+        logger.error("Required libraries not available")
+        return (
+            json.dumps({'error': 'server_misconfigured'}),
+            500,
+            headers
+        )
+
+    # Get request body
+    try:
+        pdf_data = request.get_data()
+    except Exception as e:
+        logger.error(f"Failed to get request data: {e}")
+        return (
+            json.dumps({'error': 'invalid_request'}),
+            400,
+            headers
+        )
+
+    # Validate size
+    if len(pdf_data) > MAX_BYTES:
+        logger.warning(f"PDF too large: {len(pdf_data)} bytes")
+        return (
+            json.dumps({'error': 'pdf_too_large'}),
+            413,
+            headers
+        )
+
+    # Validate PDF magic bytes
+    if not pdf_data.startswith(b'%PDF-'):
+        logger.warning("PDF magic bytes missing")
+        return (
+            json.dumps({'error': 'pdf_magic_missing'}),
+            422,
+            headers
+        )
+
+    # Count pages
+    try:
+        page_count = count_pdf_pages(pdf_data)
+        if page_count > MAX_PAGES:
+            logger.warning(f"PDF has too many pages: {page_count}")
+            return (
+                json.dumps({'error': 'pdf_too_many_pages'}),
+                422,
+                headers
+            )
+    except Exception as e:
+        logger.error(f"Failed to count pages: {e}")
+        return (
+            json.dumps({'error': 'pdf_corrupted'}),
+            422,
+            headers
+        )
+
+    # Sanitize PDF
+    try:
+        sanitized_data = sanitize_pdf(pdf_data)
+        logger.info(f"PDF sanitized successfully: {len(sanitized_data)} bytes")
+    except Exception as e:
+        logger.error(f"PDF sanitization failed: {e}")
+        return (
+            json.dumps({'error': 'pdf_sanitization_failed'}),
+            422,
+            headers
+        )
+
+    # Extract text
+    try:
+        text = extract_pdf_text(sanitized_data)
+        logger.info(f"Text extracted: {len(text)} characters, {page_count} pages")
+    except Exception as e:
+        logger.error(f"Text extraction failed: {e}")
+        return (
+            json.dumps({'error': 'pdf_processing_failed'}),
+            500,
+            headers
+        )
+
+    # Return success response
+    response = {
+        'text': text,
+        'pages': page_count,
+        'sanitized': True,
+        'metadata': {
+            'original_size': len(pdf_data),
+            'sanitized_size': len(sanitized_data),
+            'text_length': len(text)
+        }
+    }
+
+    return (
+        json.dumps(response),
+        200,
+        headers
+    )
