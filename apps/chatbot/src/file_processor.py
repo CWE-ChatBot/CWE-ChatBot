@@ -1,45 +1,308 @@
 #!/usr/bin/env python3
 """
-File Processing - Evidence ingestion for all personas
-Processes uploaded files (PDF, text/markdown/JSON) for vulnerability information extraction.
-Particularly helpful for CVE Creator, but available to every persona.
+File Processing - Ephemeral Document Ingestion (Story 4.3)
+Processes uploaded files (PDF via Cloud Functions, text locally) for vulnerability information extraction.
+
+Security Features:
+- PDF isolation via Cloud Functions v2 worker (OIDC authenticated)
+- Content type detection via magic bytes (not file extension)
+- Strict text validation (NUL bytes, UTF-8, printable ratio)
+- Memory-only processing (no disk persistence)
+- Size limits (10MB) and truncation (1M chars)
+- No content logging
 """
 
 import logging
+import os
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 import chainlit as cl
-import io
-import tempfile
 import asyncio
+
+# Optional imports for OIDC and HTTP client
+try:
+    import google.auth
+    import google.auth.transport.requests
+    from google.auth import compute_engine
+    HAS_GOOGLE_AUTH = True
+except ImportError:
+    HAS_GOOGLE_AUTH = False
+
+try:
+    import httpx
+    HAS_HTTPX = True
+except ImportError:
+    HAS_HTTPX = False
+
+try:
+    import chardet
+    HAS_CHARDET = True
+except ImportError:
+    HAS_CHARDET = False
 
 logger = logging.getLogger(__name__)
 
 
 class FileProcessor:
     """
-    Processes uploaded files for all personas (CVE Creator, Developer, PSIRT, etc.).
-    Handles PDF & text extraction and content preparation for vulnerability analysis
-    and CWE/CVE-focused responses.
+    Ephemeral Document Ingestion processor (Story 4.3).
+
+    Handles:
+    - PDF processing via isolated Cloud Functions v2 worker
+    - Text file validation and processing (local, in-memory)
+    - Content type detection (magic bytes, not extensions)
+    - OIDC authentication for service-to-service calls
     """
 
     def __init__(self) -> None:
-        """Initialize file processor - supports PDF & text; usable by all personas."""
-        self.supported_types = [
-            'application/pdf',
-            'text/plain',
-            'text/markdown',
-            'application/json'
-        ]
-        # Maximum file size: 10MB for PDF documents
+        """Initialize ephemeral file processor."""
+        # Maximum file size: 10MB (AC1, AC6)
         self.max_file_size_mb = 10
         self.max_file_size_bytes = self.max_file_size_mb * 1024 * 1024
-        # Cap PDF pages to avoid extremely large documents
-        self.max_pdf_pages = 30
+
+        # Maximum output: 1M chars (AC4)
+        self.max_output_chars = 1_000_000
+
+        # PDF worker configuration
+        self.pdf_worker_url = os.getenv('PDF_WORKER_URL')
+        self.pdf_worker_timeout = 55  # AC6: Client timeout ≤ 55s
+
+        # Text validation thresholds
+        self.min_printable_ratio = 0.9  # AC3
+        self.max_line_length = 2 * 1024 * 1024  # AC3: 2MB per line
+
+    def detect_file_type(self, content: bytes) -> str:
+        """
+        Detect file type via magic bytes (content sniffing).
+
+        AC1: File type determined via content sniffing, not extensions.
+
+        Args:
+            content: Raw file bytes
+
+        Returns:
+            'pdf', 'text', or 'unknown'
+        """
+        if not content:
+            return 'unknown'
+
+        # PDF magic bytes
+        if content.startswith(b'%PDF-'):
+            return 'pdf'
+
+        # Text validation: NUL byte check
+        if b'\x00' in content:
+            return 'unknown'
+
+        # Try UTF-8 decode and check printable ratio
+        try:
+            text = content.decode('utf-8', errors='strict')
+            # Calculate printable ratio (allow \n, \r, \t)
+            printable = sum(1 for c in text if c.isprintable() or c in '\n\r\t')
+            ratio = printable / len(text) if text else 0
+
+            if ratio >= self.min_printable_ratio:
+                return 'text'
+        except UnicodeDecodeError:
+            pass
+
+        return 'unknown'
+
+    async def get_oidc_token(self, audience: str) -> str:
+        """
+        Fetch OIDC ID token from metadata server.
+
+        AC5: OIDC authentication for service-to-service calls.
+
+        Args:
+            audience: Target audience (function URL)
+
+        Returns:
+            OIDC ID token
+
+        Raises:
+            RuntimeError: If google-auth not available or token fetch fails
+        """
+        if not HAS_GOOGLE_AUTH:
+            raise RuntimeError("google-auth library required for OIDC authentication")
+
+        try:
+            credentials = compute_engine.IDTokenCredentials(
+                request=google.auth.transport.requests.Request(),
+                target_audience=audience
+            )
+            credentials.refresh(google.auth.transport.requests.Request())
+            return credentials.token
+        except Exception as e:
+            logger.error(f"OIDC token fetch failed: {type(e).__name__}")
+            raise RuntimeError("auth_failed")
+
+    async def call_pdf_worker(self, pdf_bytes: bytes) -> Dict[str, Any]:
+        """
+        Call Cloud Functions PDF worker with OIDC authentication.
+
+        AC2, AC5, AC6: Isolated PDF processing with OIDC auth.
+
+        Args:
+            pdf_bytes: Raw PDF bytes
+
+        Returns:
+            {'text': str, 'pages': int, 'sanitized': bool}
+
+        Raises:
+            ValueError: With error code for user-friendly messages
+        """
+        if not self.pdf_worker_url:
+            raise ValueError("pdf_worker_not_configured")
+
+        if not HAS_HTTPX:
+            raise ValueError("httpx library required for PDF processing")
+
+        # Get OIDC token
+        try:
+            token = await self.get_oidc_token(audience=self.pdf_worker_url)
+        except RuntimeError:
+            raise ValueError("auth_failed")
+
+        # Call worker with single retry on transient 5xx (AC6)
+        max_attempts = 2
+        for attempt in range(max_attempts):
+            try:
+                async with httpx.AsyncClient(timeout=self.pdf_worker_timeout) as client:
+                    response = await client.post(
+                        self.pdf_worker_url,
+                        content=pdf_bytes,
+                        headers={
+                            'Authorization': f'Bearer {token}',
+                            'Content-Type': 'application/pdf'
+                        },
+                        follow_redirects=False  # Security: no redirects
+                    )
+
+                    # Check response status
+                    if response.status_code == 200:
+                        return response.json()
+                    elif response.status_code == 413:
+                        raise ValueError("too_large")
+                    elif response.status_code == 422:
+                        # Parse error code from response
+                        try:
+                            error_data = response.json()
+                            error_code = error_data.get('error', 'invalid_content')
+                        except:
+                            error_code = 'invalid_content'
+                        raise ValueError(error_code)
+                    elif response.status_code in (401, 403):
+                        raise ValueError("auth_failed")
+                    elif response.status_code >= 500:
+                        # Retry on 5xx if first attempt
+                        if attempt < max_attempts - 1:
+                            logger.warning(f"PDF worker returned {response.status_code}, retrying...")
+                            await asyncio.sleep(0.5 * (2 ** attempt))  # Jittered backoff
+                            continue
+                        raise ValueError("pdf_processing_failed")
+                    else:
+                        raise ValueError("pdf_processing_failed")
+
+            except httpx.TimeoutException:
+                raise ValueError("timeout")
+            except httpx.HTTPError as e:
+                logger.error(f"HTTP error calling PDF worker: {e}")
+                raise ValueError("pdf_processing_failed")
+
+        raise ValueError("pdf_processing_failed")
+
+    async def process_text_file(self, content: bytes) -> str:
+        """
+        Process text file with strict validation (AC3).
+
+        Security:
+        - NUL byte rejection
+        - UTF-8 strict decoding
+        - Printable ratio check (≥0.9)
+        - Line length limit (2MB)
+        - Character truncation (1M)
+
+        Args:
+            content: Raw file bytes
+
+        Returns:
+            Validated and truncated text
+
+        Raises:
+            ValueError: With error code if validation fails
+        """
+        # Reject NUL bytes (AC3)
+        if b'\x00' in content:
+            raise ValueError("binary_text_rejected")
+
+        # UTF-8 decode with strict errors (AC3)
+        try:
+            text = content.decode('utf-8', errors='strict')
+        except UnicodeDecodeError:
+            # Fallback: try chardet detection once (AC3)
+            if HAS_CHARDET:
+                detected = chardet.detect(content)
+                if detected['confidence'] < 0.8:
+                    raise ValueError("decoding_failed")
+                try:
+                    text = content.decode(detected['encoding'], errors='strict')
+                except:
+                    raise ValueError("decoding_failed")
+            else:
+                raise ValueError("decoding_failed")
+
+        # Check printable ratio (AC3)
+        printable = sum(1 for c in text if c.isprintable() or c in '\n\r\t')
+        ratio = printable / len(text) if text else 0
+        if ratio < self.min_printable_ratio:
+            raise ValueError("binary_text_rejected")
+
+        # Reject pathologically long lines (AC3)
+        lines = text.split('\n')
+        if any(len(line) > self.max_line_length for line in lines):
+            raise ValueError("line_too_long")
+
+        # Truncate to max chars (AC4)
+        if len(text) > self.max_output_chars:
+            text = text[:self.max_output_chars]
+            logger.info(f"Text truncated from {len(text)} to {self.max_output_chars} chars")
+            return text + "\n\n[Content truncated at 1,000,000 characters]"
+
+        return text
+
+    def get_friendly_error(self, error_code: str) -> str:
+        """Map error codes to user-friendly messages (AC7)."""
+        messages = {
+            'too_large': 'File exceeds 10MB limit. Please upload a smaller file.',
+            'too_many_pages': 'PDF exceeds 50 pages. Please split into smaller documents.',
+            'timeout': 'File processing timed out. Try a smaller file.',
+            'invalid_content_type': 'Unsupported file type. Please upload PDF or text files.',
+            'pdf_magic_missing': 'File does not appear to be a valid PDF.',
+            'encrypted_pdf_unsupported': 'Encrypted PDFs are not supported. Please remove password protection.',
+            'image_only_pdf_unsupported': 'Image-only PDFs require OCR which is not supported.',
+            'binary_text_rejected': 'File contains binary data and cannot be processed as text.',
+            'text_encoding_failed': 'Text encoding could not be determined.',
+            'text_line_too_long': 'File contains excessively long lines.',
+            'pdf_too_many_pages': 'PDF exceeds 50 pages. Please split into smaller documents.',
+            'pdf_corrupted': 'PDF file appears to be corrupted or invalid.',
+            'pdf_sanitization_failed': 'PDF security sanitization failed.',
+            'auth_failed': 'PDF processing service authentication failed.',
+            'worker_unavailable': 'PDF processing service is temporarily unavailable. Please try again.',
+            'worker_timeout': 'PDF processing service timed out. Try a smaller file.',
+            'pdf_worker_not_configured': 'PDF processing is not configured.',
+            'pdf_processing_failed': 'PDF processing failed. Please try again.',
+            'processing_failed': 'File processing failed. Please try again.',
+            'unknown_content_type': 'File type could not be determined.',
+        }
+        return messages.get(error_code, f'File processing error: {error_code}')
 
     async def process_attachments(self, message: cl.Message) -> Optional[str]:
         """
-        Process file attachments from a Chainlit message.
+        Process file attachments using ephemeral document ingestion (Story 4.3).
+
+        AC1: Size validation (10MB)
+        AC1, AC2, AC3: Content type detection and processing
 
         Args:
             message: Chainlit message with potential file attachments
@@ -55,144 +318,85 @@ class FileProcessor:
 
         for element in message.elements:
             if hasattr(element, 'type') and element.type == 'file':
-                # Check file size first
-                file_size = self._get_file_size(element)
-                if file_size > self.max_file_size_bytes:
-                    file_size_mb = file_size / (1024 * 1024)
-                    file_info = f"\n--- File: {element.name} (Too Large) ---\n"
-                    extracted_content.append(file_info + f"File size ({file_size_mb:.1f}MB) exceeds the {self.max_file_size_mb}MB limit.\nPlease upload a smaller PDF file containing your vulnerability research or security advisory.\n")
-                    logger.warning(f"File too large: {element.name} ({file_size_mb:.1f}MB)")
-                    continue
-
-                # Check if file type is supported (PDF or common text types)
-                mime_type = getattr(element, 'mime', 'application/octet-stream')
-                if mime_type not in self.supported_types:
-                    file_info = f"\n--- File: {element.name} (Unsupported Format) ---\n"
-                    extracted_content.append(file_info + f"Only PDF or text files (plain/markdown/JSON) up to {self.max_file_size_mb}MB are supported. Found: {mime_type}\nPlease upload a PDF/text file containing your vulnerability research, security advisory, or technical documentation.\n")
-                    logger.warning(f"Unsupported file type: {element.name} ({mime_type})")
-                    continue
-
                 try:
-                    content = await self._extract_file_content(element)
-                    if content:
-                        file_info = f"\n--- File: {element.name} ---\n"
-                        extracted_content.append(file_info + content)
-                        logger.info(f"Successfully extracted content from {element.name}")
+                    # Get file content
+                    file_content = await self._get_file_content(element)
+
+                    # AC1: Size validation (10MB)
+                    if len(file_content) > self.max_file_size_bytes:
+                        file_size_mb = len(file_content) / (1024 * 1024)
+                        error_msg = self.get_friendly_error('too_large')
+                        extracted_content.append(f"\n--- File: {element.name} ---\n{error_msg}\n")
+                        logger.warning(f"File too large: {element.name} ({file_size_mb:.1f}MB)")
+                        continue
+
+                    # AC1: Detect file type via magic bytes (not extension)
+                    file_type = self.detect_file_type(file_content)
+
+                    if file_type == 'pdf':
+                        # AC2: Process PDF via isolated Cloud Functions worker
+                        try:
+                            result = await self.call_pdf_worker(file_content)
+                            text = result['text']
+                            pages = result['pages']
+                            file_info = f"\n--- File: {element.name} ({pages} pages, sanitized) ---\n"
+                            extracted_content.append(file_info + text)
+                            logger.info(f"PDF processed: {element.name}, {pages} pages, {len(text)} chars")
+                        except ValueError as e:
+                            error_msg = self.get_friendly_error(str(e))
+                            extracted_content.append(f"\n--- File: {element.name} ---\n{error_msg}\n")
+                            logger.warning(f"PDF processing failed for {element.name}: {str(e)}")
+
+                    elif file_type == 'text':
+                        # AC3: Process text file locally with strict validation
+                        try:
+                            text = await self.process_text_file(file_content)
+                            file_info = f"\n--- File: {element.name} ---\n"
+                            extracted_content.append(file_info + text)
+                            logger.info(f"Text processed: {element.name}, {len(text)} chars")
+                        except ValueError as e:
+                            error_msg = self.get_friendly_error(str(e))
+                            extracted_content.append(f"\n--- File: {element.name} ---\n{error_msg}\n")
+                            logger.warning(f"Text processing failed for {element.name}: {str(e)}")
+
+                    else:
+                        # Unsupported file type
+                        error_msg = self.get_friendly_error('invalid_content_type')
+                        extracted_content.append(f"\n--- File: {element.name} ---\n{error_msg}\n")
+                        logger.warning(f"Unsupported file type: {element.name}")
+
                 except Exception as e:
-                    logger.error(f"Failed to process file {element.name}: {e}")
-                    extracted_content.append(f"\n--- File: {element.name} (Processing Error) ---\nUnable to extract content: {str(e)}\n")
+                    logger.error(f"Unexpected error processing file {element.name}: {e}")
+                    extracted_content.append(f"\n--- File: {element.name} ---\nUnexpected error: {str(e)}\n")
 
         if extracted_content:
             return "\n".join(extracted_content)
         return None
 
-    async def _extract_file_content(self, file_element: Any) -> Optional[str]:
+    async def _get_file_content(self, file_element: Any) -> bytes:
         """
-        Extract text content from a file element.
+        Get raw file content from Chainlit file element.
 
         Args:
             file_element: Chainlit file element
 
         Returns:
-            Extracted text content or None if extraction fails
+            Raw file bytes
+
+        Raises:
+            RuntimeError: If file content cannot be accessed
         """
-        try:
-            # Read file content
-            if hasattr(file_element, 'content'):
-                file_content = file_element.content
-            elif hasattr(file_element, 'path'):
-                file_content = await asyncio.to_thread(self._read_file_from_path, file_element.path)
-            else:
-                logger.error(f"Cannot access file content for {file_element.name}")
-                return None
+        if hasattr(file_element, 'content') and file_element.content is not None:
+            return file_element.content
+        elif hasattr(file_element, 'path') and file_element.path:
+            return await asyncio.to_thread(self._read_file_from_path, file_element.path)
+        else:
+            raise RuntimeError(f"Cannot access file content for {getattr(file_element, 'name', 'unknown')}")
 
-            # Determine file type and extract accordingly
-            mime_type = getattr(file_element, 'mime', 'application/octet-stream')
-
-            if mime_type == 'application/pdf':
-                return await asyncio.to_thread(self._extract_pdf_content, file_content)
-            elif mime_type.startswith('text/'):
-                return self._extract_text_content(file_content)
-            elif mime_type == 'application/json':
-                # Treat JSON as text for our purposes
-                return self._extract_text_content(file_content)
-            else:
-                # Try to treat as text first
-                try:
-                    decoded_content: str = file_content.decode('utf-8')
-                    return decoded_content
-                except UnicodeDecodeError:
-                    logger.warning(f"Cannot decode {file_element.name} as text")
-                    return f"[Binary file - {file_element.name} - unable to extract text content]"
-
-        except Exception as e:
-            logger.error(f"Error extracting content from {file_element.name}: {e}")
-            return None
-
-    def _extract_pdf_content(self, pdf_content: bytes) -> str:
-        """Extract text from PDF content."""
-        try:
-            # Lazy import to avoid hard dependency if PDFs aren't used
-            import PyPDF2  # type: ignore
-            if not pdf_content or len(pdf_content) == 0:
-                return "[Empty PDF file - no content to extract]"
-
-            pdf_file = io.BytesIO(pdf_content)
-            reader = PyPDF2.PdfReader(pdf_file)
-
-            if len(reader.pages) == 0:
-                return "[PDF contains no pages]"
-
-            text_content = []
-            total_pages = len(reader.pages)
-            for page_num, page in enumerate(reader.pages, 1):
-                try:
-                    page_text = page.extract_text()
-                    if page_text and page_text.strip():
-                        text_content.append(f"--- Page {page_num} ---\n{page_text.strip()}")
-                    else:
-                        text_content.append(f"--- Page {page_num} ---\n[Page contains no extractable text]")
-                except Exception as page_error:
-                    text_content.append(f"--- Page {page_num} ---\n[Error extracting text: {str(page_error)}]")
-
-                if page_num >= self.max_pdf_pages:
-                    remaining = max(0, total_pages - self.max_pdf_pages)
-                    if remaining > 0:
-                        text_content.append(f"\n[Truncated: processed first {self.max_pdf_pages} of {total_pages} pages]")
-                    break
-
-            if text_content:
-                full_content = "\n\n".join(text_content)
-                logger.info(f"Successfully extracted {len(full_content)} characters from {len(reader.pages)} pages")
-                return full_content
-            else:
-                return "[PDF file processed but no text content extracted from any pages]"
-
-        except Exception as e:
-            logger.error(f"PDF extraction error: {e}")
-            # Try alternative approach for corrupted PDFs
-            try:
-                # Sometimes PyPDF2 fails but the content is still readable as text
-                text_attempt = pdf_content.decode('utf-8', errors='ignore')
-                if len(text_attempt.strip()) > 50:
-                    logger.info("PDF extraction failed, but recovered some text content")
-                    return f"[PDF text recovery - may contain formatting artifacts]\n{text_attempt[:2000]}"
-            except:
-                pass
-
-            return f"[PDF processing error: {str(e)} - File may be corrupted, password-protected, or scanned images]"
-
-    def _extract_text_content(self, text_content: bytes) -> str:
-        """Extract content from text files."""
-        try:
-            # Try UTF-8 first
-            return text_content.decode('utf-8')
-        except UnicodeDecodeError:
-            try:
-                # Try latin-1 as fallback
-                return text_content.decode('latin-1')
-            except UnicodeDecodeError:
-                return "[Text file with unsupported encoding]"
+    def _read_file_from_path(self, file_path: str) -> bytes:
+        """Helper method to read file content from path (for asyncio.to_thread)."""
+        with open(file_path, 'rb') as f:
+            return f.read()
 
     def analyze_vulnerability_content(self, content: str) -> Dict[str, Any]:
         """
@@ -323,28 +527,3 @@ class FileProcessor:
         """Helper method to read file content from path (for asyncio.to_thread)."""
         with open(file_path, 'rb') as f:
             return f.read()
-
-    def _get_file_size(self, file_element: Any) -> int:
-        """
-        Get the file size in bytes from a file element.
-
-        Args:
-            file_element: Chainlit file element
-
-        Returns:
-            File size in bytes
-        """
-        try:
-            if hasattr(file_element, 'size') and file_element.size is not None:
-                return int(file_element.size)
-            elif hasattr(file_element, 'content') and file_element.content is not None:
-                return len(file_element.content)
-            elif hasattr(file_element, 'path') and file_element.path:
-                import os
-                return os.path.getsize(file_element.path)
-            else:
-                logger.warning(f"Cannot determine file size for {getattr(file_element, 'name', 'unknown file')}")
-                return 0
-        except Exception as e:
-            logger.error(f"Error getting file size for {getattr(file_element, 'name', 'unknown file')}: {e}")
-            return 0

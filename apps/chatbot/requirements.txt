@@ -25,3 +25,12 @@ sqlalchemy>=2.0.0,<3.0.0
 
 # Secret Manager for database credentials
 google-cloud-secret-manager>=2.16.0,<3.0.0
+
+# File processing - OIDC authentication for PDF worker
+google-auth>=2.25.2,<3.0.0
+
+# HTTP client for async PDF worker calls
+httpx>=0.25.2,<1.0.0
+
+# Text file encoding detection
+chardet>=5.2.0,<6.0.0
