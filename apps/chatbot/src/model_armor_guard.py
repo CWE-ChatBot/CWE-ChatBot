@@ -107,36 +107,37 @@ class ModelArmorGuard:
             return True, prompt
 
         try:
-            # TODO: Implement actual Model Armor API call
-            # For now, return safe (will implement in next step)
+            from google.cloud import modelarmor_v1
+
             logger.debug(f"Sanitizing user prompt (length: {len(prompt)})")
 
-            # Placeholder - actual API call will be:
-            # from google.cloud.securitycenter_v1.types import SanitizeUserPromptRequest
-            # request = SanitizeUserPromptRequest(
-            #     parent=self.template_path,
-            #     user_prompt={"text": prompt},
-            #     log_options={"write_sanitize_operations": True}
-            # )
-            # response = await self._get_client().sanitize_user_prompt(request)
-            #
-            # if response.sanitize_result == SanitizeResult.ALLOW:
-            #     return True, prompt
-            #
-            # # BLOCK, SANITIZE, or INCONCLUSIVE = fail-closed
-            # logger.critical(
-            #     f"Model Armor blocked user prompt",
-            #     extra={
-            #         "result": response.sanitize_result.name,
-            #         "policy": self.template_path,
-            #         "reason": response.sanitize_reason,
-            #         "prompt_hash": hash(prompt),
-            #     }
-            # )
-            # return False, "I cannot process that request. Please rephrase your question."
+            # Create request
+            user_prompt_data = modelarmor_v1.DataItem(text=prompt)
+            request = modelarmor_v1.SanitizeUserPromptRequest(
+                name=self.template_path,
+                user_prompt_data=user_prompt_data,
+            )
 
-            # Temporary passthrough until API implementation
-            return True, prompt
+            # Call Model Armor API
+            client = self._get_client()
+            response = await client.sanitize_user_prompt(request=request)
+
+            # Check sanitization result
+            if response.sanitize_decision == modelarmor_v1.SanitizeDecision.ALLOW:
+                logger.debug("Model Armor: User prompt ALLOWED")
+                return True, prompt
+
+            # BLOCK, SANITIZE, or INCONCLUSIVE = fail-closed
+            logger.critical(
+                "Model Armor BLOCKED user prompt",
+                extra={
+                    "decision": response.sanitize_decision.name,
+                    "policy": self.template_path,
+                    "violations": [v.violation_type.name for v in response.violations] if response.violations else [],
+                    "prompt_hash": hash(prompt),
+                }
+            )
+            return False, "I cannot process that request. Please rephrase your question."
 
         except Exception as e:
             logger.error(f"Model Armor sanitize_user_prompt failed: {e}")
@@ -177,35 +178,37 @@ class ModelArmorGuard:
             return True, response_text
 
         try:
+            from google.cloud import modelarmor_v1
+
             logger.debug(f"Sanitizing model response (length: {len(response_text)})")
 
-            # TODO: Implement actual Model Armor API call
-            # Placeholder - actual API call will be:
-            # from google.cloud.securitycenter_v1.types import SanitizeModelResponseRequest
-            # request = SanitizeModelResponseRequest(
-            #     parent=self.template_path,
-            #     model_response={"text": response_text},
-            #     log_options={"write_sanitize_operations": True}
-            # )
-            # response = await self._get_client().sanitize_model_response(request)
-            #
-            # if response.sanitize_result == SanitizeResult.ALLOW:
-            #     return True, response_text
-            #
-            # # BLOCK, SANITIZE, or INCONCLUSIVE = fail-closed
-            # logger.critical(
-            #     f"Model Armor blocked model response",
-            #     extra={
-            #         "result": response.sanitize_result.name,
-            #         "policy": self.template_path,
-            #         "reason": response.sanitize_reason,
-            #         "response_hash": hash(response_text),
-            #     }
-            # )
-            # return False, "I generated an unsafe response. Please try a different question."
+            # Create request
+            model_response_data = modelarmor_v1.DataItem(text=response_text)
+            request = modelarmor_v1.SanitizeModelResponseRequest(
+                name=self.template_path,
+                model_response_data=model_response_data,
+            )
 
-            # Temporary passthrough until API implementation
-            return True, response_text
+            # Call Model Armor API
+            client = self._get_client()
+            response = await client.sanitize_model_response(request=request)
+
+            # Check sanitization result
+            if response.sanitize_decision == modelarmor_v1.SanitizeDecision.ALLOW:
+                logger.debug("Model Armor: Model response ALLOWED")
+                return True, response_text
+
+            # BLOCK, SANITIZE, or INCONCLUSIVE = fail-closed
+            logger.critical(
+                "Model Armor BLOCKED model response",
+                extra={
+                    "decision": response.sanitize_decision.name,
+                    "policy": self.template_path,
+                    "violations": [v.violation_type.name for v in response.violations] if response.violations else [],
+                    "response_hash": hash(response_text),
+                }
+            )
+            return False, "I generated an unsafe response. Please try a different question."
 
         except Exception as e:
             logger.error(f"Model Armor sanitize_model_response failed: {e}")
