@@ -68,8 +68,8 @@ class ModelArmorGuard:
                 from google.cloud.modelarmor_v1 import ModelArmorAsyncClient
 
                 # CRITICAL: Model Armor requires regional endpoint
-                # Format: <region>-modelarmor.googleapis.com
-                api_endpoint = f"{self.location}-modelarmor.googleapis.com"
+                # Format: modelarmor.<region>.rep.googleapis.com
+                api_endpoint = f"modelarmor.{self.location}.rep.googleapis.com"
 
                 # Use async client for Chainlit with regional endpoint
                 self._client = ModelArmorAsyncClient(
