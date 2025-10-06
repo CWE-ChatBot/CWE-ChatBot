@@ -39,6 +39,7 @@ psycopg = {extras = ["binary"], version = "^3.2.10"}
 # Optional dependencies
 sentence-transformers = {version = "^2.2.2", optional = true}
 pypdf2 = "^3.0.1"
+httpx = {extras = ["http2"], version = "^0.28.1"}
 
 [tool.poetry.extras]
 local-embeddings = ["sentence-transformers"]
