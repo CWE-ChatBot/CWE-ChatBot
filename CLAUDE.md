@@ -34,6 +34,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **NEVER use system-wide Python executables for application code.**
 
+## CRITICAL: Docker Build and Deployment
+
+**ALWAYS build Docker images from the PROJECT ROOT** (not from apps/chatbot/):
+
+### Correct Build Commands:
+```bash
+# Build using Cloud Build (CORRECT - from project root)
+gcloud builds submit --config=apps/chatbot/cloudbuild.yaml
+
+# Deploy to Cloud Run
+gcloud run deploy cwe-chatbot \
+  --image gcr.io/cwechatbot/cwe-chatbot:latest \
+  --region us-central1
+```
+
+### Why Build from Project Root:
+1. **Dockerfile paths**: `apps/chatbot/Dockerfile` uses paths like `apps/chatbot/main.py` and `apps/cwe_ingestion/`
+2. **Build context**: Dockerfile expects repository root as build context
+3. **Dependencies**: Chatbot requires `apps/cwe_ingestion/` package which is outside `apps/chatbot/`
+4. **.dockerignore**: The `apps/chatbot/.dockerignore` excludes `*.md` files, blocking `chainlit.md`
+
+### WRONG - Do NOT Build Like This:
+```bash
+# ❌ WRONG - builds from apps/chatbot/ directory
+gcloud builds submit --tag gcr.io/cwechatbot/cwe-chatbot apps/chatbot/
+
+# Why it fails:
+# - Cannot access apps/cwe_ingestion/ (outside build context)
+# - .dockerignore excludes chainlit.md and prompt files
+# - Paths in Dockerfile become incorrect
+```
+
+### Deployment Verification:
+After deployment, verify the new revision:
+```bash
+# Check deployed revision
+gcloud run services describe cwe-chatbot --region us-central1 --format='value(status.latestReadyRevisionName)'
+
+# View logs
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=cwe-chatbot" --limit 50
+```
+
 ## Core Development Principles
 
 ### 1. Brutal Honesty First
