@@ -16,6 +16,7 @@ structlog>=23.0.0,<24.0.0
 # AI/LLM integration
 google-cloud-aiplatform>=1.38.0,<2.0.0
 google-generativeai>=0.7.0,<1.0.0
+google-cloud-modelarmor>=0.2.8,<1.0.0
 
 # Database and vector operations
 numpy>=1.24.0,<2.0.0
