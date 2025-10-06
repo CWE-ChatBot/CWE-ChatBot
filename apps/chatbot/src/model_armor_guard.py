@@ -129,17 +129,19 @@ class ModelArmorGuard:
             response = await client.sanitize_user_prompt(request=request)
 
             # Check sanitization result
-            if response.sanitize_decision == modelarmor_v1.SanitizeDecision.ALLOW:
-                logger.debug("Model Armor: User prompt ALLOWED")
+            # API returns: sanitizationResult.filterMatchState = NO_MATCH_FOUND | MATCH_FOUND
+            sanitization_result = response.sanitization_result
+            if sanitization_result.filter_match_state == modelarmor_v1.FilterMatchState.NO_MATCH_FOUND:
+                logger.debug("Model Armor: User prompt ALLOWED (NO_MATCH_FOUND)")
                 return True, prompt
 
-            # BLOCK, SANITIZE, or INCONCLUSIVE = fail-closed
+            # MATCH_FOUND = unsafe content detected - fail-closed
             logger.critical(
                 "Model Armor BLOCKED user prompt",
                 extra={
-                    "decision": response.sanitize_decision.name,
+                    "match_state": sanitization_result.filter_match_state.name,
                     "policy": self.template_path,
-                    "violations": [v.violation_type.name for v in response.violations] if response.violations else [],
+                    "filter_results": str(sanitization_result.filter_results) if hasattr(sanitization_result, 'filter_results') else None,
                     "prompt_hash": hash(prompt),
                 }
             )
@@ -200,17 +202,19 @@ class ModelArmorGuard:
             response = await client.sanitize_model_response(request=request)
 
             # Check sanitization result
-            if response.sanitize_decision == modelarmor_v1.SanitizeDecision.ALLOW:
-                logger.debug("Model Armor: Model response ALLOWED")
+            # API returns: sanitizationResult.filterMatchState = NO_MATCH_FOUND | MATCH_FOUND
+            sanitization_result = response.sanitization_result
+            if sanitization_result.filter_match_state == modelarmor_v1.FilterMatchState.NO_MATCH_FOUND:
+                logger.debug("Model Armor: Model response ALLOWED (NO_MATCH_FOUND)")
                 return True, response_text
 
-            # BLOCK, SANITIZE, or INCONCLUSIVE = fail-closed
+            # MATCH_FOUND = unsafe content detected - fail-closed
             logger.critical(
                 "Model Armor BLOCKED model response",
                 extra={
-                    "decision": response.sanitize_decision.name,
+                    "match_state": sanitization_result.filter_match_state.name,
                     "policy": self.template_path,
-                    "violations": [v.violation_type.name for v in response.violations] if response.violations else [],
+                    "filter_results": str(sanitization_result.filter_results) if hasattr(sanitization_result, 'filter_results') else None,
                     "response_hash": hash(response_text),
                 }
             )
