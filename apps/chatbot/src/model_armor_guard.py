@@ -62,14 +62,20 @@ class ModelArmorGuard:
             logger.info("Model Armor guard disabled (skipping sanitization)")
 
     def _get_client(self):
-        """Lazy-load Model Armor client."""
+        """Lazy-load Model Armor client with regional endpoint."""
         if self._client is None:
             try:
                 from google.cloud.modelarmor_v1 import ModelArmorAsyncClient
 
-                # Use async client for Chainlit
-                self._client = ModelArmorAsyncClient()
-                logger.debug("Model Armor client initialized")
+                # CRITICAL: Model Armor requires regional endpoint
+                # Format: <region>-modelarmor.googleapis.com
+                api_endpoint = f"{self.location}-modelarmor.googleapis.com"
+
+                # Use async client for Chainlit with regional endpoint
+                self._client = ModelArmorAsyncClient(
+                    client_options={"api_endpoint": api_endpoint}
+                )
+                logger.debug(f"Model Armor client initialized with endpoint: {api_endpoint}")
             except ImportError as e:
                 logger.error(f"Failed to import Model Armor client: {e}")
                 logger.error("Install with: poetry add google-cloud-modelarmor")
