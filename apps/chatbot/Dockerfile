@@ -53,6 +53,7 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 # Copy application files with secure permissions
 COPY --chown=appuser:appuser apps/chatbot/main.py ./main.py
 COPY --chown=appuser:appuser apps/chatbot/healthcheck.py .
+COPY --chown=appuser:appuser apps/chatbot/chainlit.md ./chainlit.md
 # Create directories - let Chainlit auto-generate config.toml with correct format
 RUN mkdir -p ./.chainlit ./public
 COPY --chown=appuser:appuser apps/chatbot/src/ ./src/
@@ -61,7 +62,7 @@ COPY --chown=appuser:appuser apps/chatbot/src/ ./src/
 RUN mkdir -p /app/logs && \
     chmod 755 /app && \
     chmod 750 /app/logs && \
-    chmod 644 /app/*.py && \
+    chmod 644 /app/*.py /app/chainlit.md && \
     chmod +x /app/healthcheck.py && \
     chown -R appuser:appuser /app
 
