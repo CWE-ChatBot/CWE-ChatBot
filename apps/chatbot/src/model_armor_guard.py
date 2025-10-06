@@ -65,17 +65,16 @@ class ModelArmorGuard:
         """Lazy-load Model Armor client."""
         if self._client is None:
             try:
-                from google.cloud.securitycenter_v1 import SecurityCenterClient
-                from google.cloud.securitycenter_v1.services.security_center import SecurityCenterAsyncClient
+                from google.cloud.modelarmor_v1 import ModelArmorAsyncClient
 
                 # Use async client for Chainlit
-                self._client = SecurityCenterAsyncClient()
+                self._client = ModelArmorAsyncClient()
                 logger.debug("Model Armor client initialized")
             except ImportError as e:
                 logger.error(f"Failed to import Model Armor client: {e}")
-                logger.error("Install with: poetry add google-cloud-security-command-center")
+                logger.error("Install with: poetry add google-cloud-modelarmor")
                 raise RuntimeError(
-                    "google-cloud-security-command-center not installed"
+                    "google-cloud-modelarmor not installed"
                 ) from e
         return self._client
 
