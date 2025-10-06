@@ -436,8 +436,15 @@ class FileProcessor:
                         logger.warning(f"Unsupported file type: {element.name}")
 
                 except Exception as e:
-                    logger.error(f"Unexpected error processing file {element.name}: {e}")
-                    extracted_content.append(f"\n--- File: {element.name} ---\nUnexpected error: {str(e)}\n")
+                    # Log the full error for debugging
+                    logger.error(f"Unexpected error processing file {element.name}: {type(e).__name__}: {e}")
+                    if os.getenv('LOG_LEVEL') == 'DEBUG':
+                        import traceback
+                        traceback.print_exc()
+
+                    # Show user-friendly error instead of raw exception text
+                    error_msg = "An unexpected error occurred while processing this file. Please try again or contact support if the issue persists."
+                    extracted_content.append(f"\n--- File: {element.name} ---\n{error_msg}\n")
 
         if extracted_content:
             return "\n".join(extracted_content)
