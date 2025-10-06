@@ -583,7 +583,36 @@ async def main(message: cl.Message):
                 current_persona = (current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value)
                 file_step.input = f"Processing {len(message.elements)} file(s) for {current_persona}"
                 logger.info(f"Processing {len(message.elements)} file attachments for {current_persona}")
-                file_content = await file_processor.process_attachments(message)
+
+                # Create a keepalive message to prevent WebSocket timeout during PDF processing
+                status_msg = await cl.Message(content="Processing files...").send()
+
+                # Keepalive heartbeat to prevent idle disconnects
+                heartbeat_running = True
+                async def heartbeat():
+                    """Send periodic updates to keep WebSocket alive during PDF processing."""
+                    count = 0
+                    while heartbeat_running:
+                        await asyncio.sleep(3)  # Update every 3 seconds
+                        if heartbeat_running:  # Check again after sleep
+                            count += 1
+                            await status_msg.stream_token(".")
+
+                # Start keepalive task
+                hb_task = asyncio.create_task(heartbeat())
+
+                try:
+                    file_content = await file_processor.process_attachments(message)
+                finally:
+                    # Stop keepalive
+                    heartbeat_running = False
+                    try:
+                        hb_task.cancel()
+                        await hb_task
+                    except asyncio.CancelledError:
+                        pass
+                    # Remove the status message
+                    await status_msg.remove()
 
                 if file_content:
                     # SECURITY: do not merge evidence into the prompt; store for isolated use
@@ -593,6 +622,12 @@ async def main(message: cl.Message):
                 else:
                     file_step.output = "No content extracted from file(s)"
                     logger.warning("File attachments found but no content extracted")
+
+        # If user uploaded files but didn't provide a query, use a default prompt
+        file_ctx = cl.user_session.get("uploaded_file_context")
+        if file_ctx and (not user_query or user_query == "..."):
+            user_query = "Analyze this document for security vulnerabilities and CWE mappings."
+            logger.info(f"Using default query for file upload without user text")
 
         current_ctx = conversation_manager.get_session_context(session_id)
         current_persona = (current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value)

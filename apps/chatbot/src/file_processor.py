@@ -18,6 +18,7 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 import chainlit as cl
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 # Optional imports for OIDC and HTTP client
 try:
@@ -41,6 +42,9 @@ except ImportError:
     HAS_CHARDET = False
 
 logger = logging.getLogger(__name__)
+
+# Thread pool for blocking I/O (PDF worker calls)
+_executor = ThreadPoolExecutor(max_workers=4)
 
 
 class FileProcessor:
@@ -110,7 +114,7 @@ class FileProcessor:
 
     async def get_oidc_token(self, audience: str) -> str:
         """
-        Fetch OIDC ID token from metadata server.
+        Fetch OIDC ID token from metadata server (runs in thread pool to avoid blocking).
 
         AC5: OIDC authentication for service-to-service calls.
 
@@ -126,25 +130,39 @@ class FileProcessor:
         if not HAS_GOOGLE_AUTH:
             raise RuntimeError("google-auth library required for OIDC authentication")
 
+        def _fetch_token_sync() -> str:
+            """Synchronous token fetch for thread pool execution."""
+            import google.oauth2.id_token
+            import google.auth.transport.requests as transport_requests
+
+            try:
+                # Fetch ID token using google.oauth2.id_token.fetch_id_token()
+                # This is the recommended approach for Cloud Run -> Cloud Run/Functions calls
+                auth_req = transport_requests.Request()
+                token = google.oauth2.id_token.fetch_id_token(auth_req, audience)
+                logger.info(f"Successfully fetched OIDC token for audience: {audience[:50]}...")
+                return token
+            except Exception as e:
+                logger.error(f"OIDC token fetch failed: {type(e).__name__}: {e}")
+                logger.error(f"Audience: {audience}")
+                raise
+
         try:
-            credentials = compute_engine.IDTokenCredentials(
-                request=google.auth.transport.requests.Request(),
-                target_audience=audience
-            )
-            credentials.refresh(google.auth.transport.requests.Request())
-            return credentials.token
+            # Run blocking metadata server call in thread pool
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(_executor, _fetch_token_sync)
         except Exception as e:
-            logger.error(f"OIDC token fetch failed: {type(e).__name__}")
+            logger.error(f"OIDC token fetch failed: {type(e).__name__}: {e}")
             raise RuntimeError("auth_failed")
 
-    async def call_pdf_worker(self, pdf_bytes: bytes) -> Dict[str, Any]:
+    def _call_pdf_worker_sync(self, pdf_bytes: bytes, url: str, token: str) -> Dict[str, Any]:
         """
-        Call Cloud Functions PDF worker with OIDC authentication.
-
-        AC2, AC5, AC6: Isolated PDF processing with OIDC auth.
+        Synchronous PDF worker call for ThreadPoolExecutor.
 
         Args:
             pdf_bytes: Raw PDF bytes
+            url: PDF worker URL
+            token: OIDC ID token
 
         Returns:
             {'text': str, 'pages': int, 'sanitized': bool}
@@ -152,25 +170,16 @@ class FileProcessor:
         Raises:
             ValueError: With error code for user-friendly messages
         """
-        if not self.pdf_worker_url:
-            raise ValueError("pdf_worker_not_configured")
-
         if not HAS_HTTPX:
             raise ValueError("httpx library required for PDF processing")
-
-        # Get OIDC token
-        try:
-            token = await self.get_oidc_token(audience=self.pdf_worker_url)
-        except RuntimeError:
-            raise ValueError("auth_failed")
 
         # Call worker with single retry on transient 5xx (AC6)
         max_attempts = 2
         for attempt in range(max_attempts):
             try:
-                async with httpx.AsyncClient(timeout=self.pdf_worker_timeout) as client:
-                    response = await client.post(
-                        self.pdf_worker_url,
+                with httpx.Client(timeout=self.pdf_worker_timeout) as client:
+                    response = client.post(
+                        url,
                         content=pdf_bytes,
                         headers={
                             'Authorization': f'Bearer {token}',
@@ -198,7 +207,8 @@ class FileProcessor:
                         # Retry on 5xx if first attempt
                         if attempt < max_attempts - 1:
                             logger.warning(f"PDF worker returned {response.status_code}, retrying...")
-                            await asyncio.sleep(0.5 * (2 ** attempt))  # Jittered backoff
+                            import time
+                            time.sleep(0.5 * (2 ** attempt))  # Jittered backoff
                             continue
                         raise ValueError("pdf_processing_failed")
                     else:
@@ -211,6 +221,43 @@ class FileProcessor:
                 raise ValueError("pdf_processing_failed")
 
         raise ValueError("pdf_processing_failed")
+
+    async def call_pdf_worker(self, pdf_bytes: bytes) -> Dict[str, Any]:
+        """
+        Call Cloud Functions PDF worker with OIDC authentication (non-blocking).
+
+        AC2, AC5, AC6: Isolated PDF processing with OIDC auth.
+
+        Uses ThreadPoolExecutor to avoid blocking the event loop during HTTP calls,
+        which prevents WebSocket disconnections during PDF processing.
+
+        Args:
+            pdf_bytes: Raw PDF bytes
+
+        Returns:
+            {'text': str, 'pages': int, 'sanitized': bool}
+
+        Raises:
+            ValueError: With error code for user-friendly messages
+        """
+        if not self.pdf_worker_url:
+            raise ValueError("pdf_worker_not_configured")
+
+        # Get OIDC token (async call to metadata server)
+        try:
+            token = await self.get_oidc_token(audience=self.pdf_worker_url)
+        except RuntimeError:
+            raise ValueError("auth_failed")
+
+        # Run blocking HTTP call in thread pool to avoid blocking event loop
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _executor,
+            self._call_pdf_worker_sync,
+            pdf_bytes,
+            self.pdf_worker_url,
+            token
+        )
 
     async def process_text_file(self, content: bytes) -> str:
         """
