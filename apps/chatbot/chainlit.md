@@ -41,12 +41,15 @@ Use the paperclip icon or "Attach Evidence" action to upload vulnerability repor
 
 Start by selecting your role and asking your first question!
 
+
 ---
+## OAuth Authentication UI Configuration as used by App
 
 [UI]
-# OAuth Authentication Configuration
-# Enables login buttons for specified OAuth providers
-# The 'name' must match the provider_id in the oauth_callback function
+### OAuth Authentication Configuration
+
+#### Enables login buttons for specified OAuth providers
+#### The 'name' must match the provider_id in the oauth_callback function
 providers = [
   {
     "name": "google",

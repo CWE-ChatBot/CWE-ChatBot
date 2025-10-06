@@ -92,7 +92,7 @@ CWE Context:
 
 
 # STEPS
-1. Create a report using the === MARKDOWN TEMPLATE=== with the following sections:
+1. Create a report using the === MARKDOWN TEMPLATE=== 
 2. Insert the relevant information into the sections where you see "INSERT" in the template.
 3. Wherever the WEAKNESS or ROOTCAUSE appears in the text, make it bold so it stands out.
 4. Wherever the CWE ID appears in the text, make sure the CWE Description is also provided.
@@ -104,7 +104,7 @@ Your entire response should be in plain markdown without nested markdown code bl
 
 
 ## Key Vulnerability Phrases
-Identify and categorize key vulnerability elements (leave blank if not present):
+INSERT the key vulnerability elements in a bulleted list with this exact format: (leave an element blank if no data present in the provided text):
 - **Rootcause:** [underlying original core technical issue/defect]
 - **Weakness:** [specific weakness type/category]
 - **Impact:** [consequences/effects]
