@@ -41,6 +41,7 @@ sentence-transformers = {version = "^2.2.2", optional = true}
 pypdf2 = "^3.0.1"
 httpx = {extras = ["http2"], version = "^0.28.1"}
 google-cloud-aiplatform = "^1.119.0"
+google-cloud-security-command-center = "^1.36.0"  # For Model Armor sanitize APIs
 
 [tool.poetry.extras]
 local-embeddings = ["sentence-transformers"]

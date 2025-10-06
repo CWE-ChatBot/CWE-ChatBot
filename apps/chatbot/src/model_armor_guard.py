@@ -1,0 +1,258 @@
+"""
+Model Armor Guard - Pre/Post Sanitization for LLM I/O
+
+Provides model-agnostic guardrails using Google Cloud Model Armor Sanitize APIs.
+Works with any LLM provider (Vertex AI, Gemini API, OpenAI, Anthropic, etc.).
+
+Security Pattern:
+1. SanitizeUserPrompt BEFORE LLM generation
+2. SanitizeModelResponse AFTER LLM generation
+3. Fail-closed on BLOCK/SANITIZE/INCONCLUSIVE results
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+class ModelArmorGuard:
+    """
+    Pre/post sanitization guard using Model Armor APIs.
+
+    This class wraps Google Cloud Model Armor sanitize APIs to provide
+    provider-agnostic LLM input/output protection.
+    """
+
+    def __init__(
+        self,
+        project: str,
+        location: str,
+        template_id: str,
+        enabled: bool = True,
+    ):
+        """
+        Initialize Model Armor guard.
+
+        Args:
+            project: GCP project ID
+            location: GCP region (e.g., 'us-central1')
+            template_id: Model Armor template ID
+            enabled: Whether Model Armor is enabled (allows easy disable via env var)
+        """
+        self.project = project
+        self.location = location
+        self.template_id = template_id
+        self.enabled = enabled
+
+        # Build template path
+        self.template_path = (
+            f"projects/{project}/locations/{location}/templates/{template_id}"
+        )
+
+        # Lazy-load client only if enabled
+        self._client: Optional[any] = None
+
+        if self.enabled:
+            logger.info(f"Model Armor guard enabled with template: {self.template_path}")
+        else:
+            logger.info("Model Armor guard disabled (skipping sanitization)")
+
+    def _get_client(self):
+        """Lazy-load Model Armor client."""
+        if self._client is None:
+            try:
+                from google.cloud.securitycenter_v1 import SecurityCenterClient
+                from google.cloud.securitycenter_v1.services.security_center import SecurityCenterAsyncClient
+
+                # Use async client for Chainlit
+                self._client = SecurityCenterAsyncClient()
+                logger.debug("Model Armor client initialized")
+            except ImportError as e:
+                logger.error(f"Failed to import Model Armor client: {e}")
+                logger.error("Install with: poetry add google-cloud-security-command-center")
+                raise RuntimeError(
+                    "google-cloud-security-command-center not installed"
+                ) from e
+        return self._client
+
+    async def sanitize_user_prompt(self, prompt: str) -> Tuple[bool, str]:
+        """
+        Sanitize user input before sending to LLM.
+
+        This must be called BEFORE any LLM generation to detect:
+        - Prompt injection attacks
+        - Jailbreak attempts
+        - Data loss / PII exfiltration attempts
+        - Malicious URLs
+
+        Args:
+            prompt: User's input query
+
+        Returns:
+            Tuple of (is_safe, message_or_prompt):
+            - (True, prompt): Safe to proceed with LLM generation
+            - (False, error_message): BLOCKED - show generic error to user
+
+        Examples:
+            >>> is_safe, msg = await guard.sanitize_user_prompt("What is CWE-79?")
+            >>> if not is_safe:
+            >>>     return msg  # Generic error
+            >>> # Proceed with LLM generation...
+        """
+        if not self.enabled:
+            # Model Armor disabled - pass through
+            return True, prompt
+
+        try:
+            # TODO: Implement actual Model Armor API call
+            # For now, return safe (will implement in next step)
+            logger.debug(f"Sanitizing user prompt (length: {len(prompt)})")
+
+            # Placeholder - actual API call will be:
+            # from google.cloud.securitycenter_v1.types import SanitizeUserPromptRequest
+            # request = SanitizeUserPromptRequest(
+            #     parent=self.template_path,
+            #     user_prompt={"text": prompt},
+            #     log_options={"write_sanitize_operations": True}
+            # )
+            # response = await self._get_client().sanitize_user_prompt(request)
+            #
+            # if response.sanitize_result == SanitizeResult.ALLOW:
+            #     return True, prompt
+            #
+            # # BLOCK, SANITIZE, or INCONCLUSIVE = fail-closed
+            # logger.critical(
+            #     f"Model Armor blocked user prompt",
+            #     extra={
+            #         "result": response.sanitize_result.name,
+            #         "policy": self.template_path,
+            #         "reason": response.sanitize_reason,
+            #         "prompt_hash": hash(prompt),
+            #     }
+            # )
+            # return False, "I cannot process that request. Please rephrase your question."
+
+            # Temporary passthrough until API implementation
+            return True, prompt
+
+        except Exception as e:
+            logger.error(f"Model Armor sanitize_user_prompt failed: {e}")
+            # Fail-closed on errors - better safe than sorry
+            logger.critical(
+                f"Model Armor error - failing closed",
+                extra={"error": str(e), "prompt_hash": hash(prompt)}
+            )
+            return False, "Unable to process your request at this time. Please try again later."
+
+    async def sanitize_model_response(self, response_text: str) -> Tuple[bool, str]:
+        """
+        Sanitize model output before showing to user.
+
+        This must be called AFTER LLM generation to detect:
+        - Unsafe content generation
+        - PII leakage
+        - Policy violations
+        - Harmful content
+
+        Args:
+            response_text: LLM's generated response
+
+        Returns:
+            Tuple of (is_safe, message_or_response):
+            - (True, response_text): Safe to show to user
+            - (False, error_message): BLOCKED - show generic error to user
+
+        Examples:
+            >>> response = await llm.generate(prompt)
+            >>> is_safe, msg = await guard.sanitize_model_response(response)
+            >>> if not is_safe:
+            >>>     return msg  # Generic error
+            >>> return response  # Safe to show
+        """
+        if not self.enabled:
+            # Model Armor disabled - pass through
+            return True, response_text
+
+        try:
+            logger.debug(f"Sanitizing model response (length: {len(response_text)})")
+
+            # TODO: Implement actual Model Armor API call
+            # Placeholder - actual API call will be:
+            # from google.cloud.securitycenter_v1.types import SanitizeModelResponseRequest
+            # request = SanitizeModelResponseRequest(
+            #     parent=self.template_path,
+            #     model_response={"text": response_text},
+            #     log_options={"write_sanitize_operations": True}
+            # )
+            # response = await self._get_client().sanitize_model_response(request)
+            #
+            # if response.sanitize_result == SanitizeResult.ALLOW:
+            #     return True, response_text
+            #
+            # # BLOCK, SANITIZE, or INCONCLUSIVE = fail-closed
+            # logger.critical(
+            #     f"Model Armor blocked model response",
+            #     extra={
+            #         "result": response.sanitize_result.name,
+            #         "policy": self.template_path,
+            #         "reason": response.sanitize_reason,
+            #         "response_hash": hash(response_text),
+            #     }
+            # )
+            # return False, "I generated an unsafe response. Please try a different question."
+
+            # Temporary passthrough until API implementation
+            return True, response_text
+
+        except Exception as e:
+            logger.error(f"Model Armor sanitize_model_response failed: {e}")
+            # Fail-closed on errors
+            logger.critical(
+                f"Model Armor error - failing closed",
+                extra={"error": str(e), "response_hash": hash(response_text)}
+            )
+            return False, "Unable to process the response at this time. Please try again later."
+
+
+def create_model_armor_guard_from_env() -> Optional[ModelArmorGuard]:
+    """
+    Factory function to create ModelArmorGuard from environment variables.
+
+    Environment Variables:
+        MODEL_ARMOR_ENABLED: "true" to enable, "false" to disable (default: false)
+        GOOGLE_CLOUD_PROJECT: GCP project ID (required if enabled)
+        MODEL_ARMOR_LOCATION: GCP region (default: us-central1)
+        MODEL_ARMOR_TEMPLATE_ID: Template ID (default: llm-guardrails-default)
+
+    Returns:
+        ModelArmorGuard instance if enabled, None if disabled
+
+    Examples:
+        >>> guard = create_model_armor_guard_from_env()
+        >>> if guard:
+        >>>     is_safe, msg = await guard.sanitize_user_prompt(prompt)
+    """
+    enabled = os.getenv("MODEL_ARMOR_ENABLED", "false").lower() == "true"
+
+    if not enabled:
+        logger.info("Model Armor disabled via MODEL_ARMOR_ENABLED=false")
+        return None
+
+    project = os.getenv("GOOGLE_CLOUD_PROJECT")
+    if not project:
+        logger.error("MODEL_ARMOR_ENABLED=true but GOOGLE_CLOUD_PROJECT not set")
+        raise ValueError("GOOGLE_CLOUD_PROJECT required when Model Armor is enabled")
+
+    location = os.getenv("MODEL_ARMOR_LOCATION", "us-central1")
+    template_id = os.getenv("MODEL_ARMOR_TEMPLATE_ID", "llm-guardrails-default")
+
+    return ModelArmorGuard(
+        project=project,
+        location=location,
+        template_id=template_id,
+        enabled=True,
+    )

@@ -11,6 +11,7 @@ import re
 import sys
 from pathlib import Path
 from .llm_provider import get_llm_provider
+from .model_armor_guard import create_model_armor_guard_from_env
 
 from src.app_config import config
 
@@ -64,6 +65,13 @@ class ResponseGenerator:
 
             logger.info(f"ResponseGenerator initialized with {mode} (configurable defaults)")
             logger.info(f"LLM Config - Provider: {llm_config['provider']}, Temperature: {llm_config['generation_config']['temperature']}, Safety: {'permissive' if llm_config['safety_settings'] else 'default'}")
+
+            # Initialize Model Armor guard (optional - controlled by env var)
+            self.model_armor = create_model_armor_guard_from_env()
+            if self.model_armor:
+                logger.info("Model Armor guard initialized (pre/post sanitization enabled)")
+            else:
+                logger.info("Model Armor guard disabled (MODEL_ARMOR_ENABLED=false or not set)")
 
         except Exception as e:
             logger.error(f"Failed to initialize ResponseGenerator: {e}")
@@ -225,9 +233,19 @@ Response:""",
     ) -> Any:
         """
         Async generator yielding response tokens for streaming.
+
+        Includes Model Armor pre/post sanitization if enabled.
         """
         try:
             logger.info(f"Generating streaming response for persona: {user_persona}")
+
+            # [1] Model Armor: Sanitize user prompt BEFORE LLM generation
+            if self.model_armor:
+                is_safe, message = await self.model_armor.sanitize_user_prompt(query)
+                if not is_safe:
+                    # BLOCKED - return generic error and stop
+                    yield message
+                    return
 
             context = self._build_context(retrieved_chunks or [])
             if not context and not (user_evidence and user_evidence.strip()):
@@ -248,6 +266,17 @@ Response:""",
                 try:
                     final = await self.provider.generate(prompt)
                     final = self._clean_response(final)
+
+                    # [2] Model Armor: Sanitize model response AFTER LLM generation
+                    if self.model_armor and final and final.strip():
+                        is_safe, message = await self.model_armor.sanitize_model_response(final)
+                        if not is_safe:
+                            # BLOCKED - return generic error
+                            yield message
+                            return
+                        # Safe - proceed with original response
+                        final = message
+
                     if final and final.strip():
                         yield final
                         return
@@ -255,10 +284,30 @@ Response:""",
                     logger.error(f"Non-stream generation failed (E2E_NO_STREAM): {e2}")
                     raise
             else:
+                # For streaming: buffer full response then sanitize
+                # (Model Armor requires complete response for analysis)
+                response_buffer = []
                 async for chunk_text in self.provider.generate_stream(prompt):
                     cleaned_chunk = self._clean_response_chunk(chunk_text)
                     if cleaned_chunk:
-                        yield cleaned_chunk
+                        response_buffer.append(cleaned_chunk)
+
+                # Combine full response
+                full_response = "".join(response_buffer)
+
+                # [2] Model Armor: Sanitize complete model response
+                if self.model_armor and full_response and full_response.strip():
+                    is_safe, message = await self.model_armor.sanitize_model_response(full_response)
+                    if not is_safe:
+                        # BLOCKED - return generic error instead of response
+                        yield message
+                        return
+                    # Safe - yield full response
+                    full_response = message
+
+                # Yield the (sanitized) full response
+                if full_response and full_response.strip():
+                    yield full_response
 
         except Exception as e:
             logger.error(f"Streaming response generation failed: {e}")
@@ -293,8 +342,17 @@ Response:""",
         """
         Non-streaming single-shot generation using the same prompt as streaming.
         Returns a cleaned response string or empty string on failure.
+
+        Includes Model Armor pre/post sanitization if enabled.
         """
         try:
+            # [1] Model Armor: Sanitize user prompt BEFORE LLM generation
+            if self.model_armor:
+                is_safe, message = await self.model_armor.sanitize_user_prompt(query)
+                if not is_safe:
+                    # BLOCKED - return generic error
+                    return message
+
             context = self._build_context(retrieved_chunks or [])
             if not context and not (user_evidence and user_evidence.strip()):
                 return ""
@@ -309,7 +367,18 @@ Response:""",
                     user_evidence=(user_evidence or "No additional evidence provided."),
                 )
             final = await self.provider.generate(prompt)
-            return self._clean_response(final)
+            final = self._clean_response(final)
+
+            # [2] Model Armor: Sanitize model response AFTER LLM generation
+            if self.model_armor and final and final.strip():
+                is_safe, message = await self.model_armor.sanitize_model_response(final)
+                if not is_safe:
+                    # BLOCKED - return generic error
+                    return message
+                # Safe - return sanitized response
+                return message
+
+            return final
         except Exception as e:
             logger.error(f"Full generation (non-stream) failed: {e}")
             return ""
