@@ -553,6 +553,16 @@ else:
 - ✅ Evidence cleared after each message processing
 - ✅ No cross-session contamination (each user's evidence is isolated)
 
+**Temporary File Handling**:
+- ⚠️ **Chainlit Internal Storage**: Chainlit may store uploaded files temporarily in `/tmp` or similar
+- ✅ **Our Code**: Only reads from `element.content` or `element.path` (read-only access)
+- ✅ **No Writes**: Application code never writes files to disk
+- ✅ **Cleanup**: Chainlit handles cleanup of its temporary files automatically
+- 🔧 **Recommendation**: Configure Chainlit to use tmpfs (RAM-backed) for temporary storage if available
+  - Set `TMPDIR=/dev/shm` in environment to use RAM-backed tmpfs
+  - Prevents temporary files from hitting disk even during Chainlit's internal operations
+- ⚠️ **Out of Scope**: Chainlit's internal temp file management is framework-level (not application-level)
+
 ---
 
 ## Performance Considerations

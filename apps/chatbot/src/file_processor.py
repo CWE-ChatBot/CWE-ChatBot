@@ -51,7 +51,7 @@ _executor = ThreadPoolExecutor(max_workers=4)
 _httpx_client: Optional['httpx.Client'] = None
 
 def _get_httpx_client() -> 'httpx.Client':
-    """Get or create shared HTTP client with connection pooling."""
+    """Get or create shared HTTP client with connection pooling and HTTP/2 support."""
     global _httpx_client
     if _httpx_client is None:
         if not HAS_HTTPX:
@@ -59,7 +59,8 @@ def _get_httpx_client() -> 'httpx.Client':
         _httpx_client = httpx.Client(
             timeout=55,
             follow_redirects=False,
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            http2=True,  # Enable HTTP/2 for lower latency (multiplexing, header compression)
         )
     return _httpx_client
 
@@ -89,7 +90,9 @@ class FileProcessor:
         self.pdf_worker_timeout = 55  # AC6: Client timeout ≤ 55s
 
         # Text validation thresholds
-        self.min_printable_ratio = 0.9  # AC3
+        # Lowered from 0.9 to 0.85 to handle valid UTF-8 text with symbols/punctuation
+        # Still rejects binary data while accepting legitimate technical documents
+        self.min_printable_ratio = 0.85  # AC3
         self.max_line_length = 2 * 1024 * 1024  # AC3: 2MB per line
 
     def detect_file_type(self, content: bytes) -> str:
