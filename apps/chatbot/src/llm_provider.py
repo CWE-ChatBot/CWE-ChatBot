@@ -102,29 +102,80 @@ class VertexProvider(LLMProvider):
         project: Optional[str] = None,
         location: Optional[str] = None,
         generation_config: Dict[str, Any] | None = None,
+        safety_settings: Dict[str, Any] | None = None,
     ) -> None:
         try:
             import vertexai  # type: ignore
             from vertexai.generative_models import GenerativeModel  # type: ignore
         except Exception as e:  # pragma: no cover - optional dependency
-            raise RuntimeError("Vertex AI libraries not installed") from e
+            raise RuntimeError("Vertex AI libraries not installed. Run: pip install google-cloud-aiplatform") from e
 
-        # Initialize vertex
-        if project and location:
-            vertexai.init(project=project, location=location)
+        # Initialize Vertex AI with project and location
+        if not project or not location:
+            raise ValueError("Both project and location required for Vertex AI initialization")
+
+        vertexai.init(project=project, location=location)
+        logger.info(f"VertexProvider initialized for project '{project}' in '{location}'")
+
         self._model = GenerativeModel(model_name)
         self._gen_cfg = generation_config or {}
 
+        # Configure safety settings - use provided settings or default to permissive for cybersecurity content
+        if safety_settings is not None:
+            self._safety = safety_settings
+            logger.info(f"VertexProvider using explicit safety_settings: {safety_settings}")
+        else:
+            # Default to permissive settings for cybersecurity content (same as GoogleProvider)
+            # Vertex AI uses its own types from vertexai.generative_models
+            try:
+                from vertexai.generative_models import HarmCategory, HarmBlockThreshold, SafetySetting  # type: ignore
+                self._safety = [
+                    SafetySetting(category=HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=HarmBlockThreshold.BLOCK_NONE),
+                    SafetySetting(category=HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=HarmBlockThreshold.BLOCK_NONE),
+                    SafetySetting(category=HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=HarmBlockThreshold.BLOCK_NONE),
+                    SafetySetting(category=HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=HarmBlockThreshold.BLOCK_NONE),
+                ]
+                logger.info("VertexProvider configured with default BLOCK_NONE for cybersecurity content")
+            except ImportError as e:
+                logger.error(f"Failed to import Vertex AI SafetySetting types: {e}")
+                # Fallback - no safety settings (Vertex AI will use defaults)
+                self._safety = None
+                logger.warning("VertexProvider using Vertex AI default safety settings")
+
     async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
-        # Vertex SDK may not support async streaming in this environment; use sync call
-        resp = self._model.generate_content(prompt, **self._gen_cfg)
-        text = getattr(resp, "text", "")
-        if text:
-            yield text
+        logger.debug(f"Vertex starting streaming generation with safety_settings: {self._safety}")
+        try:
+            # Use async method with stream=True
+            stream = await self._model.generate_content_async(
+                prompt,
+                generation_config=self._gen_cfg,
+                safety_settings=self._safety,
+                stream=True,
+            )
+            logger.debug("Vertex streaming generation started successfully")
+            async for chunk in stream:
+                if getattr(chunk, "text", None):
+                    yield chunk.text
+        except Exception as e:
+            logger.error(f"Vertex AI streaming generation failed with error: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            raise e
 
     async def generate(self, prompt: str) -> str:
-        resp = self._model.generate_content(prompt, **self._gen_cfg)
-        return getattr(resp, "text", "") or ""
+        logger.debug(f"Vertex starting non-streaming generation with safety_settings: {self._safety}")
+        try:
+            # Use async method
+            resp = await self._model.generate_content_async(
+                prompt,
+                generation_config=self._gen_cfg,
+                safety_settings=self._safety,
+            )
+            logger.debug("Vertex non-streaming generation completed successfully")
+            return resp.text or ""
+        except Exception as e:
+            logger.error(f"Vertex AI generation failed with error: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            raise e
 
 
 class OfflineProvider(LLMProvider):
@@ -164,11 +215,16 @@ def get_llm_provider(
     elif provider == "vertex":  # pragma: no cover - optional path
         project = os.getenv("GOOGLE_CLOUD_PROJECT")
         location = os.getenv("VERTEX_AI_LOCATION")
+        if not project or not location:
+            raise ValueError("GOOGLE_CLOUD_PROJECT and VERTEX_AI_LOCATION env vars required for Vertex provider")
+        # Note: Do NOT pass safety_settings - VertexProvider creates its own SafetySetting objects
+        # The safety_settings parameter from app_config uses GoogleProvider types which are incompatible
         return VertexProvider(
             model_name=model_name,
             project=project,
             location=location,
             generation_config=generation_config,
+            safety_settings=None,  # Let VertexProvider create proper SafetySetting objects
         )
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}")
