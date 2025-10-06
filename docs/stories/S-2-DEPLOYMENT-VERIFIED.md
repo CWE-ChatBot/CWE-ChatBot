@@ -191,10 +191,19 @@ Until Model Armor template is bound to Vertex AI, platform-level guardrails (pro
 **Expected**: UI should load and respond to CWE queries
 **If Fails**: Check Cloud Run logs for Vertex AI API errors
 
-### Step 2: Bind Model Armor Template
-**Action**: Follow [S-2-MODEL-ARMOR-BINDING.md](S-2-MODEL-ARMOR-BINDING.md) manual steps
-**Goal**: Activate platform-level guardrails
-**Expected**: Model Armor enforcement logs in Cloud Logging
+### Step 2: Integrate Model Armor (CODE CHANGE REQUIRED)
+**Status**: ~~Console binding~~ **INCORRECT APPROACH**
+
+**Correct Approach Discovered**: Model Armor is configured at API call level, not via Console binding.
+- See: [S-2-MODEL-ARMOR-CORRECT-INTEGRATION.md](S-2-MODEL-ARMOR-CORRECT-INTEGRATION.md)
+- Requires: Adding `model_armor_config` parameter to `generate_content_async()` calls
+- Template format: `projects/cwechatbot/locations/us-central1/templates/llm-guardrails-default`
+
+**Next Steps**:
+1. Test if Vertex AI Python SDK supports `model_armor_config` parameter
+2. If yes: Add parameter to VertexProvider.generate_stream() and generate()
+3. If no: Use REST API directly with aiohttp
+4. Deploy and verify guardrails block attacks
 
 ### Step 3: Verify Observability
 **Action**: Send test query, check Cloud Logging for metrics
@@ -203,21 +212,25 @@ Until Model Armor template is bound to Vertex AI, platform-level guardrails (pro
 
 ---
 
-## Summary: Story S-2 is 85% Complete
+## Summary: Story S-2 Status
 
-**What Works**:
+**What Works** (85% Complete):
 - ✅ Vertex AI deployed and VERIFIED WORKING in production
 - ✅ Safety settings configured (SafetySetting objects with BLOCK_NONE)
 - ✅ Observability stack deployed (metrics + alerts)
-- ✅ Model Armor template created
+- ✅ Model Armor template created: `llm-guardrails-default`
 - ✅ Documentation complete
 - ✅ Critical bug fixed (SafetySetting type mismatch)
+- ✅ Integration approach researched and documented
 
-**What's Pending**:
-- ⏳ Model Armor template needs binding via Console (only remaining task)
+**What's Pending** (15% Remaining):
+- ⏳ **Model Armor Integration**: Requires REST API implementation (Python SDK doesn't support model_armor_config)
+  - See: [S-2-MODEL-ARMOR-IMPLEMENTATION-PLAN.md](S-2-MODEL-ARMOR-IMPLEMENTATION-PLAN.md)
+  - Estimated: 1 day implementation
+  - Approach: New ModelArmorProvider class using Vertex AI REST API
 - ⏳ Smoke test blocked until Story 2.6 (Chainlit API endpoint)
 
-**Blocker**: Model Armor binding requires manual Console action (CLI blocked by org permissions)
+**Key Discovery**: Model Armor is NOT configured via Console binding. It requires passing `model_armor_config` parameter in REST API calls. The Vertex AI Python SDK doesn't support this parameter yet, so we need to implement direct REST API integration.
 
 ---
 
