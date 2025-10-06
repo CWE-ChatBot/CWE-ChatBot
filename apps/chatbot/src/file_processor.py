@@ -46,6 +46,23 @@ logger = logging.getLogger(__name__)
 # Thread pool for blocking I/O (PDF worker calls)
 _executor = ThreadPoolExecutor(max_workers=4)
 
+# Shared HTTP client for connection pooling (reduces connection churn)
+# Created lazily on first use to avoid initialization issues
+_httpx_client: Optional['httpx.Client'] = None
+
+def _get_httpx_client() -> 'httpx.Client':
+    """Get or create shared HTTP client with connection pooling."""
+    global _httpx_client
+    if _httpx_client is None:
+        if not HAS_HTTPX:
+            raise RuntimeError("httpx library required for PDF processing")
+        _httpx_client = httpx.Client(
+            timeout=55,
+            follow_redirects=False,
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+        )
+    return _httpx_client
+
 
 class FileProcessor:
     """
@@ -159,6 +176,8 @@ class FileProcessor:
         """
         Synchronous PDF worker call for ThreadPoolExecutor.
 
+        Uses shared HTTP client for connection pooling to reduce connection churn.
+
         Args:
             pdf_bytes: Raw PDF bytes
             url: PDF worker URL
@@ -170,49 +189,48 @@ class FileProcessor:
         Raises:
             ValueError: With error code for user-friendly messages
         """
-        if not HAS_HTTPX:
-            raise ValueError("httpx library required for PDF processing")
+        # Get shared HTTP client (connection pooling)
+        client = _get_httpx_client()
 
         # Call worker with single retry on transient 5xx (AC6)
         max_attempts = 2
         for attempt in range(max_attempts):
             try:
-                with httpx.Client(timeout=self.pdf_worker_timeout) as client:
-                    response = client.post(
-                        url,
-                        content=pdf_bytes,
-                        headers={
-                            'Authorization': f'Bearer {token}',
-                            'Content-Type': 'application/pdf'
-                        },
-                        follow_redirects=False  # Security: no redirects
-                    )
+                response = client.post(
+                    url,
+                    content=pdf_bytes,
+                    headers={
+                        'Authorization': f'Bearer {token}',
+                        'Content-Type': 'application/pdf'
+                    },
+                    timeout=self.pdf_worker_timeout
+                )
 
-                    # Check response status
-                    if response.status_code == 200:
-                        return response.json()
-                    elif response.status_code == 413:
-                        raise ValueError("too_large")
-                    elif response.status_code == 422:
-                        # Parse error code from response
-                        try:
-                            error_data = response.json()
-                            error_code = error_data.get('error', 'invalid_content')
-                        except:
-                            error_code = 'invalid_content'
-                        raise ValueError(error_code)
-                    elif response.status_code in (401, 403):
-                        raise ValueError("auth_failed")
-                    elif response.status_code >= 500:
-                        # Retry on 5xx if first attempt
-                        if attempt < max_attempts - 1:
-                            logger.warning(f"PDF worker returned {response.status_code}, retrying...")
-                            import time
-                            time.sleep(0.5 * (2 ** attempt))  # Jittered backoff
-                            continue
-                        raise ValueError("pdf_processing_failed")
-                    else:
-                        raise ValueError("pdf_processing_failed")
+                # Check response status
+                if response.status_code == 200:
+                    return response.json()
+                elif response.status_code == 413:
+                    raise ValueError("too_large")
+                elif response.status_code == 422:
+                    # Parse error code from response
+                    try:
+                        error_data = response.json()
+                        error_code = error_data.get('error', 'invalid_content')
+                    except:
+                        error_code = 'invalid_content'
+                    raise ValueError(error_code)
+                elif response.status_code in (401, 403):
+                    raise ValueError("auth_failed")
+                elif response.status_code >= 500:
+                    # Retry on 5xx if first attempt
+                    if attempt < max_attempts - 1:
+                        logger.warning(f"PDF worker returned {response.status_code}, retrying...")
+                        import time
+                        time.sleep(0.5 * (2 ** attempt))  # Jittered backoff
+                        continue
+                    raise ValueError("pdf_processing_failed")
+                else:
+                    raise ValueError("pdf_processing_failed")
 
             except httpx.TimeoutException:
                 raise ValueError("timeout")
@@ -330,7 +348,9 @@ class FileProcessor:
             'image_only_pdf_unsupported': 'Image-only PDFs require OCR which is not supported.',
             'binary_text_rejected': 'File contains binary data and cannot be processed as text.',
             'text_encoding_failed': 'Text encoding could not be determined.',
+            'decoding_failed': 'Text encoding could not be determined.',  # Alias for text_encoding_failed
             'text_line_too_long': 'File contains excessively long lines.',
+            'line_too_long': 'File contains excessively long lines.',  # Alias for text_line_too_long
             'pdf_too_many_pages': 'PDF exceeds 50 pages. Please split into smaller documents.',
             'pdf_corrupted': 'PDF file appears to be corrupted or invalid.',
             'pdf_sanitization_failed': 'PDF security sanitization failed.',
@@ -569,8 +589,3 @@ class FileProcessor:
             score += 10
 
         return min(score, 100)
-
-    def _read_file_from_path(self, file_path: str) -> bytes:
-        """Helper method to read file content from path (for asyncio.to_thread)."""
-        with open(file_path, 'rb') as f:
-            return f.read()
