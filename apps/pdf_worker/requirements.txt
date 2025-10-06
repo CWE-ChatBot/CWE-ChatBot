@@ -1,3 +1,4 @@
 pikepdf==9.4.0
 pdfminer.six==20240706
 functions-framework==3.*
+google-cloud-modelarmor>=0.2.8,<1.0.0

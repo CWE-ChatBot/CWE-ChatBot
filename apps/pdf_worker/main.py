@@ -29,6 +29,13 @@ try:
 except ImportError:
     HAS_PDFMINER = False
 
+try:
+    from google.cloud import modelarmor_v1
+    from google.api_core.client_options import ClientOptions
+    HAS_MODEL_ARMOR = True
+except ImportError:
+    HAS_MODEL_ARMOR = False
+
 # Configure logging (metadata only, no content)
 logging.basicConfig(
     level=logging.INFO,
@@ -40,6 +47,12 @@ logger = logging.getLogger(__name__)
 MAX_BYTES = 10 * 1024 * 1024  # 10MB
 MAX_PAGES = 50
 MAX_OUTPUT_CHARS = 1_000_000
+
+# Model Armor configuration
+MODEL_ARMOR_ENABLED = os.getenv('MODEL_ARMOR_ENABLED', 'false').lower() == 'true'
+MODEL_ARMOR_LOCATION = os.getenv('MODEL_ARMOR_LOCATION', 'us-central1')
+MODEL_ARMOR_TEMPLATE_ID = os.getenv('MODEL_ARMOR_TEMPLATE_ID', 'llm-guardrails-default')
+GOOGLE_CLOUD_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
 
 
 def sanitize_pdf(pdf_data: bytes) -> bytes:
@@ -124,6 +137,71 @@ def extract_pdf_text(pdf_data: bytes) -> str:
         text += "\n\n[Content truncated at 1,000,000 characters]"
 
     return text
+
+
+def sanitize_text_with_model_armor(text: str) -> Tuple[bool, str]:
+    """
+    Sanitize extracted PDF text using Model Armor before sending to LLM.
+
+    This prevents malicious content injection via PDF uploads.
+
+    Args:
+        text: Extracted PDF text
+
+    Returns:
+        Tuple of (is_safe, text_or_error_message)
+        - (True, text): Safe to send to LLM
+        - (False, error_msg): BLOCKED - do not send to LLM
+    """
+    if not MODEL_ARMOR_ENABLED:
+        logger.info("Model Armor disabled - skipping PDF text sanitization")
+        return True, text
+
+    if not HAS_MODEL_ARMOR:
+        logger.error("Model Armor enabled but library not available")
+        # Fail-closed: block if Model Armor unavailable
+        return False, "PDF text sanitization unavailable"
+
+    if not GOOGLE_CLOUD_PROJECT:
+        logger.error("GOOGLE_CLOUD_PROJECT not set")
+        return False, "PDF text sanitization misconfigured"
+
+    try:
+        # Create Model Armor client with regional endpoint
+        api_endpoint = f"modelarmor.{MODEL_ARMOR_LOCATION}.rep.googleapis.com"
+        client = modelarmor_v1.ModelArmorClient(
+            client_options=ClientOptions(api_endpoint=api_endpoint)
+        )
+
+        # Build template path
+        template_path = f"projects/{GOOGLE_CLOUD_PROJECT}/locations/{MODEL_ARMOR_LOCATION}/templates/{MODEL_ARMOR_TEMPLATE_ID}"
+
+        # Create sanitize request
+        user_prompt_data = modelarmor_v1.DataItem(text=text)
+        request = modelarmor_v1.SanitizeUserPromptRequest(
+            name=template_path,
+            user_prompt_data=user_prompt_data,
+        )
+
+        # Call Model Armor API
+        response = client.sanitize_user_prompt(request=request)
+
+        # Check result
+        sanitization_result = response.sanitization_result
+        if sanitization_result.filter_match_state == modelarmor_v1.FilterMatchState.NO_MATCH_FOUND:
+            logger.info(f"Model Armor: PDF text ALLOWED ({len(text)} chars)")
+            return True, text
+
+        # MATCH_FOUND = malicious content detected
+        logger.critical(
+            f"Model Armor BLOCKED PDF text upload: match_state={sanitization_result.filter_match_state.name}"
+        )
+        return False, "PDF contains unsafe content and cannot be processed"
+
+    except Exception as e:
+        logger.error(f"Model Armor PDF sanitization failed: {e}")
+        # Fail-closed on error
+        return False, "PDF text sanitization error"
 
 
 def count_pdf_pages(pdf_data: bytes) -> int:
@@ -261,15 +339,26 @@ def pdf_worker(request):
             headers
         )
 
+    # Sanitize extracted text with Model Armor (prevent malicious content injection)
+    is_safe, sanitized_text = sanitize_text_with_model_armor(text)
+    if not is_safe:
+        logger.warning(f"Model Armor blocked PDF text: {sanitized_text}")
+        return (
+            json.dumps({'error': 'pdf_content_blocked', 'message': sanitized_text}),
+            422,
+            headers
+        )
+
     # Return success response
     response = {
-        'text': text,
+        'text': sanitized_text,
         'pages': page_count,
         'sanitized': True,
+        'model_armor_checked': MODEL_ARMOR_ENABLED,
         'metadata': {
             'original_size': len(pdf_data),
             'sanitized_size': len(sanitized_data),
-            'text_length': len(text)
+            'text_length': len(sanitized_text)
         }
     }
 
