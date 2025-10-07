@@ -12,8 +12,10 @@ Security Pattern:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+from google.api_core.retry import Retry
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -84,6 +86,14 @@ class ModelArmorGuard:
                 ) from e
         return self._client
 
+    @staticmethod
+    def _stable_hash(s: str) -> str:
+        """Deterministic, privacy-preserving short hash for log correlation."""
+        try:
+            return hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
+        except Exception:
+            return "hash_err"
+
     async def sanitize_user_prompt(self, prompt: str) -> Tuple[bool, str]:
         """
         Sanitize user input before sending to LLM.
@@ -124,9 +134,18 @@ class ModelArmorGuard:
                 user_prompt_data=user_prompt_data,
             )
 
-            # Call Model Armor API
+            # Call Model Armor API with retry/timeout
             client = self._get_client()
-            response = await client.sanitize_user_prompt(request=request)
+            # Tight, user-friendly retry/timeout policy
+            retry = Retry(
+                initial=0.2, maximum=1.0, multiplier=2.0, deadline=3.0
+            )
+            timeout = 3.0
+            response = await client.sanitize_user_prompt(
+                request=request,
+                retry=retry,
+                timeout=timeout,
+            )
 
             # Check sanitization result
             # API returns: sanitizationResult.filterMatchState = NO_MATCH_FOUND | MATCH_FOUND
@@ -142,7 +161,7 @@ class ModelArmorGuard:
                     "match_state": sanitization_result.filter_match_state.name,
                     "policy": self.template_path,
                     "filter_results": str(sanitization_result.filter_results) if hasattr(sanitization_result, 'filter_results') else None,
-                    "prompt_hash": hash(prompt),
+                    "prompt_hash": self._stable_hash(prompt),
                 }
             )
             return False, "I cannot process that request. Please rephrase your question."
@@ -152,7 +171,7 @@ class ModelArmorGuard:
             # Fail-closed on errors - better safe than sorry
             logger.critical(
                 f"Model Armor error - failing closed",
-                extra={"error": str(e), "prompt_hash": hash(prompt)}
+                extra={"error": str(e), "prompt_hash": self._stable_hash(prompt)}
             )
             return False, "Unable to process your request at this time. Please try again later."
 
@@ -197,9 +216,18 @@ class ModelArmorGuard:
                 model_response_data=model_response_data,
             )
 
-            # Call Model Armor API
+            # Call Model Armor API with retry/timeout
             client = self._get_client()
-            response = await client.sanitize_model_response(request=request)
+            # Same retry/timeout policy
+            retry = Retry(
+                initial=0.2, maximum=1.0, multiplier=2.0, deadline=3.0
+            )
+            timeout = 3.0
+            response = await client.sanitize_model_response(
+                request=request,
+                retry=retry,
+                timeout=timeout,
+            )
 
             # Check sanitization result
             # API returns: sanitizationResult.filterMatchState = NO_MATCH_FOUND | MATCH_FOUND
@@ -215,7 +243,7 @@ class ModelArmorGuard:
                     "match_state": sanitization_result.filter_match_state.name,
                     "policy": self.template_path,
                     "filter_results": str(sanitization_result.filter_results) if hasattr(sanitization_result, 'filter_results') else None,
-                    "response_hash": hash(response_text),
+                    "response_hash": self._stable_hash(response_text),
                 }
             )
             return False, "I generated an unsafe response. Please try a different question."
@@ -225,9 +253,18 @@ class ModelArmorGuard:
             # Fail-closed on errors
             logger.critical(
                 f"Model Armor error - failing closed",
-                extra={"error": str(e), "response_hash": hash(response_text)}
+                extra={"error": str(e), "response_hash": self._stable_hash(response_text)}
             )
             return False, "Unable to process the response at this time. Please try again later."
+
+    async def aclose(self):
+        """Close the async Model Armor client gracefully."""
+        if self._client:
+            try:
+                await self._client.close()
+                logger.debug("Model Armor client closed")
+            except Exception as e:
+                logger.warning(f"Failed to close Model Armor client: {e}")
 
 
 def create_model_armor_guard_from_env() -> Optional[ModelArmorGuard]:
