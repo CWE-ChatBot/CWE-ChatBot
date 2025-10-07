@@ -7,7 +7,7 @@ Security Features:
 - Magic byte validation
 - Size and page limits
 - No disk persistence (memory-only via BytesIO)
-- OIDC authentication via Cloud Functions IAM
+- Protected at edge via Cloud Functions IAM / HTTPS LB (no inline token validation here)
 - No content logging (metadata only)
 """
 import io
@@ -31,6 +31,7 @@ except ImportError:
 
 try:
     from google.cloud import modelarmor_v1
+    from google.api_core.retry import Retry
     from google.api_core.client_options import ClientOptions
     HAS_MODEL_ARMOR = True
 except ImportError:
@@ -69,16 +70,29 @@ def sanitize_pdf(pdf_data: bytes) -> bytes:
     Args:
         pdf_data: Raw PDF bytes
 
+    Notes:
+        - Encrypted/password-protected PDFs will fail to open; we return a
+          specific error code to the client for better UX.
+        - We intentionally remove auto-actions, JS, XFA, and embedded files to
+          reduce the attack surface from untrusted PDFs.
+        - If sanitization fails for any reason, the upload is rejected.
+
     Returns:
         Sanitized PDF bytes
 
     Raises:
+        ValueError: If PDF is encrypted
         Exception: If PDF cannot be sanitized
     """
     if not HAS_PIKEPDF:
         raise ImportError("pikepdf not available")
 
     pdf = pikepdf.open(io.BytesIO(pdf_data))
+
+    # If the PDF is encrypted, fail early with a clear error
+    if pdf.is_encrypted:
+        pdf.close()
+        raise ValueError("encrypted_pdf")
 
     # Remove auto-execute actions
     if '/OpenAction' in pdf.Root:
@@ -162,6 +176,10 @@ def sanitize_text_with_model_armor(text: str) -> Tuple[bool, str]:
         # Fail-closed: block if Model Armor unavailable
         return False, "PDF text sanitization unavailable"
 
+    # Defensive: short, user-friendly retry/timeout policy
+    retry = Retry(initial=0.2, maximum=1.0, multiplier=2.0, deadline=3.0)
+    timeout = 3.0
+
     if not GOOGLE_CLOUD_PROJECT:
         logger.error("GOOGLE_CLOUD_PROJECT not set")
         return False, "PDF text sanitization misconfigured"
@@ -184,7 +202,11 @@ def sanitize_text_with_model_armor(text: str) -> Tuple[bool, str]:
         )
 
         # Call Model Armor API
-        response = client.sanitize_user_prompt(request=request)
+        response = client.sanitize_user_prompt(
+            request=request,
+            retry=retry,
+            timeout=timeout,
+        )
 
         # Check result
         sanitization_result = response.sanitization_result
@@ -259,6 +281,10 @@ def pdf_worker(request):
             headers
         )
 
+    # Enforce content type (defense-in-depth)
+    if request.headers.get('Content-Type', '').split(';', 1)[0].lower() != 'application/pdf':
+        return (json.dumps({'error': 'unsupported_media_type'}), 415, headers)
+
     # Check library availability
     if not HAS_PIKEPDF or not HAS_PDFMINER:
         logger.error("Required libraries not available")
@@ -320,6 +346,14 @@ def pdf_worker(request):
         sanitized_data = sanitize_pdf(pdf_data)
         logger.info(f"PDF sanitized successfully: {len(sanitized_data)} bytes")
     except Exception as e:
+        # Provide clearer signal for encrypted PDFs
+        if isinstance(e, ValueError) and str(e) == "encrypted_pdf":
+            logger.warning("Encrypted/password-protected PDF rejected")
+            return (
+                json.dumps({'error': 'pdf_encrypted'}),
+                422,
+                headers
+            )
         logger.error(f"PDF sanitization failed: {e}")
         return (
             json.dumps({'error': 'pdf_sanitization_failed'}),
@@ -355,6 +389,11 @@ def pdf_worker(request):
         'pages': page_count,
         'sanitized': True,
         'model_armor_checked': MODEL_ARMOR_ENABLED,
+        'limits': {
+            'max_bytes': MAX_BYTES,
+            'max_pages': MAX_PAGES,
+            'max_output_chars': MAX_OUTPUT_CHARS
+        },
         'metadata': {
             'original_size': len(pdf_data),
             'sanitized_size': len(sanitized_data),

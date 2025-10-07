@@ -286,6 +286,9 @@ Response:""",
             else:
                 # For streaming: buffer full response then sanitize
                 # (Model Armor requires complete response for analysis)
+                logger.info(
+                    "Streaming mode: buffering full model output to run Model Armor post-sanitization before emitting."
+                )
                 response_buffer = []
                 async for chunk_text in self.provider.generate_stream(prompt):
                     cleaned_chunk = self._clean_response_chunk(chunk_text)
