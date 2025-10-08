@@ -1,22 +1,37 @@
 """
 Authoritative configuration module for the CWE ChatBot application.
-It loads the environment and then defines the Config object.
 
-Secrets (passwords, API keys) are retrieved from GCP Secret Manager at runtime,
-with fallback to environment variables for local development.
+This is the SINGLE SOURCE OF TRUTH for all application configuration.
+All configuration values are defined here with their defaults.
+
+Configuration sources (in priority order):
+1. Environment variables (from .env file or system environment)
+2. Secrets from GCP Secret Manager (production) via secrets.py
+3. Default values defined in this file
+
+For local development:
+- Copy apps/chatbot/.env.example to .env
+- Set only the required values (DB connection, GEMINI_API_KEY)
+- All other values have sensible defaults
+
+For production deployment:
+- Secrets retrieved automatically from GCP Secret Manager
+- Non-sensitive config set via gcloud run deploy --set-env-vars
+- See SECRETS.md for Secret Manager architecture
 """
 import os
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+
 from .config.env_loader import load_environments
 from .secrets import (
+    get_chainlit_auth_secret,
     get_database_password,
     get_gemini_api_key,
-    get_chainlit_auth_secret,
-    get_oauth_google_client_id,
-    get_oauth_google_client_secret,
     get_oauth_github_client_id,
     get_oauth_github_client_secret,
+    get_oauth_google_client_id,
+    get_oauth_google_client_secret,
 )
 
 # Load context-specific environment variables from .env files if available.
@@ -30,7 +45,7 @@ _PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
 @dataclass
 class Config:
     """Application configuration with environment variable defaults."""
-    
+
     # PostgreSQL Database Configuration
     pg_host: str = os.getenv("POSTGRES_HOST", "localhost")
     pg_port: int = int(os.getenv("POSTGRES_PORT", "5432"))
@@ -44,11 +59,11 @@ class Config:
     embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "3072"))
     # API key retrieved from Secret Manager (falls back to env var)
     gemini_api_key: str = get_gemini_api_key(_PROJECT_ID)
-    
+
     # Retrieval Configuration (RRF hybrid weights)
-    w_vec: float = float(os.getenv("RRF_W_VEC", "0.65"))    # Vector similarity
-    w_fts: float = float(os.getenv("RRF_W_FTS", "0.25"))    # Full-text search
-    w_alias: float = float(os.getenv("RRF_W_ALIAS", "0.10")) # Alias matching
+    w_vec: float = float(os.getenv("RRF_W_VEC", "0.65"))  # Vector similarity
+    w_fts: float = float(os.getenv("RRF_W_FTS", "0.25"))  # Full-text search
+    w_alias: float = float(os.getenv("RRF_W_ALIAS", "0.10"))  # Alias matching
     max_retrieval_results: int = int(os.getenv("MAX_RETRIEVAL_RESULTS", "5"))
     similarity_threshold: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.1"))
     # RRF (ingestion-aligned) parameters
@@ -56,16 +71,22 @@ class Config:
     rrf_fts_k: int = int(os.getenv("RRF_FTS_K", "200"))
     rrf_alias_k: int = int(os.getenv("RRF_ALIAS_K", "200"))
     rrf_k_rrf: int = int(os.getenv("RRF_K_RRF", "60"))
-    
+
     # Security Configuration
     max_input_length: int = int(os.getenv("MAX_INPUT_LENGTH", "1000"))
-    enable_strict_sanitization: bool = os.getenv("ENABLE_STRICT_SANITIZATION", "true").lower() == "true"
+    enable_strict_sanitization: bool = (
+        os.getenv("ENABLE_STRICT_SANITIZATION", "true").lower() == "true"
+    )
 
     # Content Processing Limits
     max_file_evidence_length: int = int(os.getenv("MAX_FILE_EVIDENCE_LENGTH", "16000"))
-    max_attachment_summary_length: int = int(os.getenv("MAX_ATTACHMENT_SUMMARY_LENGTH", "1200"))
+    max_attachment_summary_length: int = int(
+        os.getenv("MAX_ATTACHMENT_SUMMARY_LENGTH", "1200")
+    )
     max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "4096"))
-    max_document_snippet_length: int = int(os.getenv("MAX_DOCUMENT_SNIPPET_LENGTH", "1000"))
+    max_document_snippet_length: int = int(
+        os.getenv("MAX_DOCUMENT_SNIPPET_LENGTH", "1000")
+    )
     max_context_length: int = int(os.getenv("MAX_CONTEXT_LENGTH", "16000"))
     max_context_chunks: int = int(os.getenv("MAX_CONTEXT_CHUNKS", "100"))
 
@@ -75,7 +96,9 @@ class Config:
     llm_temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.1"))
     llm_top_p: float = float(os.getenv("LLM_TOP_P", "0.9"))
     llm_top_k: int = int(os.getenv("LLM_TOP_K", "40"))
-    llm_safety_permissive: bool = os.getenv("LLM_SAFETY_PERMISSIVE", "true").lower() == "true"
+    llm_safety_permissive: bool = (
+        os.getenv("LLM_SAFETY_PERMISSIVE", "true").lower() == "true"
+    )
 
     # Application Configuration
     enable_debug_logging: bool = os.getenv("DEBUG", "false").lower() == "true"
@@ -89,12 +112,16 @@ class Config:
     chainlit_auth_secret: Optional[str] = get_chainlit_auth_secret(_PROJECT_ID)
     # OAuth Providers - secrets from Secret Manager
     oauth_google_client_id: Optional[str] = get_oauth_google_client_id(_PROJECT_ID)
-    oauth_google_client_secret: Optional[str] = get_oauth_google_client_secret(_PROJECT_ID)
+    oauth_google_client_secret: Optional[str] = get_oauth_google_client_secret(
+        _PROJECT_ID
+    )
     oauth_github_client_id: Optional[str] = get_oauth_github_client_id(_PROJECT_ID)
-    oauth_github_client_secret: Optional[str] = get_oauth_github_client_secret(_PROJECT_ID)
+    oauth_github_client_secret: Optional[str] = get_oauth_github_client_secret(
+        _PROJECT_ID
+    )
     # Whitelist (comma-separated emails or @domain suffixes)
     allowed_users_raw: Optional[str] = os.getenv("ALLOWED_USERS")
-    
+
     def get_pg_config(self) -> Dict[str, Any]:
         """Get PostgreSQL connection configuration."""
         return {
@@ -102,16 +129,12 @@ class Config:
             "port": self.pg_port,
             "database": self.pg_database,
             "user": self.pg_user,
-            "password": self.pg_password
+            "password": self.pg_password,
         }
-    
+
     def get_hybrid_weights(self) -> Dict[str, float]:
         """Get RRF hybrid retrieval weights."""
-        return {
-            "w_vec": self.w_vec,
-            "w_fts": self.w_fts,
-            "w_alias": self.w_alias
-        }
+        return {"w_vec": self.w_vec, "w_fts": self.w_fts, "w_alias": self.w_alias}
 
     def get_llm_generation_config(self) -> Dict[str, Any]:
         """Get LLM generation configuration with configurable defaults."""
@@ -130,20 +153,42 @@ class Config:
 
         # Return permissive settings for cybersecurity content
         try:
-            from google.generativeai.types import HarmCategory, HarmBlockThreshold  # type: ignore
+            from google.generativeai.types import (  # type: ignore
+                HarmBlockThreshold,
+                HarmCategory,
+            )
+
             return [
-                {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
-                {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.BLOCK_NONE},
-                {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.BLOCK_NONE},
-                {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+                {
+                    "category": HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    "threshold": HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    "category": HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    "threshold": HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    "category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    "threshold": HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    "category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    "threshold": HarmBlockThreshold.BLOCK_NONE,
+                },
             ]
         except ImportError:
             # Fallback using string names
             return [
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
                 {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_NONE",
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_NONE",
+                },
             ]
 
     def get_llm_provider_config(self) -> Dict[str, Any]:
@@ -152,9 +197,9 @@ class Config:
             "provider": self.llm_provider,
             "model_name": self.llm_model_name,
             "generation_config": self.get_llm_generation_config(),
-            "safety_settings": self.get_llm_safety_settings()
+            "safety_settings": self.get_llm_safety_settings(),
         }
-    
+
     # ------- OAuth helpers (centralize logic used by the app) -------
     @property
     def google_oauth_configured(self) -> bool:
@@ -171,12 +216,18 @@ class Config:
     @property
     def oauth_ready(self) -> bool:
         """True if OAuth is enabled, at least one provider is configured, and Chainlit can sign tokens."""
-        return self.enable_oauth and self.oauth_providers_configured and bool(self.chainlit_auth_secret)
+        return (
+            self.enable_oauth
+            and self.oauth_providers_configured
+            and bool(self.chainlit_auth_secret)
+        )
 
     def get_allowed_users(self) -> list[str]:
         if not self.allowed_users_raw:
             return []
-        return [u.strip().lower() for u in self.allowed_users_raw.split(",") if u.strip()]
+        return [
+            u.strip().lower() for u in self.allowed_users_raw.split(",") if u.strip()
+        ]
 
     def is_user_allowed(self, email: str) -> bool:
         """Email allowlist check supporting full address or @domain suffix."""
@@ -198,18 +249,26 @@ class Config:
             return
         if not self.oauth_providers_configured:
             # Not fatal if you want "open mode when no providers", but usually this is a misconfig.
-            raise ValueError("ENABLE_OAUTH=true but no OAuth provider is configured (set Google or GitHub client id/secret).")
+            raise ValueError(
+                "ENABLE_OAUTH=true but no OAuth provider is configured (set Google or GitHub client id/secret)."
+            )
         if not self.chainlit_auth_secret:
-            raise ValueError("CHAINLIT_AUTH_SECRET must be set when OAuth is enabled (Chainlit needs it to sign tokens).")
+            raise ValueError(
+                "CHAINLIT_AUTH_SECRET must be set when OAuth is enabled (Chainlit needs it to sign tokens)."
+            )
 
     def validate_config(self, *, offline_ai: bool = False) -> None:
         """Validate configuration and raise errors for missing required values."""
         errors = []
 
         # Check database configuration - skip password check if using IAM authentication
-        using_iam_auth = bool(os.getenv("DB_IAM_USER")) or bool(os.getenv("INSTANCE_CONN_NAME"))
+        using_iam_auth = bool(os.getenv("DB_IAM_USER")) or bool(
+            os.getenv("INSTANCE_CONN_NAME")
+        )
         if not self.pg_password and not using_iam_auth:
-            errors.append("POSTGRES_PASSWORD environment variable is required (or use IAM authentication)")
+            errors.append(
+                "POSTGRES_PASSWORD environment variable is required (or use IAM authentication)"
+            )
 
         # Check Gemini API key
         if not self.gemini_api_key and not offline_ai:
@@ -218,7 +277,9 @@ class Config:
         # Validate RRF weights sum to 1.0
         total_weight = self.w_vec + self.w_fts + self.w_alias
         if not abs(total_weight - 1.0) < 1e-6:
-            errors.append(f"RRF weights (w_vec + w_fts + w_alias) must sum to 1.0, got {total_weight}")
+            errors.append(
+                f"RRF weights (w_vec + w_fts + w_alias) must sum to 1.0, got {total_weight}"
+            )
 
         if errors:
             raise ValueError(f"Configuration errors: {'; '.join(errors)}")
