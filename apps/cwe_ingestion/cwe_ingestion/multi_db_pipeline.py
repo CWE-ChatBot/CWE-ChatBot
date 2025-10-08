@@ -166,14 +166,14 @@ class MultiDatabaseCWEPipeline:
             shutil.rmtree(temp_dir, ignore_errors=True)
             logger.debug(f"Cleaned up temporary directory: {temp_dir}")
 
-    def _generate_embeddings_once(self, cwe_entries) -> Dict[str, Any]:
+    def _generate_embeddings_once(self, cwe_entries: List[Any]) -> Dict[str, Any]:
         """
         Generate embeddings once for all entries and prepare data structures
         for both chunked and single-row storage modes.
         """
         logger.info("🔄 Generating embeddings once for all database targets...")
 
-        embedding_data = {
+        embedding_data: Dict[str, Any] = {
             "single_row": [],
             "chunked": [],
             "metadata": {
@@ -201,7 +201,9 @@ class MultiDatabaseCWEPipeline:
 
         return embedding_data
 
-    def _generate_single_row_embeddings(self, cwe_entries) -> List[Dict[str, Any]]:
+    def _generate_single_row_embeddings(
+        self, cwe_entries: List[Any]
+    ) -> List[Dict[str, Any]]:
         """Generate embeddings for single-row storage mode."""
         texts_to_embed: List[str] = []
         aliases_by_id: Dict[str, str] = {}
@@ -232,7 +234,9 @@ class MultiDatabaseCWEPipeline:
 
         return documents_to_store
 
-    def _generate_chunked_embeddings(self, cwe_entries) -> List[Dict[str, Any]]:
+    def _generate_chunked_embeddings(
+        self, cwe_entries: List[Any]
+    ) -> List[Dict[str, Any]]:
         """Generate embeddings for chunked storage mode using cache-first strategy."""
         chunk_payloads: List[Dict[str, Any]] = []
         cache_hits = 0
@@ -351,6 +355,7 @@ class MultiDatabaseCWEPipeline:
                 )
 
                 # Create appropriate vector store for this target
+                vector_store: Union[PostgresChunkStore, PostgresVectorStore]
                 if target.use_chunked:
                     vector_store = PostgresChunkStore(
                         dims=self.embedding_dim, database_url=target.database_url
@@ -372,8 +377,11 @@ class MultiDatabaseCWEPipeline:
                     )
                     continue
 
-                # Store the data
-                stored = vector_store.store_batch(data_to_store)
+                # Store the data with type narrowing
+                if isinstance(vector_store, PostgresChunkStore):
+                    stored = vector_store.store_chunks(data_to_store)
+                else:
+                    stored = vector_store.store_batch(data_to_store)
                 logger.info(f"✅ {target.name}: Stored {stored} {storage_type} records.")
 
                 # Verify the storage

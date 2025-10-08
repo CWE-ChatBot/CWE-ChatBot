@@ -3,7 +3,7 @@
 import logging
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 import click
 
@@ -27,7 +27,9 @@ try:
     from scripts.import_policy_from_xml import main as policy_import_main
 except Exception:
     # Allow running when relative import path differs
-    from apps.cwe_ingestion.scripts.import_policy_from_xml import main as policy_import_main
+    from apps.cwe_ingestion.scripts.import_policy_from_xml import (
+        main as policy_import_main,
+    )
 
 logging.basicConfig(
     level=logging.INFO,
@@ -176,17 +178,21 @@ def query(
     click.echo(f"🔍 Query: '{query_text}'\n" + "-" * 50)
 
     if not hybrid:
-        # Vector-only fallback
-        results = pipe.vector_store.query_similar(qemb, n_results)
-        if not results:
-            click.echo("No results.")
+        # Vector-only fallback - only PostgresVectorStore has query_similar
+        if isinstance(pipe.vector_store, PostgresVectorStore):
+            results = pipe.vector_store.query_similar(qemb, n_results)
+            if not results:
+                click.echo("No results.")
+                return
+            for i, r in enumerate(results, 1):
+                md = r.get("metadata", {})
+                click.echo(f"{i}. {md.get('cwe_id','?')}: {md.get('name','?')}")
+                click.echo(f"   Distance: {r.get('distance','N/A')}")
+                click.echo(f"   {r.get('document','')[:180]}...\n")
             return
-        for i, r in enumerate(results, 1):
-            md = r.get("metadata", {})
-            click.echo(f"{i}. {md.get('cwe_id','?')}: {md.get('name','?')}")
-            click.echo(f"   Distance: {r.get('distance','N/A')}")
-            click.echo(f"   {r.get('document','')[:180]}...\n")
-        return
+        else:
+            click.echo("Vector-only query requires single-row storage (--no-chunked)")
+            return
 
     # HYBRID path — branch by concrete store type so kwargs match signatures
     store = pipe.vector_store
@@ -194,7 +200,7 @@ def query(
     if isinstance(store, PostgresChunkStore):
         results = store.query_hybrid(
             query_text=query_text,
-            query_embedding=qemb,
+            query_embedding=qemb.tolist() if hasattr(qemb, "tolist") else list(qemb),
             k_vec=max(n_results * 5, 50),
             limit_chunks=max(n_results * 3, 15),
             w_vec=w_vec,
@@ -264,9 +270,6 @@ def query(
                 f"   vec={sc['vec']:.3f} fts={sc['fts']:.3f} alias={sc['alias']:.3f}"
             )
             click.echo(f"   {res['document'][:180]}...\n")
-
-    else:
-        click.echo("Unknown vector store type.")
 
 
 def _infer_section_intent(q: str) -> str | None:
@@ -345,6 +348,7 @@ def stats(chunked: bool) -> None:
 
     try:
         # Create the appropriate store type
+        store: Union[PostgresChunkStore, PostgresVectorStore]
         if chunked:
             click.echo("📊 PostgreSQL Chunked Store Health Check")
             click.echo("-" * 40)

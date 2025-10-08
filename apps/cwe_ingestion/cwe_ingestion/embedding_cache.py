@@ -197,7 +197,8 @@ class EmbeddingCache:
                     ).reshape(shape)
 
             logger.debug(f"Loaded cached embedding for {cwe_id}")
-            return cache_data["cwe_data"]
+            result: Dict[str, Any] = cache_data["cwe_data"]
+            return result
 
         except Exception as e:
             logger.error(f"Failed to load cached embedding for {cwe_id}: {e}")

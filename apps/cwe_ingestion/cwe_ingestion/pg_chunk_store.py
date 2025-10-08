@@ -312,10 +312,10 @@ class PostgresChunkStore:
         with self._get_connection() as conn, self._cursor(conn) as cur:
             # normalize embedding
             qe = query_embedding
-            if isinstance(qe, np.ndarray):
-                qe = qe.astype(float).tolist()
+            if isinstance(qe, np.ndarray):  # type: ignore[unreachable]
+                qe = qe.astype(float).tolist()  # type: ignore[unreachable]
             elif not isinstance(qe, list):
-                qe = list(qe)
+                qe = list(qe)  # type: ignore[unreachable]
 
             vec_param: Any
             if self._using_pg8000:
@@ -459,10 +459,10 @@ class PostgresChunkStore:
         """
         # Normalize embedding
         qe = query_embedding
-        if isinstance(qe, np.ndarray):
-            qe = qe.astype(float).tolist()
+        if isinstance(qe, np.ndarray):  # type: ignore[unreachable]
+            qe = qe.astype(float).tolist()  # type: ignore[unreachable]
         elif not isinstance(qe, list):
-            qe = list(qe)
+            qe = list(qe)  # type: ignore[unreachable]
 
         # Clean the raw text once for FTS + alias (keep it simple and guard empties)
         q_raw = (query_text or "").strip()
@@ -480,7 +480,7 @@ class PostgresChunkStore:
             halfvec_cast = "%s::halfvec"
             vector_cast = "%s::vector"
 
-        def _begin_with_knn_hints(cur, ef_search: int = 32):
+        def _begin_with_knn_hints(cur: Any, ef_search: int = 32) -> None:
             """Apply transaction-scoped planner hints for HNSW KNN queries."""
             cur.execute("BEGIN;")
             cur.execute("SET LOCAL enable_seqscan = off;")
