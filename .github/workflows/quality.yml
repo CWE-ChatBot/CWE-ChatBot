@@ -1,0 +1,102 @@
+name: quality
+
+on: [push, pull_request]
+
+# Needed to upload SARIF to the Code scanning / Code quality tab
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  lint-type-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: ${{ matrix.python }} }
+      - name: Install Poetry
+        run: curl -sSL https://install.python-poetry.org | python3 -
+      - name: Cache Poetry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          key: poetry-${{ hashFiles('**/poetry.lock') }}
+      - name: Install deps
+        run: poetry install --no-interaction --no-root
+      - name: Pre-commit (format, lint, mypy)
+        run: |
+          pipx install pre-commit
+          pre-commit run --all-files
+      - name: Tests + coverage
+        run: poetry run pytest --cov --cov-report=xml
+      - name: Coverage gate
+        uses: orgoro/coverage@v3
+        with:
+          coverageFile: ./coverage.xml
+          failCiIfError: true
+          minCoverage: 85
+
+  pyright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pipx install pyright
+      - run: pyright
+
+  # === Semgrep -> SARIF -> Code scanning ===
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Semgrep (generate SARIF, keep going)
+        id: semgrep
+        continue-on-error: true  # ensure upload happens even with findings
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/python
+            p/security-audit
+          generateSarif: "1"     # writes semgrep.sarif in repo root
+      - name: Upload Semgrep SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+      # Optionally fail the job if Semgrep found results (kept soft by default)
+      # - run: exit ${{ steps.semgrep.outputs.exit_code || 0 }}
+
+  # === pip-audit -> SARIF -> Code scanning ===
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Install Poetry
+        run: curl -sSL https://install.python-poetry.org | python3 -
+      - name: Export deps from Poetry
+        run: poetry export -f requirements.txt --without-hashes -o requirements.txt
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip-audit
+      - name: Run pip-audit (produce SARIF, capture exit code)
+        id: pipaudit
+        run: |
+          set +e
+          pip-audit -r requirements.txt --format sarif --output pip-audit.sarif --progress-spinner off
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          # Always succeed so we can upload SARIF
+          exit 0
+      - name: Upload pip-audit SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pip-audit.sarif
+      # Re-fail the job if vulnerabilities were found
+      - name: Fail if pip-audit had findings
+        if: ${{ steps.pipaudit.outputs.exit_code != '0' }}
+        run: |
+          echo "pip-audit found vulnerabilities."
+          exit 1
