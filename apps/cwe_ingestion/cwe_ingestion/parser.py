@@ -34,12 +34,12 @@ def _get_text(element: Optional[Element], path: str = ".") -> Optional[str]:
 class CWEParser:
     """Secure XML parser that extracts CWE data into Pydantic models."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         logger.info("CWEParser initialized with XXE protection via defusedxml.")
         self.xxe_protection_enabled = True
         self._configure_secure_parser()
 
-    def _configure_secure_parser(self):
+    def _configure_secure_parser(self) -> None:
         """Configure secure XML parser settings to prevent XXE attacks."""
         # Using defusedxml.ElementTree provides XXE protection by default
         # This method exists to satisfy test expectations for security configuration

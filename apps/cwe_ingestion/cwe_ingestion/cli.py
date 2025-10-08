@@ -3,27 +3,31 @@
 import logging
 import os
 import sys
+from typing import TYPE_CHECKING
 
 import click
 
-try:
-    # Relative imports (when used as module)
+if TYPE_CHECKING:
+    # Type checking imports
     from .pg_chunk_store import PostgresChunkStore
     from .pg_vector_store import PostgresVectorStore
     from .pipeline import CWEIngestionPipeline
-except ImportError:
-    # Absolute imports (when run directly)
-    from pg_chunk_store import PostgresChunkStore
-    from pg_vector_store import PostgresVectorStore
-from pipeline import CWEIngestionPipeline
+else:
+    # Runtime imports - try relative first, fall back to absolute
+    try:
+        from .pg_chunk_store import PostgresChunkStore
+        from .pg_vector_store import PostgresVectorStore
+        from .pipeline import CWEIngestionPipeline
+    except ImportError:
+        from pg_chunk_store import PostgresChunkStore  # type: ignore[no-redef]
+        from pg_vector_store import PostgresVectorStore  # type: ignore[no-redef]
+        from pipeline import CWEIngestionPipeline  # type: ignore[no-redef]
 
 try:
     from scripts.import_policy_from_xml import main as policy_import_main
 except Exception:
     # Allow running when relative import path differs
-    from apps.cwe_ingestion.scripts.import_policy_from_xml import (
-        main as policy_import_main,  # type: ignore
-    )
+    from apps.cwe_ingestion.scripts.import_policy_from_xml import main as policy_import_main  # type: ignore[no-redef]
 
 logging.basicConfig(
     level=logging.INFO,

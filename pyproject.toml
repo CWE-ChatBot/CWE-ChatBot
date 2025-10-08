@@ -143,19 +143,8 @@ exclude = [
 module = "apps.chatbot.src.*"
 disallow_untyped_defs = false
 
-[[tool.mypy.overrides]]
-module = "apps.cwe_ingestion.*"
-disallow_untyped_defs = false
-ignore_errors = true
-
-
-[[tool.mypy.overrides]]
-module = "apps.cwe_ingestion.cwe_ingestion.pg_vector_store"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "apps.cwe_ingestion.cwe_ingestion.pg_chunk_store"
-ignore_errors = true
+# cwe_ingestion: Strict typing enabled - incremental fixes needed
+# Removed ignore_errors overrides to enable full type checking
 
 [[tool.mypy.overrides]]
 module = "tests.*"

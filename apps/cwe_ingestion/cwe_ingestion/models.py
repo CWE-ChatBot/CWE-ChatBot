@@ -132,7 +132,7 @@ def _split_text_into_chunks_tiktoken(
         return []
 
     try:
-        import tiktoken  # type: ignore[reportMissingImports]
+        import tiktoken
 
         try:
             encoding = tiktoken.get_encoding(model_name)

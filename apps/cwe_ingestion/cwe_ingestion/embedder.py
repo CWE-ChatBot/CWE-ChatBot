@@ -182,9 +182,8 @@ class GeminiEmbedder:
 
         # Configure the Gemini API
         try:
-            # Optional dependency; ignore Pylance missing import in environments
-            # where google-generativeai isn't installed.
-            import google.generativeai as genai  # type: ignore[reportMissingImports]
+            # Optional dependency in environments where google-generativeai isn't installed
+            import google.generativeai as genai
 
             # Avoid private/exported attribute warnings by using getattr.
             configure_fn = getattr(genai, "configure", None)

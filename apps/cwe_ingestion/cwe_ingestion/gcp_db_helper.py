@@ -9,7 +9,7 @@ import click
 
 
 @click.group()
-def cli():
+def cli() -> None:
     """Google Cloud SQL helper utilities for CWE ingestion."""
     pass
 
@@ -22,7 +22,7 @@ def cli():
 @click.option("--instance", "-i", required=True, help="Cloud SQL instance name")
 @click.option("--database", "-d", default="cwe", help="Database name (default: cwe)")
 @click.option("--username", "-u", required=True, help="IAM database username")
-def create_url(project_id, region, instance, database, username):
+def create_url(project_id: str, region: str, instance: str, database: str, username: str) -> None:
     """Create a Google Cloud SQL connection URL for IAM authentication."""
     from multi_db_pipeline import create_google_cloud_sql_url
 
@@ -53,7 +53,7 @@ def create_url(project_id, region, instance, database, username):
     "--database-url",
     help="Database URL to test (uses PROD_DATABASE_URL if not provided)",
 )
-def test_iam_auth(database_url):
+def test_iam_auth(database_url: str | None) -> None:
     """Test Google Cloud SQL IAM authentication."""
     if not database_url:
         database_url = os.environ.get("PROD_DATABASE_URL")
@@ -101,7 +101,7 @@ def test_iam_auth(database_url):
 
 
 @cli.command()
-def check_auth():
+def check_auth() -> None:
     """Check current Google Cloud authentication status."""
     import subprocess
 

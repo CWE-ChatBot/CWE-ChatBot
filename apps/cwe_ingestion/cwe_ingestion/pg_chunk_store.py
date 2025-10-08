@@ -3,7 +3,7 @@ import contextlib
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, Generator, List, Optional, Sequence
 
 import numpy as np
 
@@ -97,7 +97,7 @@ class PostgresChunkStore:
     """
 
     @contextlib.contextmanager
-    def _cursor(self, conn):
+    def _cursor(self, conn: Any) -> Generator[Any, None, None]:
         """Safe cursor context manager that works with both psycopg and pg8000."""
         cur = conn.cursor()
         try:
@@ -179,7 +179,7 @@ class PostgresChunkStore:
         return "[" + ",".join(map(str, embedding)) + "]"
 
     @contextlib.contextmanager
-    def _get_connection(self):
+    def _get_connection(self) -> Generator[Any, None, None]:
         """
         Connection factory (no per-query handshakes):
           - With Engine: checkout a pooled connection from SQLAlchemy; close() returns to pool.
@@ -201,7 +201,7 @@ class PostgresChunkStore:
                 self._persistent_conn = psycopg.connect(self.database_url)
             yield self._persistent_conn
 
-    def _ensure_schema(self):
+    def _ensure_schema(self) -> None:
         logger.info("Ensuring Postgres chunked schema exists...")
         with self._get_connection() as conn, self._cursor(conn) as cur:
             # Set PostgreSQL tuning parameters for better performance
@@ -317,12 +317,13 @@ class PostgresChunkStore:
             elif not isinstance(qe, list):
                 qe = list(qe)
 
+            vec_param: Any
             if self._using_pg8000:
-                vec_param: Any = self._to_vector_literal(qe)
+                vec_param = self._to_vector_literal(qe)
                 halfvec_left = "%s::halfvec"
                 vector_left = "%s::vector"
             else:
-                vec_param: Any = qe
+                vec_param = qe
                 # psycopg is fine with no cast, but explicit cast is also safe:
                 halfvec_left = "%s::halfvec"
                 vector_left = "%s::vector"
@@ -469,12 +470,13 @@ class PostgresChunkStore:
         alias_pattern = f"%{q_clean}%"
 
         # Driver-specific vector literal + casts
+        vec_param: Any
         if self._using_pg8000:
-            vec_param: Any = self._to_vector_literal(qe)
+            vec_param = self._to_vector_literal(qe)
             halfvec_cast = "%s::halfvec"
             vector_cast = "%s::vector"
         else:
-            vec_param: Any = qe
+            vec_param = qe
             halfvec_cast = "%s::halfvec"
             vector_cast = "%s::vector"
 

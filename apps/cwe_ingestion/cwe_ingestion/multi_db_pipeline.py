@@ -7,10 +7,10 @@ import logging
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-try:
-    # Relative imports (when used as module)
+if TYPE_CHECKING:
+    # Type checking imports
     from .downloader import CWEDownloader
     from .embedder import CWEEmbedder, GeminiEmbedder
     from .embedding_cache import EmbeddingCache
@@ -18,15 +18,24 @@ try:
     from .parser import CWEParser
     from .pg_chunk_store import PostgresChunkStore
     from .pg_vector_store import PostgresVectorStore
-except ImportError:
-    # Absolute imports (when run directly)
-    from downloader import CWEDownloader
-    from embedder import CWEEmbedder, GeminiEmbedder
-    from embedding_cache import EmbeddingCache
-    from models import entry_to_sections
-    from parser import CWEParser
-    from pg_chunk_store import PostgresChunkStore
-    from pg_vector_store import PostgresVectorStore
+else:
+    # Runtime imports - try relative first, fall back to absolute
+    try:
+        from .downloader import CWEDownloader
+        from .embedder import CWEEmbedder, GeminiEmbedder
+        from .embedding_cache import EmbeddingCache
+        from .models import entry_to_sections
+        from .parser import CWEParser
+        from .pg_chunk_store import PostgresChunkStore
+        from .pg_vector_store import PostgresVectorStore
+    except ImportError:
+        from downloader import CWEDownloader  # type: ignore[no-redef]
+        from embedder import CWEEmbedder, GeminiEmbedder  # type: ignore[no-redef]
+        from embedding_cache import EmbeddingCache  # type: ignore[no-redef]
+        from models import entry_to_sections  # type: ignore[no-redef]
+        from parser import CWEParser  # type: ignore[no-redef]
+        from pg_chunk_store import PostgresChunkStore  # type: ignore[no-redef]
+        from pg_vector_store import PostgresVectorStore  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 

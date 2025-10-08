@@ -46,7 +46,7 @@ class EmbeddingCache:
                 "total_cached": 0,
             }
 
-    def _save_metadata(self):
+    def _save_metadata(self) -> None:
         """Save cache metadata to disk."""
         self.metadata["last_updated"] = datetime.now().isoformat()
         with open(self.metadata_file, "w") as f:
@@ -270,7 +270,7 @@ class EmbeddingCache:
 
     def clear_cache(
         self, embedder_type: Optional[str] = None, model_name: Optional[str] = None
-    ):
+    ) -> None:
         """Clear cache entries (optionally filtered by embedder type/model)."""
         to_remove = []
 

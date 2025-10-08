@@ -120,7 +120,7 @@ class PostgresVectorStore:
             # Standard PostgreSQL connection
             return {"conninfo": database_url}
 
-    def _ensure_schema(self):
+    def _ensure_schema(self) -> None:
         logger.info("Ensuring Postgres schema exists for hybrid retrieval...")
 
         # Atomic DDL block for robust schema management
