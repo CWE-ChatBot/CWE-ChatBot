@@ -6,6 +6,8 @@ This document describes the Python development toolchain used in the CWE ChatBot
 
 The project uses a modern Python toolchain optimized for code quality, type safety, and developer productivity:
 
+### Development Tools
+
 | Tool | Version | Purpose |
 |------|---------|---------|
 | Python | 3.12.3 | Runtime and development |
@@ -15,6 +17,24 @@ The project uses a modern Python toolchain optimized for code quality, type safe
 | Black | 23.12.1 | Opinionated code formatter |
 | Mypy | 1.17.1 | Static type checking |
 | Pydantic | 2.11.7 | Data validation and settings management |
+| Semgrep | Latest | Security-focused static analysis |
+
+### GitHub Advanced Security
+
+The project leverages **GitHub Advanced Security** for comprehensive security protection:
+
+| Tool | Purpose | Status |
+|------|---------|--------|
+| **Dependabot** | Automated dependency updates and vulnerability alerts | ✅ Enabled |
+| **CodeQL** | Automated code scanning for security vulnerabilities | ✅ Enabled |
+| **Secret Scanning** | Detect secrets, tokens, and credentials in code | ✅ Enabled |
+| **Push Protection** | Block commits containing secrets before they reach repository | ✅ Enabled |
+
+**Key Benefits**:
+- **Dependabot**: Automatically creates PRs to update vulnerable dependencies
+- **CodeQL**: Scans for 200+ security vulnerability patterns (SQL injection, XSS, etc.)
+- **Secret Scanning**: Prevents credential leaks (API keys, tokens, passwords)
+- **Push Protection**: Real-time blocking of secret commits (prevents incidents before they happen)
 
 ## Tool Purposes
 
