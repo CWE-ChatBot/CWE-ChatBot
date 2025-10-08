@@ -27,7 +27,7 @@ try:
     from scripts.import_policy_from_xml import main as policy_import_main
 except Exception:
     # Allow running when relative import path differs
-    from apps.cwe_ingestion.scripts.import_policy_from_xml import main as policy_import_main  # type: ignore[no-redef]
+    from apps.cwe_ingestion.scripts.import_policy_from_xml import main as policy_import_main
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +38,7 @@ logging.basicConfig(
 
 @click.group()
 @click.option("--debug", is_flag=True, help="Enable debug logging")
-def cli(debug):
+def cli(debug: bool) -> None:
     """CWE Data Ingestion Pipeline (PostgreSQL + pgvector only)"""
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -72,7 +72,13 @@ def cli(debug):
 @click.option(
     "--chunked/--single", default=True, help="Store as chunked rows (recommended)"
 )
-def ingest(target_cwes, only_cwes_file, embedding_model, embedder_type, chunked):
+def ingest(
+    target_cwes: tuple[str, ...],
+    only_cwes_file: str | None,
+    embedding_model: str,
+    embedder_type: str,
+    chunked: bool,
+) -> None:
     """Run the complete CWE ingestion pipeline (Postgres-only)."""
 
     # ---- Merge inline -c with file-based list (optional) ----
@@ -99,8 +105,13 @@ def ingest(target_cwes, only_cwes_file, embedding_model, embedder_type, chunked)
                 targets_list.append(tid)
 
     # de-dupe while preserving order
-    seen = set()
-    targets_list = [x for x in targets_list if not (x in seen or seen.add(x))]
+    seen: set[str] = set()
+    deduplicated: list[str] = []
+    for x in targets_list:
+        if x not in seen:
+            seen.add(x)
+            deduplicated.append(x)
+    targets_list = deduplicated
     # ---------------------------------------------------------------
 
     pipeline = CWEIngestionPipeline(
@@ -148,7 +159,16 @@ def ingest(target_cwes, only_cwes_file, embedding_model, embedder_type, chunked)
     ),
     default=None,
 )
-def query(query_text, n_results, hybrid, chunked, w_vec, w_fts, w_alias, boost_section):
+def query(
+    query_text: str,
+    n_results: int,
+    hybrid: bool,
+    chunked: bool,
+    w_vec: float,
+    w_fts: float,
+    w_alias: float,
+    boost_section: str | None,
+) -> None:
     """Query similar CWEs (Postgres-only)."""
     pipe = CWEIngestionPipeline(use_chunked=chunked)
     qemb = pipe.embedder.embed_text(query_text)
@@ -249,7 +269,7 @@ def query(query_text, n_results, hybrid, chunked, w_vec, w_fts, w_alias, boost_s
         click.echo("Unknown vector store type.")
 
 
-def _infer_section_intent(q: str):
+def _infer_section_intent(q: str) -> str | None:
     ql = q.lower()
     if any(
         k in ql
@@ -314,7 +334,7 @@ def _infer_section_intent(q: str):
 @click.option(
     "--chunked/--single", default=True, help="Check chunked store or single-row store"
 )
-def stats(chunked):
+def stats(chunked: bool) -> None:
     """Show database health and collection statistics."""
     import os
 
@@ -401,13 +421,13 @@ def stats(chunked):
     help="Production database storage mode",
 )
 def ingest_multi(
-    target_cwes,
-    only_cwes_file,
-    embedding_model,
-    embedder_type,
-    local_chunked,
-    prod_chunked,
-):
+    target_cwes: tuple[str, ...],
+    only_cwes_file: str | None,
+    embedding_model: str,
+    embedder_type: str,
+    local_chunked: bool,
+    prod_chunked: bool,
+) -> None:
     """
     Run CWE ingestion to multiple databases with embeddings generated once.
 
@@ -441,7 +461,7 @@ def ingest_multi(
                 create_database_targets_from_env,
             )
         except ImportError:
-            from multi_db_pipeline import (
+            from multi_db_pipeline import (  # type: ignore[no-redef]
                 MultiDatabaseCWEPipeline,
                 create_database_targets_from_env,
             )
@@ -484,8 +504,13 @@ def ingest_multi(
                     targets_list.append(tid)
 
         # de-dupe while preserving order
-        seen = set()
-        targets_list = [x for x in targets_list if not (x in seen or seen.add(x))]
+        seen_multi: set[str] = set()
+        deduplicated_multi: list[str] = []
+        for x in targets_list:
+            if x not in seen_multi:
+                seen_multi.add(x)
+                deduplicated_multi.append(x)
+        targets_list = deduplicated_multi
         # ---------------------------------------------------------------
 
         click.echo(f"🎯 Multi-database ingestion configured for {len(targets)} targets:")
@@ -560,8 +585,15 @@ def ingest_multi(
     "--verify-known", is_flag=True, help="Verify known CWE labels after import"
 )
 def policy_import(
-    xml, url, db, infer_by_abstraction, limit, dry_run, env_file, verify_known
-):
+    xml: str | None,
+    url: str | None,
+    db: str | None,
+    infer_by_abstraction: bool,
+    limit: int,
+    dry_run: bool,
+    env_file: str,
+    verify_known: bool,
+) -> None:
     """Import CWE policy labels (Allowed / Allowed-with-Review / Discouraged / Prohibited) from CWE XML."""
     import os
     import sys
