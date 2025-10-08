@@ -407,7 +407,7 @@ class ProcessingPipeline:
                 query, persona, avg_confidence
             )
             if guidance["show_banner"]:
-                return guidance
+                return dict(guidance)
 
         return None
 
@@ -555,7 +555,7 @@ class ProcessingPipeline:
             }
 
             # Apply harmonization
-            return harmonize_cwe_names_in_table(llm_response, id_to_name, id_to_policy)
+            return str(harmonize_cwe_names_in_table(llm_response, id_to_name, id_to_policy))
 
         except Exception as e:
             logger.warning(f"Failed to harmonize CWE names in response: {e}")

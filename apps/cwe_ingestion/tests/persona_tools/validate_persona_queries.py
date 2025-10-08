@@ -8,7 +8,7 @@ useful for CI/CD and development validation.
 
 import json
 
-from test_queries_personas import (
+from .test_queries_personas import (
     ALL_PERSONA_QUERIES,
     ALL_QUERIES,
     export_for_cli_testing,
@@ -175,7 +175,7 @@ def generate_query_report():
     # Section boost usage
     section_boost_queries = get_queries_with_section_boost()
     print(f"\n🎯 Section Boost Usage: {len(section_boost_queries)} queries")
-    boost_sections = {}
+    boost_sections: Dict[str, float] = {}
     for query in section_boost_queries:
         section = query.section_boost
         boost_sections[section] = boost_sections.get(section, 0) + 1
@@ -191,7 +191,7 @@ def generate_query_report():
     print(f"\n🎯 CWE Coverage: {len(all_expected_cwes)} unique CWEs expected")
 
     # Most commonly expected CWEs
-    cwe_frequency = {}
+    cwe_frequency: Dict[str, int] = {}
     for query in ALL_QUERIES:
         for cwe in query.expected_cwes:
             cwe_frequency[cwe] = cwe_frequency.get(cwe, 0) + 1

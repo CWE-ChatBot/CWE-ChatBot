@@ -11,10 +11,7 @@ from xml.etree.ElementTree import (
 
 import defusedxml.ElementTree as ET  # noqa: N817
 
-try:
-    from .models import CWEEntry
-except ImportError:
-    from models import CWEEntry
+from .models import CWEEntry
 
 logger = logging.getLogger(__name__)
 

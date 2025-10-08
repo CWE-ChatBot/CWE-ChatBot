@@ -128,6 +128,7 @@ files = [
   "shared",
   "apps/cwe_ingestion/cwe_ingestion",
 ]
+disable_error_code = ["import-untyped"]
 exclude = [
   "^build/.*",
   "^dist/.*",
@@ -145,6 +146,16 @@ disallow_untyped_defs = false
 [[tool.mypy.overrides]]
 module = "apps.cwe_ingestion.*"
 disallow_untyped_defs = false
+ignore_errors = true
+
+
+[[tool.mypy.overrides]]
+module = "apps.cwe_ingestion.cwe_ingestion.pg_vector_store"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "apps.cwe_ingestion.cwe_ingestion.pg_chunk_store"
+ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"

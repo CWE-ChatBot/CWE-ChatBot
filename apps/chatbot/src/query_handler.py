@@ -19,8 +19,8 @@ from src.security.secure_logging import get_secure_logger
 
 # Prefer a clean package import; fall back to legacy path if package is unavailable
 try:  # minimal path when cwe_ingestion is installed
-    from cwe_ingestion.embedder import GeminiEmbedder  # type: ignore
-    from cwe_ingestion.pg_chunk_store import PostgresChunkStore  # type: ignore
+    from cwe_ingestion.embedder import GeminiEmbedder
+    from cwe_ingestion.pg_chunk_store import PostgresChunkStore
 except Exception:  # fallback to legacy repo layout/env var
     import os
     import sys
@@ -28,8 +28,8 @@ except Exception:  # fallback to legacy repo layout/env var
     ingestion_path = os.getenv("CWE_INGESTION_PATH")
     if ingestion_path and os.path.isdir(ingestion_path):
         sys.path.insert(0, ingestion_path)
-        from embedder import GeminiEmbedder  # type: ignore
-        from pg_chunk_store import PostgresChunkStore  # type: ignore
+        from embedder import GeminiEmbedder
+        from pg_chunk_store import PostgresChunkStore
     else:  # pragma: no cover
         raise
 

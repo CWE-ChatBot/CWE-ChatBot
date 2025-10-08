@@ -35,7 +35,8 @@ class EmbeddingCache:
         """Load cache metadata or create new."""
         if self.metadata_file.exists():
             with open(self.metadata_file, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+                return dict(data)
         else:
             return {
                 "created": datetime.now().isoformat(),
@@ -68,7 +69,7 @@ class EmbeddingCache:
             key_data = f"{cwe_id}_{embedder_type}_{model_name}"
         return hashlib.md5(key_data.encode()).hexdigest()
 
-    def _get_cache_filename(self, cache_key: str, cwe_id: str = None) -> Path:
+    def _get_cache_filename(self, cache_key: str, cwe_id: Optional[str] = None) -> Path:
         """
         Get cache file path for embedding with optional CWE ID.
 

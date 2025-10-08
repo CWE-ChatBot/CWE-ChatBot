@@ -8,9 +8,9 @@ import os
 from functools import lru_cache
 from typing import Any
 
-from sqlalchemy import create_engine  # type: ignore[import-not-found]
-from sqlalchemy.engine import URL  # type: ignore[import-not-found]
-from sqlalchemy.pool import QueuePool  # type: ignore[import-not-found]
+from sqlalchemy import create_engine
+from sqlalchemy.engine import URL
+from sqlalchemy.pool import QueuePool
 
 logger = logging.getLogger(__name__)
 

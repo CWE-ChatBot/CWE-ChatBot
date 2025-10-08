@@ -7,7 +7,7 @@ Manages conversation flow, session state, and message handling for Chainlit inte
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 try:
-    from sqlalchemy.engine import Engine  # type: ignore[import-not-found]
+    from sqlalchemy.engine import Engine
 except ImportError:
     Engine = None
 

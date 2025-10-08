@@ -18,7 +18,7 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
-from test_queries_personas import (
+from .test_queries_personas import (
     ALL_PERSONA_QUERIES,
     ALL_QUERIES,
     TestQuery,
@@ -43,7 +43,7 @@ def format_results_summary(results: List[Dict[str, Any]]) -> str:
         return "No results found"
 
     # Group by CWE ID
-    cwe_groups = {}
+    cwe_groups: Dict[str, List[Dict[str, Any]]] = {}
     for result in results:
         cwe_id = result["metadata"]["cwe_id"]
         if cwe_id not in cwe_groups:

@@ -36,7 +36,7 @@ except ImportError:
     HAS_HTTPX = False
 
 try:
-    import chardet  # type: ignore[import-not-found]
+    import chardet
 
     HAS_CHARDET = True
 except ImportError:

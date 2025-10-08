@@ -10,6 +10,7 @@ Based on user personas from docs/personas_scenarios/User Personas.md
 and query format from apps/cwe_ingestion/README.md
 """
 
+
 from dataclasses import dataclass
 from typing import Any, Dict, List
 

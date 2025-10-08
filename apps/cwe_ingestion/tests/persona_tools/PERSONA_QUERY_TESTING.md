@@ -5,13 +5,13 @@ This directory contains a comprehensive test suite for validating CWE retrieval 
 ## 📁 Files Overview
 
 ### Core Query Dataset
-- **`test_queries_personas.py`** - Structured dataset of 20 test queries across 5 personas
+- **`apps/cwe_ingestion/tests/persona_tools/test_queries_personas.py`** - Structured dataset of 20 test queries across 5 personas
 - **`persona_queries_export.json`** - JSON export of queries for external tools
 
 ### Testing Tools
-- **`run_persona_query_tests.py`** - Execute queries against production database
-- **`validate_persona_queries.py`** - Validate query structure without database access
-- **`PERSONA_QUERY_TESTING.md`** - This documentation file
+- **`apps/cwe_ingestion/tests/persona_tools/run_persona_query_tests.py`** - Execute queries against production database
+- **`apps/cwe_ingestion/tests/persona_tools/validate_persona_queries.py`** - Validate query structure without database access
+- **`apps/cwe_ingestion/tests/persona_tools/PERSONA_QUERY_TESTING.md`** - This documentation file
 
 ## 🎯 Query Dataset Summary
 
@@ -37,29 +37,29 @@ This directory contains a comprehensive test suite for validating CWE retrieval 
 
 ### 1. Validate Query Structure
 ```bash
-# Validate queries without database connection
-poetry run python validate_persona_queries.py
+# Validate queries without database connection (run as module)
+poetry run python -m apps.cwe_ingestion.tests.persona_tools.validate_persona_queries
 ```
 
 ### 2. Run All Persona Tests
 ```bash
-# Test all queries against database
-poetry run python run_persona_query_tests.py
+# Test all queries against database (run as module)
+poetry run python -m apps.cwe_ingestion.tests.persona_tools.run_persona_query_tests
 ```
 
 ### 3. Run Targeted Tests
 ```bash
 # Test specific persona
-poetry run python run_persona_query_tests.py --persona psirt
+poetry run python -m apps.cwe_ingestion.tests.persona_tools.run_persona_query_tests --persona psirt
 
 # Test specific query types
-poetry run python run_persona_query_tests.py --query-type semantic
+poetry run python -m apps.cwe_ingestion.tests.persona_tools.run_persona_query_tests --query-type semantic
 
 # Limit number of queries
-poetry run python run_persona_query_tests.py --max-queries 5
+poetry run python -m apps.cwe_ingestion.tests.persona_tools.run_persona_query_tests --max-queries 5
 
 # Verbose output with detailed results
-poetry run python run_persona_query_tests.py --verbose
+poetry run python -m apps.cwe_ingestion.tests.persona_tools.run_persona_query_tests --verbose
 ```
 
 ## 📊 Example Query Analysis
@@ -151,10 +151,10 @@ TestQuery(
 ## 🛠️ Customizing Queries
 
 ### Adding New Persona Queries
-1. Add queries to appropriate persona list in `test_queries_personas.py`
+1. Add queries to appropriate persona list in `apps/cwe_ingestion/tests/persona_tools/test_queries_personas.py`
 2. Follow the `TestQuery` dataclass structure
-3. Run validation: `poetry run python validate_persona_queries.py`
-4. Test new queries: `poetry run python run_persona_query_tests.py`
+3. Run validation: `poetry run python -m apps.cwe_ingestion.tests.persona_tools.validate_persona_queries`
+4. Test new queries: `poetry run python -m apps.cwe_ingestion.tests.persona_tools.run_persona_query_tests`
 
 ### Query Design Best Practices
 - **Realistic language**: Use terms your users actually say
@@ -170,10 +170,10 @@ TestQuery(
 ### Automated Testing
 ```bash
 # Basic validation (no database required)
-poetry run python validate_persona_queries.py
+poetry run python -m apps.cwe_ingestion.tests.persona_tools.validate_persona_queries
 
 # Full testing (requires database)
-poetry run python run_persona_query_tests.py --max-queries 10
+poetry run python -m apps.cwe_ingestion.tests.persona_tools.run_persona_query_tests --max-queries 10
 ```
 
 ### Exit Codes
