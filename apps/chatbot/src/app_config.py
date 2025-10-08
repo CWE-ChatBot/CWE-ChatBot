@@ -1,15 +1,30 @@
 """
 Authoritative configuration module for the CWE ChatBot application.
 It loads the environment and then defines the Config object.
+
+Secrets (passwords, API keys) are retrieved from GCP Secret Manager at runtime,
+with fallback to environment variables for local development.
 """
 import os
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 from .config.env_loader import load_environments
+from .secrets import (
+    get_database_password,
+    get_gemini_api_key,
+    get_chainlit_auth_secret,
+    get_oauth_google_client_id,
+    get_oauth_google_client_secret,
+    get_oauth_github_client_id,
+    get_oauth_github_client_secret,
+)
 
 # Load context-specific environment variables from .env files if available.
 # This function must be called BEFORE the Config class is defined.
 load_environments()
+
+# Get project ID for Secret Manager (from environment or Cloud Run metadata)
+_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
 
 
 @dataclass
@@ -21,12 +36,14 @@ class Config:
     pg_port: int = int(os.getenv("POSTGRES_PORT", "5432"))
     pg_database: str = os.getenv("POSTGRES_DATABASE", "cwe_chatbot")
     pg_user: str = os.getenv("POSTGRES_USER", "postgres")
-    pg_password: str = os.getenv("POSTGRES_PASSWORD", "")
-    
+    # Password retrieved from Secret Manager (falls back to env var)
+    pg_password: str = get_database_password(_PROJECT_ID)
+
     # Embedding/LLM Configuration (Gemini standard)
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "models/embedding-001")
     embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "3072"))
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    # API key retrieved from Secret Manager (falls back to env var)
+    gemini_api_key: str = get_gemini_api_key(_PROJECT_ID)
     
     # Retrieval Configuration (RRF hybrid weights)
     w_vec: float = float(os.getenv("RRF_W_VEC", "0.65"))    # Vector similarity
@@ -68,12 +85,13 @@ class Config:
     # Authentication / OAuth / Chainlit
     enable_oauth: bool = os.getenv("ENABLE_OAUTH", "true").lower() == "true"
     chainlit_url: str = os.getenv("CHAINLIT_URL", "http://localhost:8081")
-    chainlit_auth_secret: Optional[str] = os.getenv("CHAINLIT_AUTH_SECRET")
-    # Providers
-    oauth_google_client_id: Optional[str] = os.getenv("OAUTH_GOOGLE_CLIENT_ID")
-    oauth_google_client_secret: Optional[str] = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET")
-    oauth_github_client_id: Optional[str] = os.getenv("OAUTH_GITHUB_CLIENT_ID")
-    oauth_github_client_secret: Optional[str] = os.getenv("OAUTH_GITHUB_CLIENT_SECRET")
+    # Secrets retrieved from Secret Manager (fall back to env vars)
+    chainlit_auth_secret: Optional[str] = get_chainlit_auth_secret(_PROJECT_ID)
+    # OAuth Providers - secrets from Secret Manager
+    oauth_google_client_id: Optional[str] = get_oauth_google_client_id(_PROJECT_ID)
+    oauth_google_client_secret: Optional[str] = get_oauth_google_client_secret(_PROJECT_ID)
+    oauth_github_client_id: Optional[str] = get_oauth_github_client_id(_PROJECT_ID)
+    oauth_github_client_secret: Optional[str] = get_oauth_github_client_secret(_PROJECT_ID)
     # Whitelist (comma-separated emails or @domain suffixes)
     allowed_users_raw: Optional[str] = os.getenv("ALLOWED_USERS")
     

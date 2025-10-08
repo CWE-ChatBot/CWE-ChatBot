@@ -91,6 +91,8 @@ deploy_service() {
     print_info "Region: $REGION"
     print_info "Image: $IMAGE_TAG"
 
+    print_info "Using Secret Manager for all secrets (no --update-secrets needed)"
+
     gcloud run deploy "$SERVICE" \
         --region="$REGION" \
         --image="$IMAGE_TAG" \
@@ -105,12 +107,13 @@ deploy_service() {
         --timeout=300 \
         --allow-unauthenticated \
         --execution-environment=gen2 \
-        --set-env-vars="DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,PDF_WORKER_URL=https://pdf-worker-bmgj6wj65a-uc.a.run.app" \
-        --update-secrets="GEMINI_API_KEY=gemini-api-key:latest,DB_PASSWORD=db-password-app-user:latest,CHAINLIT_AUTH_SECRET=chainlit-auth-secret:latest,OAUTH_GOOGLE_CLIENT_ID=oauth-google-client-id:latest,OAUTH_GOOGLE_CLIENT_SECRET=oauth-google-client-secret:latest,OAUTH_GITHUB_CLIENT_ID=oauth-github-client-id:latest,OAUTH_GITHUB_CLIENT_SECRET=oauth-github-client-secret:latest" \
+        --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,PDF_WORKER_URL=https://pdf-worker-bmgj6wj65a-uc.a.run.app" \
         --quiet || {
         print_error "Deployment failed"
         exit 1
     }
+
+    print_info "Secrets retrieved from Secret Manager at runtime"
 
     print_info "Deployment successful"
 }
