@@ -17,7 +17,7 @@ packages = [
 python = "^3.10"
 # Core dependencies for CWE data ingestion pipeline
 requests = "^2.31.0"
-lxml = "^4.9.3"
+lxml = "^6.0.0"
 defusedxml = "^0.7.1" 
 #chromadb = "^0.4.15"
 click = "^8.1.7"
@@ -30,7 +30,7 @@ chainlit = "^2.8.0"  # For chat interface
 psycopg2-binary = "^2.9.0"  # For PostgreSQL connection
 pgvector = "^0.2.0"  # For vector database operations
 rank-bm25 = "^0.2.2"  # For sparse retrieval
-cryptography = "^45.0.6"
+cryptography = "^46.0.0"
 
 # Story 1.4 Dependencies - Gemini API Integration
 google-generativeai = "^0.8.0"  # For Gemini embedding model
