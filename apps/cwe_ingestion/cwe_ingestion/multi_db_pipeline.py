@@ -7,7 +7,7 @@ import logging
 import shutil
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 if TYPE_CHECKING:
     # Type checking imports
@@ -62,6 +62,11 @@ class MultiDatabaseCWEPipeline:
     in multiple PostgreSQL databases to reduce embedding costs.
     """
 
+    embedder: Union["CWEEmbedder", "GeminiEmbedder"]
+    downloader: "CWEDownloader"
+    parser: "CWEParser"
+    cache: "EmbeddingCache"
+
     def __init__(
         self,
         database_targets: List[DatabaseTarget],
@@ -70,7 +75,7 @@ class MultiDatabaseCWEPipeline:
         embedder_type: str = "local",
         embedding_model: str = "all-MiniLM-L6-v2",
         cache_dir: str = "cwe_embeddings_cache_shared",
-    ):
+    ) -> None:
         self.database_targets = database_targets
         self.target_cwes = target_cwes
         self.source_url = source_url

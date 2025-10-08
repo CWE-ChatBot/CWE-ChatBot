@@ -6,7 +6,7 @@ import logging
 import shutil
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 if TYPE_CHECKING:
     # Type checking imports
@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 class CWEIngestionPipeline:
     """Main pipeline for downloading, parsing, embedding, and storing CWE data (Postgres only)."""
 
+    embedder: Union["CWEEmbedder", "GeminiEmbedder"]
+    vector_store: Union["PostgresChunkStore", "PostgresVectorStore"]
+    downloader: "CWEDownloader"
+    parser: "CWEParser"
+
     def __init__(
         self,
         target_cwes: Optional[List[str]] = None,  # None -> ingest all
@@ -46,7 +51,7 @@ class CWEIngestionPipeline:
         embedder_type: str = "local",  # "local" | "gemini"
         embedding_model: str = "all-MiniLM-L6-v2",
         use_chunked: bool = True,  # True -> use PostgresChunkStore
-    ):
+    ) -> None:
         self.target_cwes = target_cwes
         self.source_url = source_url
 
@@ -107,7 +112,7 @@ class CWEIngestionPipeline:
             shutil.rmtree(temp_dir, ignore_errors=True)
             logger.debug(f"Cleaned up temporary directory: {temp_dir}")
 
-    def _run_single(self, cwe_entries) -> bool:
+    def _run_single(self, cwe_entries: List[Any]) -> bool:
         """Single-row mode: build full_text (with one Aliases line), embed, store."""
         texts_to_embed: List[str] = []
         aliases_by_id: Dict[str, str] = {}
@@ -136,12 +141,15 @@ class CWEIngestionPipeline:
             doc["alternate_terms_text"] = aliases_by_id.get(entry.ID, "")
             documents_to_store.append(doc)
 
-        stored = self.vector_store.store_batch(documents_to_store)
-        logger.info(f"Stored {stored} single-row docs.")
-        self._verify_ingestion()
-        return stored > 0
+        # Type narrowing: _run_single only called when use_chunked=False (PostgresVectorStore)
+        if isinstance(self.vector_store, PostgresVectorStore):
+            stored = self.vector_store.store_batch(documents_to_store)
+            logger.info(f"Stored {stored} single-row docs.")
+            self._verify_ingestion()
+            return stored > 0
+        return False
 
-    def _run_chunked(self, cwe_entries) -> bool:
+    def _run_chunked(self, cwe_entries: List[Any]) -> bool:
         """Chunked mode: split each entry into semantic sections, embed, store."""
         chunk_payloads: List[Dict[str, Any]] = []
 
@@ -184,10 +192,13 @@ class CWEIngestionPipeline:
             logger.warning("No chunk payloads to store.")
             return False
 
-        stored = self.vector_store.store_batch(chunk_payloads)
-        logger.info(f"Stored {stored} chunks.")
-        self._verify_ingestion()
-        return stored > 0
+        # Type narrowing: _run_chunked only called when use_chunked=True (PostgresChunkStore)
+        if isinstance(self.vector_store, PostgresChunkStore):
+            stored = self.vector_store.store_chunks(chunk_payloads)
+            logger.info(f"Stored {stored} chunks.")
+            self._verify_ingestion()
+            return stored > 0
+        return False
 
     def _download_and_extract(self, temp_dir: str) -> str:
         """Download the MITRE CWE ZIP and extract the XML."""
