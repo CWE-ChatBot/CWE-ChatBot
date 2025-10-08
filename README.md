@@ -110,11 +110,17 @@ cwe_chatbot_bmad/
 
 ## Development
 
-### Code Quality
-- **Formatting**: Black (line length: 88)
-- **Linting**: Ruff
-- **Type Checking**: MyPy
+### Development Tools and Workflow
+
+For complete information on development tools, code quality standards, and security tooling, see:
+
+📖 **[TOOLCHAIN.md](TOOLCHAIN.md)** - Comprehensive development toolchain documentation
+
+**Quick Reference:**
+- **Code Quality**: Black, Ruff, MyPy with pre-commit hooks
 - **Testing**: Pytest with coverage
+- **Security**: GitHub Advanced Security (Dependabot, CodeQL, Secret Scanning, Push Protection)
+- **Static Analysis**: Semgrep security scanning
 
 ### Running Tests
 ```bash
