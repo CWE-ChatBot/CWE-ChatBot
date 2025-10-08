@@ -23,6 +23,34 @@ This directory contains standalone test scripts for various security and functio
   - Confirms parameterized query protection
   - **Usage**: `python3 tests/scripts/test_sql_injection_prevention_simple.py`
 
+## End-to-End Verification Scripts
+
+### E2E Readiness and Integration
+- **`verify_e2e_readiness.sh`** - Comprehensive infrastructure readiness verification
+  - Checks Cloud Run service status
+  - Verifies database connectivity
+  - Validates PDF worker deployment
+  - Tests Secret Manager access
+  - Confirms OAuth configuration
+  - **Usage**: `./tests/scripts/verify_e2e_readiness.sh`
+
+- **`test_pdf_worker.sh`** - PDF worker Cloud Function integration test
+  - Tests PDF extraction service endpoint
+  - Validates IAM authentication
+  - Checks PDF processing functionality
+  - **Usage**: `./tests/scripts/test_pdf_worker.sh`
+
+- **`test_pdf_worker.py`** - Python-based PDF worker integration tests
+  - Programmatic PDF worker API testing
+  - Authentication and authorization verification
+  - **Usage**: `python3 tests/scripts/test_pdf_worker.py`
+
+- **`test_production_pdf_upload.py`** - Production PDF upload validation
+  - Tests end-to-end PDF upload workflow
+  - Validates Cloud Run → PDF Worker integration
+  - Confirms production configuration
+  - **Usage**: `python3 tests/scripts/test_production_pdf_upload.py`
+
 ## Infrastructure Test Scripts
 
 ### Test Infrastructure Setup

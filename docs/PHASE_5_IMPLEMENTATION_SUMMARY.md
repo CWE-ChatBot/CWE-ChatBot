@@ -160,7 +160,7 @@ OAUTH_GITHUB_CLIENT_SECRET=<secret>
 
 ### Quick Health Check
 ```bash
-./verify_e2e_readiness.sh
+./tests/scripts/verify_e2e_readiness.sh
 ```
 
 ### Manual Service Checks
@@ -264,7 +264,7 @@ Phase 5 is considered **COMPLETE** when:
 ### New Files
 - `docs/E2E_TEST_GUIDE_PHASE_5.md` - Comprehensive manual test guide
 - `docs/PHASE_5_IMPLEMENTATION_SUMMARY.md` - This summary
-- `verify_e2e_readiness.sh` - Automated infrastructure verification script
+- `tests/scripts/verify_e2e_readiness.sh` - Automated infrastructure verification script
 
 ### Modified Files
 - None (all infrastructure changes from previous phases)
@@ -287,6 +287,6 @@ Phase 5 is considered **COMPLETE** when:
 
 **For testing questions**: See `docs/E2E_TEST_GUIDE_PHASE_5.md` → Troubleshooting section
 
-**For infrastructure issues**: Run `./verify_e2e_readiness.sh` to diagnose
+**For infrastructure issues**: Run `./tests/scripts/verify_e2e_readiness.sh` to diagnose
 
 **For log analysis**: Use log queries provided in E2E test guide
