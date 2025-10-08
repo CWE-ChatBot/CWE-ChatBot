@@ -555,7 +555,9 @@ class ProcessingPipeline:
             }
 
             # Apply harmonization
-            return str(harmonize_cwe_names_in_table(llm_response, id_to_name, id_to_policy))
+            return str(
+                harmonize_cwe_names_in_table(llm_response, id_to_name, id_to_policy)
+            )
 
         except Exception as e:
             logger.warning(f"Failed to harmonize CWE names in response: {e}")

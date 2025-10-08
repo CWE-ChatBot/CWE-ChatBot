@@ -7,19 +7,25 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
+psycopg: Any
 try:
-    import psycopg
+    import psycopg as _psycopg
 
+    psycopg = _psycopg
     HAS_PSYCOPG = True
 except ImportError:
     # Allow import of this module even without psycopg for type definitions
     psycopg = None
     HAS_PSYCOPG = False
 
+sa: Any
+Engine: Any
 try:
-    import sqlalchemy as sa
-    from sqlalchemy.engine import Engine
+    import sqlalchemy as _sa
+    from sqlalchemy.engine import Engine as _Engine
 
+    sa = _sa
+    Engine = _Engine
     HAS_SQLALCHEMY = True
 except ImportError:
     sa = None
@@ -117,9 +123,8 @@ class PostgresChunkStore:
         self.dims = int(dims)
         self.database_url = database_url or os.environ.get("DATABASE_URL")
         self._engine: Optional["Engine"] = engine
-        self._persistent_conn = (
-            None  # psycopg connection kept open if engine is unavailable
-        )
+        # psycopg connection kept open if engine is unavailable
+        self._persistent_conn: Optional[Any] = None
 
         if not self.database_url and self._engine is None:
             raise ValueError("Either database_url or engine must be provided")
@@ -192,6 +197,7 @@ class PostgresChunkStore:
             # Lazy init persistent psycopg connection
             if self._persistent_conn is None:
                 logger.debug("Opening persistent psycopg connection")
+                assert self.database_url is not None
                 self._persistent_conn = psycopg.connect(self.database_url)
             yield self._persistent_conn
 
@@ -312,11 +318,11 @@ class PostgresChunkStore:
                 qe = list(qe)
 
             if self._using_pg8000:
-                vec_param = self._to_vector_literal(qe)
+                vec_param: Any = self._to_vector_literal(qe)
                 halfvec_left = "%s::halfvec"
                 vector_left = "%s::vector"
             else:
-                vec_param = qe
+                vec_param: Any = qe
                 # psycopg is fine with no cast, but explicit cast is also safe:
                 halfvec_left = "%s::halfvec"
                 vector_left = "%s::vector"
@@ -464,11 +470,11 @@ class PostgresChunkStore:
 
         # Driver-specific vector literal + casts
         if self._using_pg8000:
-            vec_param = self._to_vector_literal(qe)
+            vec_param: Any = self._to_vector_literal(qe)
             halfvec_cast = "%s::halfvec"
             vector_cast = "%s::vector"
         else:
-            vec_param = qe
+            vec_param: Any = qe
             halfvec_cast = "%s::halfvec"
             vector_cast = "%s::vector"
 
@@ -737,7 +743,8 @@ LIMIT %s;
         try:
             with self._get_connection() as conn, self._cursor(conn) as cur:
                 cur.execute("SELECT 1;")
-                return cur.fetchone()[0] == 1
+                row = cur.fetchone()
+                return bool(row and int(row[0]) == 1)
         except Exception as e:
             logger.error(f"Connection test failed: {e}")
             return False

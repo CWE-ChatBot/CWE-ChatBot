@@ -7,6 +7,7 @@ useful for CI/CD and development validation.
 """
 
 import json
+from typing import Dict
 
 from .test_queries_personas import (
     ALL_PERSONA_QUERIES,

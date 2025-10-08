@@ -1,7 +1,7 @@
 # apps/cwe_ingestion/pg_vector_store.py
 import logging
 import os
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -172,7 +172,7 @@ class PostgresVectorStore:
         """
 
         with self.conn.cursor() as cur:
-            cur.execute(atomic_ddl)  # type: ignore[arg-type]
+            cur.execute(atomic_ddl)
         self.conn.commit()
         logger.info(f"Schema setup completed for table: {self.table}")
 
@@ -200,7 +200,7 @@ class PostgresVectorStore:
         """
         if not docs:
             return 0
-        rows: Sequence[tuple] = []
+        rows: List[tuple] = []
         for d in docs:
             emb = d["embedding"]
             if isinstance(emb, np.ndarray):
@@ -217,7 +217,7 @@ class PostgresVectorStore:
                     emb,
                 )
             )
-        sql = f"""
+        sql_stmt = f"""
         INSERT INTO {self.table}
             (id, cwe_id, name, abstraction, status, full_text, alternate_terms_text, embedding)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
@@ -232,7 +232,7 @@ class PostgresVectorStore:
         """
         with self.conn.transaction():
             with self.conn.cursor() as cur:
-                cur.executemany(sql, rows)  # type: ignore[arg-type]
+                cur.executemany(sql_stmt, rows)
 
         # Refresh statistics after significant batch inserts for optimal query planning
         if len(rows) >= 10:  # Only for meaningful batch sizes
@@ -261,7 +261,7 @@ class PostgresVectorStore:
          LIMIT %s;
         """
         with self.conn.cursor() as cur:
-            cur.execute(sql, (query_embedding, query_embedding, n_results))  # type: ignore[arg-type]
+            cur.execute(sql, (query_embedding, query_embedding, n_results))
             rows = cur.fetchall()
         out: List[Dict] = []
         for r in rows:
@@ -347,7 +347,7 @@ class PostgresVectorStore:
             limit,
         )
         with self.conn.cursor() as cur:
-            cur.execute(sql, params)  # type: ignore[arg-type]
+            cur.execute(sql, params)
             rows = cur.fetchall()
 
         results: List[Dict] = []

@@ -60,7 +60,8 @@ class CWEDownloader:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
 
-            response = self.session.get(
+            # Use requests.get so tests can mock it easily
+            response = requests.get(
                 self.source_url,
                 timeout=self.timeout,
                 verify=self.verify_ssl,
