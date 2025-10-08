@@ -15,8 +15,9 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+from typing import Any, Optional, Tuple
+
 from google.api_core.retry import Retry
-from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -56,17 +57,20 @@ class ModelArmorGuard:
         )
 
         # Lazy-load client only if enabled
-        self._client: Optional[any] = None
+        self._client: Optional[Any] = None
 
         if self.enabled:
-            logger.info(f"Model Armor guard enabled with template: {self.template_path}")
+            logger.info(
+                f"Model Armor guard enabled with template: {self.template_path}"
+            )
         else:
             logger.info("Model Armor guard disabled (skipping sanitization)")
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
         """Lazy-load Model Armor client with regional endpoint."""
         if self._client is None:
             try:
+                from google.api_core.client_options import ClientOptions
                 from google.cloud.modelarmor_v1 import ModelArmorAsyncClient
 
                 # CRITICAL: Model Armor requires regional endpoint
@@ -75,15 +79,15 @@ class ModelArmorGuard:
 
                 # Use async client for Chainlit with regional endpoint
                 self._client = ModelArmorAsyncClient(
-                    client_options={"api_endpoint": api_endpoint}
+                    client_options=ClientOptions(api_endpoint=api_endpoint)
                 )
-                logger.debug(f"Model Armor client initialized with endpoint: {api_endpoint}")
+                logger.debug(
+                    f"Model Armor client initialized with endpoint: {api_endpoint}"
+                )
             except ImportError as e:
                 logger.error(f"Failed to import Model Armor client: {e}")
                 logger.error("Install with: poetry add google-cloud-modelarmor")
-                raise RuntimeError(
-                    "google-cloud-modelarmor not installed"
-                ) from e
+                raise RuntimeError("google-cloud-modelarmor not installed") from e
         return self._client
 
     @staticmethod
@@ -137,9 +141,7 @@ class ModelArmorGuard:
             # Call Model Armor API with retry/timeout
             client = self._get_client()
             # Tight, user-friendly retry/timeout policy
-            retry = Retry(
-                initial=0.2, maximum=1.0, multiplier=2.0, deadline=3.0
-            )
+            retry = Retry(initial=0.2, maximum=1.0, multiplier=2.0, deadline=3.0)
             timeout = 3.0
             response = await client.sanitize_user_prompt(
                 request=request,
@@ -150,7 +152,10 @@ class ModelArmorGuard:
             # Check sanitization result
             # API returns: sanitizationResult.filterMatchState = NO_MATCH_FOUND | MATCH_FOUND
             sanitization_result = response.sanitization_result
-            if sanitization_result.filter_match_state == modelarmor_v1.FilterMatchState.NO_MATCH_FOUND:
+            if (
+                sanitization_result.filter_match_state
+                == modelarmor_v1.FilterMatchState.NO_MATCH_FOUND
+            ):
                 logger.debug("Model Armor: User prompt ALLOWED (NO_MATCH_FOUND)")
                 return True, prompt
 
@@ -160,20 +165,28 @@ class ModelArmorGuard:
                 extra={
                     "match_state": sanitization_result.filter_match_state.name,
                     "policy": self.template_path,
-                    "filter_results": str(sanitization_result.filter_results) if hasattr(sanitization_result, 'filter_results') else None,
+                    "filter_results": str(sanitization_result.filter_results)
+                    if hasattr(sanitization_result, "filter_results")
+                    else None,
                     "prompt_hash": self._stable_hash(prompt),
-                }
+                },
             )
-            return False, "I cannot process that request. Please rephrase your question."
+            return (
+                False,
+                "I cannot process that request. Please rephrase your question.",
+            )
 
         except Exception as e:
             logger.error(f"Model Armor sanitize_user_prompt failed: {e}")
             # Fail-closed on errors - better safe than sorry
             logger.critical(
-                f"Model Armor error - failing closed",
-                extra={"error": str(e), "prompt_hash": self._stable_hash(prompt)}
+                "Model Armor error - failing closed",
+                extra={"error": str(e), "prompt_hash": self._stable_hash(prompt)},
             )
-            return False, "Unable to process your request at this time. Please try again later."
+            return (
+                False,
+                "Unable to process your request at this time. Please try again later.",
+            )
 
     async def sanitize_model_response(self, response_text: str) -> Tuple[bool, str]:
         """
@@ -219,9 +232,7 @@ class ModelArmorGuard:
             # Call Model Armor API with retry/timeout
             client = self._get_client()
             # Same retry/timeout policy
-            retry = Retry(
-                initial=0.2, maximum=1.0, multiplier=2.0, deadline=3.0
-            )
+            retry = Retry(initial=0.2, maximum=1.0, multiplier=2.0, deadline=3.0)
             timeout = 3.0
             response = await client.sanitize_model_response(
                 request=request,
@@ -232,7 +243,10 @@ class ModelArmorGuard:
             # Check sanitization result
             # API returns: sanitizationResult.filterMatchState = NO_MATCH_FOUND | MATCH_FOUND
             sanitization_result = response.sanitization_result
-            if sanitization_result.filter_match_state == modelarmor_v1.FilterMatchState.NO_MATCH_FOUND:
+            if (
+                sanitization_result.filter_match_state
+                == modelarmor_v1.FilterMatchState.NO_MATCH_FOUND
+            ):
                 logger.debug("Model Armor: Model response ALLOWED (NO_MATCH_FOUND)")
                 return True, response_text
 
@@ -242,22 +256,33 @@ class ModelArmorGuard:
                 extra={
                     "match_state": sanitization_result.filter_match_state.name,
                     "policy": self.template_path,
-                    "filter_results": str(sanitization_result.filter_results) if hasattr(sanitization_result, 'filter_results') else None,
+                    "filter_results": str(sanitization_result.filter_results)
+                    if hasattr(sanitization_result, "filter_results")
+                    else None,
                     "response_hash": self._stable_hash(response_text),
-                }
+                },
             )
-            return False, "I generated an unsafe response. Please try a different question."
+            return (
+                False,
+                "I generated an unsafe response. Please try a different question.",
+            )
 
         except Exception as e:
             logger.error(f"Model Armor sanitize_model_response failed: {e}")
             # Fail-closed on errors
             logger.critical(
-                f"Model Armor error - failing closed",
-                extra={"error": str(e), "response_hash": self._stable_hash(response_text)}
+                "Model Armor error - failing closed",
+                extra={
+                    "error": str(e),
+                    "response_hash": self._stable_hash(response_text),
+                },
             )
-            return False, "Unable to process the response at this time. Please try again later."
+            return (
+                False,
+                "Unable to process the response at this time. Please try again later.",
+            )
 
-    async def aclose(self):
+    async def aclose(self) -> None:
         """Close the async Model Armor client gracefully."""
         if self._client:
             try:

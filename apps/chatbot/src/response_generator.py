@@ -5,15 +5,15 @@ Generates context-aware responses using retrieved CWE content and persona-specif
 """
 
 import logging
-from typing import Dict, List, Any, Optional, AsyncGenerator
 import os
 import re
-import sys
 from pathlib import Path
-from .llm_provider import get_llm_provider
-from .model_armor_guard import create_model_armor_guard_from_env
+from typing import Any, Dict, List, Optional
 
 from src.app_config import config
+
+from .llm_provider import get_llm_provider
+from .model_armor_guard import create_model_armor_guard_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class ResponseGenerator:
     - Source attribution and confidence indicators
     """
 
-    def __init__(self, gemini_api_key: str, model_name: str = None):
+    def __init__(self, gemini_api_key: str, model_name: Optional[str] = None):
         """
         Initialize response generator with configurable LLM settings.
 
@@ -39,7 +39,9 @@ class ResponseGenerator:
         """
         try:
             # Allow offline mode (explicit opt-in)
-            self.offline = os.getenv("DISABLE_AI") == "1" or os.getenv("GEMINI_OFFLINE") == "1"
+            self.offline = (
+                os.getenv("DISABLE_AI") == "1" or os.getenv("GEMINI_OFFLINE") == "1"
+            )
 
             # Get LLM configuration from centralized config
             llm_config = config.get_llm_provider_config()
@@ -63,15 +65,23 @@ class ResponseGenerator:
                 persona=None,
             )
 
-            logger.info(f"ResponseGenerator initialized with {mode} (configurable defaults)")
-            logger.info(f"LLM Config - Provider: {llm_config['provider']}, Temperature: {llm_config['generation_config']['temperature']}, Safety: {'permissive' if llm_config['safety_settings'] else 'default'}")
+            logger.info(
+                f"ResponseGenerator initialized with {mode} (configurable defaults)"
+            )
+            logger.info(
+                f"LLM Config - Provider: {llm_config['provider']}, Temperature: {llm_config['generation_config']['temperature']}, Safety: {'permissive' if llm_config['safety_settings'] else 'default'}"
+            )
 
             # Initialize Model Armor guard (optional - controlled by env var)
             self.model_armor = create_model_armor_guard_from_env()
             if self.model_armor:
-                logger.info("Model Armor guard initialized (pre/post sanitization enabled)")
+                logger.info(
+                    "Model Armor guard initialized (pre/post sanitization enabled)"
+                )
             else:
-                logger.info("Model Armor guard disabled (MODEL_ARMOR_ENABLED=false or not set)")
+                logger.info(
+                    "Model Armor guard disabled (MODEL_ARMOR_ENABLED=false or not set)"
+                )
 
         except Exception as e:
             logger.error(f"Failed to initialize ResponseGenerator: {e}")
@@ -252,9 +262,14 @@ Response:""",
                 yield self._generate_fallback_response(query, user_persona)
                 return
 
-            prompt_template = self.persona_prompts.get(user_persona, self.persona_prompts["Developer"])
+            prompt_template = self.persona_prompts.get(
+                user_persona, self.persona_prompts["Developer"]
+            )
             if user_persona == "CVE Creator":
-                prompt = prompt_template.replace("{user_query}", query).replace("{user_evidence}", user_evidence or "No additional evidence provided.")
+                prompt = prompt_template.replace("{user_query}", query).replace(
+                    "{user_evidence}",
+                    user_evidence or "No additional evidence provided.",
+                )
             else:
                 prompt = prompt_template.format(
                     user_query=query,
@@ -269,7 +284,10 @@ Response:""",
 
                     # [2] Model Armor: Sanitize model response AFTER LLM generation
                     if self.model_armor and final and final.strip():
-                        is_safe, message = await self.model_armor.sanitize_model_response(final)
+                        (
+                            is_safe,
+                            message,
+                        ) = await self.model_armor.sanitize_model_response(final)
                         if not is_safe:
                             # BLOCKED - return generic error
                             yield message
@@ -300,7 +318,9 @@ Response:""",
 
                 # [2] Model Armor: Sanitize complete model response
                 if self.model_armor and full_response and full_response.strip():
-                    is_safe, message = await self.model_armor.sanitize_model_response(full_response)
+                    is_safe, message = await self.model_armor.sanitize_model_response(
+                        full_response
+                    )
                     if not is_safe:
                         # BLOCKED - return generic error instead of response
                         yield message
@@ -360,9 +380,14 @@ Response:""",
             if not context and not (user_evidence and user_evidence.strip()):
                 return ""
 
-            prompt_template = self.persona_prompts.get(user_persona, self.persona_prompts["Developer"])
+            prompt_template = self.persona_prompts.get(
+                user_persona, self.persona_prompts["Developer"]
+            )
             if user_persona == "CVE Creator":
-                prompt = prompt_template.replace("{user_query}", query).replace("{user_evidence}", user_evidence or "No additional evidence provided.")
+                prompt = prompt_template.replace("{user_query}", query).replace(
+                    "{user_evidence}",
+                    user_evidence or "No additional evidence provided.",
+                )
             else:
                 prompt = prompt_template.format(
                     user_query=query,
@@ -404,21 +429,27 @@ Response:""",
         # Group chunks by CWE ID safely
         by_cwe: Dict[str, List[Dict[str, Any]]] = {}
         for ch in chunks:
-            mid = (ch.get("metadata") or {})
+            mid = ch.get("metadata") or {}
             cid = mid.get("cwe_id", "CWE-UNKNOWN")
             by_cwe.setdefault(cid, []).append(ch)
 
         # Build per-CWE sections
         for cid, group in by_cwe.items():
-            best = max(group, key=lambda g: float((g.get("scores") or {}).get("hybrid", 0.0)))
+            best = max(
+                group, key=lambda g: float((g.get("scores") or {}).get("hybrid", 0.0))
+            )
             name = (best.get("metadata") or {}).get("name", "")
             context_parts.append(f"\n--- {cid}: {name} ---")
 
-            for ch in sorted(group, key=lambda g: (g.get("scores") or {}).get("hybrid", 0.0), reverse=True):
-                md = (ch.get("metadata") or {})
+            for ch in sorted(
+                group,
+                key=lambda g: (g.get("scores") or {}).get("hybrid", 0.0),
+                reverse=True,
+            ):
+                md = ch.get("metadata") or {}
                 section = md.get("section", "Content")
                 doc = ch.get("document", "")
-                snippet = doc[:config.max_document_snippet_length]
+                snippet = doc[: config.max_document_snippet_length]
                 suffix = "..." if len(doc) > config.max_document_snippet_length else ""
                 context_parts.append(f"\n{section}:\n{snippet}{suffix}")
                 # Cap sections per CWE when accumulating many parts
@@ -427,7 +458,7 @@ Response:""",
 
         # Hard cap overall context size by characters to keep prompt size safe
         context_text = "\n".join(context_parts)
-        return context_text[:config.max_context_length]
+        return context_text[: config.max_context_length]
 
     def _clean_response_chunk(self, chunk: str) -> str:
         """
@@ -454,7 +485,12 @@ Response:""",
             Cleaned response string
         """
         # Remove only leading role labels; avoid nuking legitimate content
-        cleaned = re.sub(r'^(?:Instructions?|System|Assistant)\s*:\s*', '', response.strip(), flags=re.IGNORECASE)
+        cleaned = re.sub(
+            r"^(?:Instructions?|System|Assistant)\s*:\s*",
+            "",
+            response.strip(),
+            flags=re.IGNORECASE,
+        )
 
         # Ensure response is not empty
         if not cleaned.strip():
@@ -471,10 +507,12 @@ Response:""",
             "Bug Bounty Hunter": "I couldn't find relevant CWE information for your security research question.",
             "Product Manager": "I couldn't find relevant CWE information for your strategic planning question.",
             "CWE Analyzer": "I couldn't find relevant CWE information for your CVE-to-CWE mapping analysis.",
-            "CVE Creator": "I couldn't find relevant CWE information for your CVE description creation."
+            "CVE Creator": "I couldn't find relevant CWE information for your CVE description creation.",
         }
 
-        specific_message = persona_specific.get(user_persona, "I couldn't find relevant CWE information for your question.")
+        specific_message = persona_specific.get(
+            user_persona, "I couldn't find relevant CWE information for your question."
+        )
 
         return f"{specific_message} Please try rephrasing your question or ask about specific Common Weakness Enumerations (CWEs). You can also ask about CWE categories, patterns, or request information about specific CWE IDs."
 
@@ -502,7 +540,7 @@ Response:""",
         # Group by CWE and pick the best chunk per CWE by hybrid score
         by_cwe: Dict[str, Dict[str, Any]] = {}
         for ch in retrieved_chunks:
-            md = (ch.get("metadata") or {})
+            md = ch.get("metadata") or {}
             cid = md.get("cwe_id", "CWE-UNKNOWN")
             cur = by_cwe.get(cid)
             if not cur:
@@ -541,13 +579,11 @@ Response:""",
         try:
             # Gather top sections for the dominant CWE from available chunks
             group_chunks = [
-                ch for ch in retrieved_chunks
+                ch
+                for ch in retrieved_chunks
                 if (ch.get("metadata") or {}).get("cwe_id") == dominant_id
             ]
-            # Prefer key sections
-            preferred_order = [
-                "Abstract", "Extended Description", "Description", "Details", "Examples", "Mitigations"
-            ]
+            # Prefer key sections (ordering handled by explicit picks below)
             section_map: Dict[str, str] = {}
             for ch in group_chunks:
                 md = ch.get("metadata") or {}
@@ -560,7 +596,7 @@ Response:""",
                 candidate = doc if len(doc) > len(prev) else prev
                 section_map[sec] = candidate
 
-            md = (dominant_chunk.get("metadata") or {})
+            md = dominant_chunk.get("metadata") or {}
             name = md.get("name", "")
 
             lines: List[str] = []
@@ -577,14 +613,18 @@ Response:""",
 
             expl = pick(["Abstract", "Extended Description", "Description"])
             if expl:
-                expl_snippet = expl[:500].replace("\n", " ") + ("..." if len(expl) > 500 else "")
+                expl_snippet = expl[:500].replace("\n", " ") + (
+                    "..." if len(expl) > 500 else ""
+                )
                 lines.append(expl_snippet)
                 lines.append("")
 
             if user_persona in ("Developer", "PSIRT Member", "Product Manager"):
                 mit = pick(["Mitigations", "Details"])
                 if mit:
-                    mit_snippet = mit[:400].replace("\n", " ") + ("..." if len(mit) > 400 else "")
+                    mit_snippet = mit[:400].replace("\n", " ") + (
+                        "..." if len(mit) > 400 else ""
+                    )
                     lines.append("Key Mitigations:")
                     lines.append(mit_snippet)
 
@@ -593,7 +633,9 @@ Response:""",
                 "Developer": "Emphasize input validation, output encoding, and safe framework APIs.",
                 "PSIRT Member": "Use this to inform severity, impact, and advisory guidance.",
                 "Product Manager": "Prioritize fixes based on exposure and business impact.",
-            }.get(user_persona, "Consult official CWE documentation for further details.")
+            }.get(
+                user_persona, "Consult official CWE documentation for further details."
+            )
             lines.append("")
             lines.append(tail)
             return "\n".join(lines)
@@ -601,19 +643,19 @@ Response:""",
             pass
 
         # Otherwise, provide a concise multi-CWE summary
-        lines: List[str] = []
-        lines.append("Here are the most relevant CWE findings based on your query:")
+        out_lines: List[str] = []
+        out_lines.append("Here are the most relevant CWE findings based on your query:")
         for cid, ch in ranked:
-            md = (ch.get("metadata") or {})
+            md = ch.get("metadata") or {}
             name = md.get("name", "")
             section = md.get("section", "Content")
             doc = (ch.get("document") or "").strip()
             snippet = doc[:280].replace("\n", " ") + ("..." if len(doc) > 280 else "")
-            lines.append(f"- {cid}: {name}")
+            out_lines.append(f"- {cid}: {name}")
             if section:
-                lines.append(f"  Section: {section}")
+                out_lines.append(f"  Section: {section}")
             if snippet:
-                lines.append(f"  Snippet: {snippet}")
+                out_lines.append(f"  Snippet: {snippet}")
 
         persona_tail = {
             "Developer": "Focus on input validation, output encoding, and safe APIs.",
@@ -622,18 +664,22 @@ Response:""",
             "Bug Bounty Hunter": "Adapt tests to the attack surface suggested by these CWEs.",
             "Product Manager": "Prioritize mitigations according to risk and exposure.",
         }.get(user_persona, "Consult the referenced CWEs for details and mitigations.")
-        lines.append("")
-        lines.append(persona_tail)
-        return "\n".join(lines)
+        out_lines.append("")
+        out_lines.append(persona_tail)
+        return "\n".join(out_lines)
 
     def _record_llm_fallback_marker(self) -> None:
         """Create a marker file indicating an LLM fallback occurred (for e2e diagnostics)."""
         try:
-            marker_path = os.getenv("LLM_FALLBACK_MARKER_PATH") or "test-results/llm_fallback_marker"
+            marker_path = (
+                os.getenv("LLM_FALLBACK_MARKER_PATH")
+                or "test-results/llm_fallback_marker"
+            )
             marker_dir = os.path.dirname(marker_path) or "."
             os.makedirs(marker_dir, exist_ok=True)
             with open(marker_path, "a", encoding="utf-8") as f:
                 from time import time as _now
+
                 f.write(f"fallback:{int(_now())}\n")
         except Exception:
             # Do not let diagnostics interfere with normal operation

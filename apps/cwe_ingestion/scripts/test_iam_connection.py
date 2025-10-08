@@ -5,9 +5,10 @@ Run this after starting the proxy with verbose logging.
 """
 
 import subprocess
-import psycopg
-import time
 import sys
+
+import psycopg
+
 
 def test_iam_connection():
     print("🔍 Simple IAM Connection Test")
@@ -17,8 +18,10 @@ def test_iam_connection():
         # Generate IAM token
         print("1. Generating IAM token...")
         result = subprocess.run(
-            ['gcloud', 'sql', 'generate-login-token'],
-            capture_output=True, text=True, check=True
+            ["gcloud", "sql", "generate-login-token"],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         token = result.stdout.strip()
         print(f"   ✓ Token generated (length: {len(token)})")
@@ -30,19 +33,19 @@ def test_iam_connection():
         print("   Database: postgres")
 
         conn = psycopg.connect(
-            host='127.0.0.1',
+            host="127.0.0.1",
             port=5433,
-            dbname='postgres',
-            user='cwe-postgres-sa@cwechatbot.iam',
+            dbname="postgres",
+            user="cwe-postgres-sa@cwechatbot.iam",
             password=token,
-            connect_timeout=15
+            connect_timeout=15,
         )
 
         print("   ✅ Connection successful!")
 
         # Test query
         with conn.cursor() as cur:
-            cur.execute('SELECT current_user, current_database();')
+            cur.execute("SELECT current_user, current_database();")
             user, db = cur.fetchone()
             print(f"   ✓ Connected as: {user}")
             print(f"   ✓ Database: {db}")
@@ -60,13 +63,13 @@ def test_iam_connection():
 
         # Analyze error
         error_str = str(e).lower()
-        if 'password authentication failed' in error_str:
+        if "password authentication failed" in error_str:
             print("   🔍 Issue: Database permissions - IAM user needs PostgreSQL grants")
-        elif 'no pg_hba.conf entry' in error_str:
+        elif "no pg_hba.conf entry" in error_str:
             print("   🔍 Issue: pg_hba.conf - IAM auth not configured in PostgreSQL")
-        elif 'server closed the connection' in error_str:
+        elif "server closed the connection" in error_str:
             print("   🔍 Issue: Connection rejected - check proxy logs for details")
-        elif 'connection refused' in error_str:
+        elif "connection refused" in error_str:
             print("   🔍 Issue: Proxy not running or wrong port")
         else:
             print(f"   🔍 Issue: Unknown - {error_str}")
@@ -76,6 +79,7 @@ def test_iam_connection():
     except Exception as e:
         print(f"   ❌ Unexpected error: {e}")
         return False
+
 
 if __name__ == "__main__":
     success = test_iam_connection()

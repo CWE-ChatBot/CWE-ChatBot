@@ -12,4 +12,3 @@ def pytest_sessionstart(session):
     chat_src = repo_root / "apps" / "chatbot"
     if str(chat_src) not in sys.path:
         sys.path.insert(0, str(chat_src))
-

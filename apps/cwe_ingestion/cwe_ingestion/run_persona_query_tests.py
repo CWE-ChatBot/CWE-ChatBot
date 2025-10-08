@@ -12,27 +12,28 @@ Usage:
     poetry run python run_persona_query_tests.py --max-queries 5
 """
 
+import argparse
 import os
 import sys
 import time
-import argparse
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from test_queries_personas import (
-    ALL_QUERIES,
     ALL_PERSONA_QUERIES,
+    ALL_QUERIES,
+    TestQuery,
     get_queries_by_persona,
-    get_queries_by_type,
-    TestQuery
 )
 
 # Import the required components
 try:
-    from pg_chunk_store import PostgresChunkStore
     from embedder import GeminiEmbedder
+    from pg_chunk_store import PostgresChunkStore
 except ImportError as e:
     print(f"❌ Import error: {e}")
-    print("Make sure you're running from the correct directory with: poetry run python run_persona_query_tests.py")
+    print(
+        "Make sure you're running from the correct directory with: poetry run python run_persona_query_tests.py"
+    )
     sys.exit(1)
 
 
@@ -44,7 +45,7 @@ def format_results_summary(results: List[Dict[str, Any]]) -> str:
     # Group by CWE ID
     cwe_groups = {}
     for result in results:
-        cwe_id = result['metadata']['cwe_id']
+        cwe_id = result["metadata"]["cwe_id"]
         if cwe_id not in cwe_groups:
             cwe_groups[cwe_id] = []
         cwe_groups[cwe_id].append(result)
@@ -54,8 +55,10 @@ def format_results_summary(results: List[Dict[str, Any]]) -> str:
         if i >= 3:  # Limit to top 3 CWEs
             break
 
-        best_result = max(cwe_results, key=lambda x: x.get("scores", {}).get("hybrid", 0.0))
-        sections = [r['metadata']['section'] for r in cwe_results]
+        best_result = max(
+            cwe_results, key=lambda x: x.get("scores", {}).get("hybrid", 0.0)
+        )
+        sections = [r["metadata"]["section"] for r in cwe_results]
 
         summary_lines.append(
             f"  {cwe_id}: {best_result['metadata']['name'][:50]}..."
@@ -68,7 +71,9 @@ def format_results_summary(results: List[Dict[str, Any]]) -> str:
     return "\n" + "\n".join(summary_lines)
 
 
-def evaluate_query_accuracy(query: TestQuery, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+def evaluate_query_accuracy(
+    query: TestQuery, results: List[Dict[str, Any]]
+) -> Dict[str, Any]:
     """Evaluate how well the query results match expectations."""
     if not results:
         return {
@@ -76,16 +81,16 @@ def evaluate_query_accuracy(query: TestQuery, results: List[Dict[str, Any]]) -> 
             "expected_found": 0,
             "expected_total": len(query.expected_cwes),
             "top_match": False,
-            "notes": "No results returned"
+            "notes": "No results returned",
         }
 
     # Get CWEs found in results
-    found_cwes = set(r['metadata']['cwe_id'] for r in results)
+    found_cwes = set(r["metadata"]["cwe_id"] for r in results)
     expected_cwes = set(query.expected_cwes)
 
     # Calculate accuracy metrics
     expected_found = len(expected_cwes.intersection(found_cwes))
-    top_match = results[0]['metadata']['cwe_id'] in expected_cwes if results else False
+    top_match = results[0]["metadata"]["cwe_id"] in expected_cwes if results else False
 
     accuracy_score = expected_found / len(expected_cwes) if expected_cwes else 0.0
 
@@ -96,7 +101,7 @@ def evaluate_query_accuracy(query: TestQuery, results: List[Dict[str, Any]]) -> 
         "top_match": top_match,
         "found_cwes": list(found_cwes),
         "expected_cwes": list(expected_cwes),
-        "notes": f"Found {expected_found}/{len(expected_cwes)} expected CWEs"
+        "notes": f"Found {expected_found}/{len(expected_cwes)} expected CWEs",
     }
 
 
@@ -104,7 +109,7 @@ def run_single_query_test(
     query: TestQuery,
     store: PostgresChunkStore,
     embedder: GeminiEmbedder,
-    verbose: bool = False
+    verbose: bool = False,
 ) -> Dict[str, Any]:
     """Run a single query test and return detailed results."""
 
@@ -145,16 +150,24 @@ def run_single_query_test(
         accuracy = evaluate_query_accuracy(query, results)
 
         # Print results
-        print(f"⏱️  Timing: {total_time*1000:.1f}ms (embed: {embedding_time*1000:.1f}ms, search: {search_time*1000:.1f}ms)")
-        print(f"📊 Results: {len(results)} chunks, accuracy: {accuracy['accuracy_score']*100:.1f}%")
-        print(f"🎯 Expected: {accuracy['expected_found']}/{accuracy['expected_total']} CWEs found")
+        print(
+            f"⏱️  Timing: {total_time*1000:.1f}ms (embed: {embedding_time*1000:.1f}ms, search: {search_time*1000:.1f}ms)"
+        )
+        print(
+            f"📊 Results: {len(results)} chunks, accuracy: {accuracy['accuracy_score']*100:.1f}%"
+        )
+        print(
+            f"🎯 Expected: {accuracy['expected_found']}/{accuracy['expected_total']} CWEs found"
+        )
         print(f"🏆 Top match: {'✅ YES' if accuracy['top_match'] else '❌ NO'}")
 
         if verbose:
             print(format_results_summary(results))
 
         # Determine success
-        success = accuracy['accuracy_score'] >= 0.5 and total_time < 2.0  # 50% accuracy, under 2s
+        success = (
+            accuracy["accuracy_score"] >= 0.5 and total_time < 2.0
+        )  # 50% accuracy, under 2s
         status_icon = "✅" if success else "⚠️"
         print(f"{status_icon} Status: {'PASS' if success else 'NEEDS_REVIEW'}")
 
@@ -166,7 +179,9 @@ def run_single_query_test(
             "search_time": search_time,
             "results_count": len(results),
             "accuracy": accuracy,
-            "results": results[:5] if verbose else []  # Store top 5 for detailed analysis
+            "results": results[:5]
+            if verbose
+            else [],  # Store top 5 for detailed analysis
         }
 
     except Exception as e:
@@ -179,7 +194,7 @@ def run_single_query_test(
             "embedding_time": 0,
             "search_time": 0,
             "results_count": 0,
-            "accuracy": {"accuracy_score": 0.0, "notes": f"Error: {e}"}
+            "accuracy": {"accuracy_score": 0.0, "notes": f"Error: {e}"},
         }
 
 
@@ -187,7 +202,7 @@ def run_persona_query_tests(
     personas: Optional[List[str]] = None,
     query_types: Optional[List[str]] = None,
     max_queries: Optional[int] = None,
-    verbose: bool = False
+    verbose: bool = False,
 ) -> Dict[str, Any]:
     """Run persona-based query tests with filtering options."""
 
@@ -195,22 +210,24 @@ def run_persona_query_tests(
     print("=" * 50)
 
     # Initialize connections
-    database_url = os.getenv('DATABASE_URL') or os.getenv('LOCAL_DATABASE_URL')
+    database_url = os.getenv("DATABASE_URL") or os.getenv("LOCAL_DATABASE_URL")
     if not database_url:
         print("❌ No DATABASE_URL or LOCAL_DATABASE_URL environment variable set")
-        print("Set with: export DATABASE_URL='postgresql://postgres:postgres@localhost:5432/cwe'")
+        print(
+            "Set with: export DATABASE_URL='postgresql://postgres:postgres@localhost:5432/cwe'"
+        )
         return {"success": False, "error": "No database URL"}
 
     try:
         store = PostgresChunkStore(dims=3072, database_url=database_url)
         embedder = GeminiEmbedder()
-        print(f"✅ Connected to database and embedder")
+        print("✅ Connected to database and embedder")
 
         # Check database status
         stats = store.get_collection_stats()
         print(f"📊 Database contains {stats['count']:,} chunks")
 
-        if stats['count'] == 0:
+        if stats["count"] == 0:
             print("⚠️  Database appears empty. Run ingestion first with:")
             print("   poetry run python cli.py ingest --chunked")
             return {"success": False, "error": "Empty database"}
@@ -231,7 +248,9 @@ def run_persona_query_tests(
     if query_types:
         filtered_queries = []
         for query_type in query_types:
-            filtered_queries.extend([q for q in test_queries if q.query_type == query_type])
+            filtered_queries.extend(
+                [q for q in test_queries if q.query_type == query_type]
+            )
         test_queries = filtered_queries
 
     if max_queries:
@@ -251,19 +270,21 @@ def run_persona_query_tests(
     total_test_time = time.time() - start_time
 
     # Analyze results
-    successful_tests = [r for r in test_results if r['success']]
-    failed_tests = [r for r in test_results if not r['success']]
+    successful_tests = [r for r in test_results if r["success"]]
+    failed_tests = [r for r in test_results if not r["success"]]
 
     if test_results:
-        avg_query_time = sum(r['total_time'] for r in test_results) / len(test_results)
-        avg_accuracy = sum(r['accuracy']['accuracy_score'] for r in test_results) / len(test_results)
+        avg_query_time = sum(r["total_time"] for r in test_results) / len(test_results)
+        avg_accuracy = sum(r["accuracy"]["accuracy_score"] for r in test_results) / len(
+            test_results
+        )
     else:
         avg_query_time = 0
         avg_accuracy = 0
 
     # Print summary
-    print(f"\n" + "="*60)
-    print(f"📊 TEST SUMMARY")
+    print("\n" + "=" * 60)
+    print("📊 TEST SUMMARY")
     print("=" * 60)
     print(f"✅ Successful: {len(successful_tests)}/{len(test_results)}")
     print(f"❌ Failed: {len(failed_tests)}")
@@ -273,34 +294,46 @@ def run_persona_query_tests(
 
     # Per-persona breakdown
     if len(test_results) > 1:
-        print(f"\n📈 Results by Persona:")
+        print("\n📈 Results by Persona:")
         persona_stats = {}
         for result in test_results:
-            persona = result['query'].persona
+            persona = result["query"].persona
             if persona not in persona_stats:
-                persona_stats[persona] = {"total": 0, "successful": 0, "avg_accuracy": 0}
+                persona_stats[persona] = {
+                    "total": 0,
+                    "successful": 0,
+                    "avg_accuracy": 0,
+                }
 
             persona_stats[persona]["total"] += 1
-            if result['success']:
+            if result["success"]:
                 persona_stats[persona]["successful"] += 1
-            persona_stats[persona]["avg_accuracy"] += result['accuracy']['accuracy_score']
+            persona_stats[persona]["avg_accuracy"] += result["accuracy"][
+                "accuracy_score"
+            ]
 
         for persona, stats in persona_stats.items():
             success_rate = stats["successful"] / stats["total"] * 100
             avg_acc = stats["avg_accuracy"] / stats["total"] * 100
-            print(f"  {persona:20s}: {stats['successful']}/{stats['total']} ({success_rate:4.1f}%) | Avg accuracy: {avg_acc:4.1f}%")
+            print(
+                f"  {persona:20s}: {stats['successful']}/{stats['total']} ({success_rate:4.1f}%) | Avg accuracy: {avg_acc:4.1f}%"
+            )
 
     # Issues to investigate
     if failed_tests:
-        print(f"\n🔍 Issues to Investigate:")
+        print("\n🔍 Issues to Investigate:")
         for result in failed_tests[:3]:  # Show top 3 failures
-            query = result['query']
-            error = result.get('error', 'Low accuracy or slow performance')
+            query = result["query"]
+            error = result.get("error", "Low accuracy or slow performance")
             print(f"  • {query.persona}: '{query.query_text[:50]}...' - {error}")
 
-    overall_success = len(successful_tests) / len(test_results) >= 0.8 if test_results else False
+    overall_success = (
+        len(successful_tests) / len(test_results) >= 0.8 if test_results else False
+    )
 
-    print(f"\n🎉 Overall Assessment: {'✅ EXCELLENT' if overall_success else '⚠️ NEEDS IMPROVEMENT'}")
+    print(
+        f"\n🎉 Overall Assessment: {'✅ EXCELLENT' if overall_success else '⚠️ NEEDS IMPROVEMENT'}"
+    )
 
     return {
         "success": overall_success,
@@ -310,20 +343,32 @@ def run_persona_query_tests(
         "avg_query_time_ms": avg_query_time * 1000,
         "avg_accuracy_percent": avg_accuracy * 100,
         "total_test_time": total_test_time,
-        "detailed_results": test_results
+        "detailed_results": test_results,
     }
 
 
 def main():
     """Main entry point with command line argument parsing."""
     parser = argparse.ArgumentParser(description="Run persona-based CWE query tests")
-    parser.add_argument("--persona", choices=list(ALL_PERSONA_QUERIES.keys()),
-                       help="Test only specific persona queries")
-    parser.add_argument("--query-type", choices=["semantic", "keyword", "hybrid", "direct"],
-                       help="Test only specific query types")
-    parser.add_argument("--max-queries", type=int, help="Limit number of queries to test")
-    parser.add_argument("--verbose", "-v", action="store_true",
-                       help="Show detailed results for each query")
+    parser.add_argument(
+        "--persona",
+        choices=list(ALL_PERSONA_QUERIES.keys()),
+        help="Test only specific persona queries",
+    )
+    parser.add_argument(
+        "--query-type",
+        choices=["semantic", "keyword", "hybrid", "direct"],
+        help="Test only specific query types",
+    )
+    parser.add_argument(
+        "--max-queries", type=int, help="Limit number of queries to test"
+    )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Show detailed results for each query",
+    )
 
     args = parser.parse_args()
 
@@ -336,7 +381,7 @@ def main():
         personas=personas,
         query_types=query_types,
         max_queries=args.max_queries,
-        verbose=args.verbose
+        verbose=args.verbose,
     )
 
     # Exit with appropriate code

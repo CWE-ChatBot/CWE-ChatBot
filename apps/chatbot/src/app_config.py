@@ -153,7 +153,7 @@ class Config:
 
         # Return permissive settings for cybersecurity content
         try:
-            from google.generativeai.types import (  # type: ignore
+            from google.generativeai.types import (
                 HarmBlockThreshold,
                 HarmCategory,
             )

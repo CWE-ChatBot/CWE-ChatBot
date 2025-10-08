@@ -35,14 +35,14 @@ Usage: VERIFY_KNOWN=1 poetry run python ../cwe_ingestion/scripts/import_policy_f
 import argparse
 import logging
 import os
+import tempfile
+import zipfile
+from io import BytesIO
+from pathlib import Path
 from typing import Optional
 
 import psycopg
 import requests
-import tempfile
-import zipfile
-from pathlib import Path
-from io import BytesIO
 
 try:
     # Use local module imports
@@ -51,23 +51,25 @@ except Exception:
     # Fallback if executed from apps/cwe_ingestion
     from parser import CWEParser  # type: ignore
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
 VALID_LABELS = {
-    'Allowed',
-    'Allowed-with-Review',
-    'Discouraged',
-    'Prohibited',
+    "Allowed",
+    "Allowed-with-Review",
+    "Discouraged",
+    "Prohibited",
 }
 
 # Built-in verification set (can be extended)
 KNOWN_EXPECTED = {
-    'CWE-20': 'Discouraged',
-    'CWE-79': 'Allowed',
-    'CWE-1061': 'Allowed-with-Review',
-    'CWE-1062': 'Prohibited',
+    "CWE-20": "Discouraged",
+    "CWE-79": "Allowed",
+    "CWE-1061": "Allowed-with-Review",
+    "CWE-1062": "Prohibited",
 }
 
 
@@ -75,12 +77,12 @@ def derive_policy_label(abstraction: Optional[str]) -> Optional[str]:
     if not abstraction:
         return None
     a = abstraction.strip().lower()
-    if a == 'class':
-        return 'Discouraged'
-    if a == 'base':
-        return 'Allowed'
-    if a == 'variant':
-        return 'Allowed-with-Review'
+    if a == "class":
+        return "Discouraged"
+    if a == "base":
+        return "Allowed"
+    if a == "variant":
+        return "Allowed-with-Review"
     return None
 
 
@@ -109,7 +111,9 @@ def ensure_table(conn: psycopg.Connection) -> None:
     conn.commit()
 
 
-def upsert_policy(conn: psycopg.Connection, cwe_id: str, label: str, notes: str = "") -> None:
+def upsert_policy(
+    conn: psycopg.Connection, cwe_id: str, label: str, notes: str = ""
+) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -123,7 +127,13 @@ def upsert_policy(conn: psycopg.Connection, cwe_id: str, label: str, notes: str 
         )
 
 
-def upsert_catalog(conn: psycopg.Connection, cwe_id: str, name: str, abstraction: Optional[str], status: Optional[str]) -> None:
+def upsert_catalog(
+    conn: psycopg.Connection,
+    cwe_id: str,
+    name: str,
+    abstraction: Optional[str],
+    status: Optional[str],
+) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -134,7 +144,7 @@ def upsert_catalog(conn: psycopg.Connection, cwe_id: str, name: str, abstraction
               abstraction = EXCLUDED.abstraction,
               status = EXCLUDED.status;
             """,
-            (cwe_id, name, abstraction or '', status or ''),
+            (cwe_id, name, abstraction or "", status or ""),
         )
 
 
@@ -143,11 +153,11 @@ def load_env_file(path: str) -> None:
         p = Path(os.path.expanduser(path))
         if not p.exists():
             return
-        for line in p.read_text(encoding='utf-8').splitlines():
+        for line in p.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if not line or line.startswith('#') or '=' not in line:
+            if not line or line.startswith("#") or "=" not in line:
                 continue
-            key, val = line.split('=', 1)
+            key, val = line.split("=", 1)
             key = key.strip()
             val = val.strip().strip('"').strip("'")
             if key and key not in os.environ:
@@ -157,15 +167,37 @@ def load_env_file(path: str) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Import CWE policy labels from CWE XML")
+    parser = argparse.ArgumentParser(
+        description="Import CWE policy labels from CWE XML"
+    )
     parser.add_argument("--xml", help="Path to CWE XML file (e.g., cwec_v4.15.xml)")
-    parser.add_argument("--url", help="Remote URL to CWE XML or ZIP (e.g., https://.../cwec_latest.xml.zip)")
+    parser.add_argument(
+        "--url",
+        help="Remote URL to CWE XML or ZIP (e.g., https://.../cwec_latest.xml.zip)",
+    )
     parser.add_argument("--db", default=None, help="Database URL (default from env)")
-    parser.add_argument("--infer-by-abstraction", action="store_true", help="Derive mapping labels from Abstraction field")
-    parser.add_argument("--limit", type=int, default=0, help="Limit number of CWEs to import (for testing)")
-    parser.add_argument("--dry-run", action="store_true", help="Parse and derive labels without writing to DB")
+    parser.add_argument(
+        "--infer-by-abstraction",
+        action="store_true",
+        help="Derive mapping labels from Abstraction field",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Limit number of CWEs to import (for testing)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse and derive labels without writing to DB",
+    )
 
-    parser.add_argument("--env-file", default=os.path.expanduser("~/work/env/.env_cwe_chatbot"), help="Path to env file with DB vars (default: ~/work/env/.env_cwe_chatbot)")
+    parser.add_argument(
+        "--env-file",
+        default=os.path.expanduser("~/work/env/.env_cwe_chatbot"),
+        help="Path to env file with DB vars (default: ~/work/env/.env_cwe_chatbot)",
+    )
 
     args = parser.parse_args()
 
@@ -186,7 +218,9 @@ def main():
         if all([host, port, dbname, user, password]):
             db_url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
     if not db_url and not args.dry_run:
-        parser.error("Database URL not found. Provide --db or set DATABASE_URL/LOCAL_DATABASE_URL or POSTGRES_* env vars.")
+        parser.error(
+            "Database URL not found. Provide --db or set DATABASE_URL/LOCAL_DATABASE_URL or POSTGRES_* env vars."
+        )
 
     # Resolve XML path: download if URL provided
     xml_path = args.xml
@@ -199,21 +233,21 @@ def main():
         tmp_dir = tempfile.TemporaryDirectory()
         tdir = Path(tmp_dir.name)
         # If ZIP, extract first XML
-        if args.url.lower().endswith('.zip') or zipfile.is_zipfile(BytesIO(content)):
+        if args.url.lower().endswith(".zip") or zipfile.is_zipfile(BytesIO(content)):
             with zipfile.ZipFile(BytesIO(content)) as zf:
-                xml_members = [m for m in zf.namelist() if m.lower().endswith('.xml')]
+                xml_members = [m for m in zf.namelist() if m.lower().endswith(".xml")]
                 if not xml_members:
                     raise RuntimeError("ZIP did not contain any .xml file")
                 # Prefer filenames containing 'cwe'
-                xml_members.sort(key=lambda m: (0 if 'cwe' in m.lower() else 1, len(m)))
+                xml_members.sort(key=lambda m: (0 if "cwe" in m.lower() else 1, len(m)))
                 target = xml_members[0]
                 out_path = tdir / Path(target).name
-                with zf.open(target) as src, open(out_path, 'wb') as dst:
+                with zf.open(target) as src, open(out_path, "wb") as dst:
                     dst.write(src.read())
                 xml_path = str(out_path)
         else:
-            out_path = tdir / 'cwe.xml'
-            with open(out_path, 'wb') as f:
+            out_path = tdir / "cwe.xml"
+            with open(out_path, "wb") as f:
                 f.write(content)
             xml_path = str(out_path)
 
@@ -227,40 +261,44 @@ def main():
     catalog_rows = []
     for e in entries:
         cwe_id = f"CWE-{getattr(e, 'ID', '')}".strip()
-        if not cwe_id or cwe_id == 'CWE-':
+        if not cwe_id or cwe_id == "CWE-":
             continue
         label: Optional[str] = None
         note = ""
         # Always collect catalog data
-        name = getattr(e, 'Name', '') or ''
-        abstraction = getattr(e, 'Abstraction', None)
-        status = getattr(e, 'Status', None)
+        name = getattr(e, "Name", "") or ""
+        abstraction = getattr(e, "Abstraction", None)
+        status = getattr(e, "Status", None)
         catalog_rows.append((cwe_id, name, abstraction, status))
 
         # Strategy 1: explicit Usage from Mapping_Notes (preferred)
         usage = None
         try:
-            mn = getattr(e, 'MappingNotes', None)
+            mn = getattr(e, "MappingNotes", None)
             if mn is not None:
                 # Pydantic model MappingNote has attribute Usage
-                usage = getattr(mn, 'Usage', None)
+                usage = getattr(mn, "Usage", None)
                 if usage is None and isinstance(mn, dict):
-                    usage = mn.get('Usage')
+                    usage = mn.get("Usage")
             if usage:
                 usage = str(usage).strip()
         except Exception:
             usage = None
         if usage:
             # Normalize to canonical value per XSD
-            u = usage.strip().lower().replace('_', '-').replace(' ', '-')
-            if u == 'allowed':
-                label = 'Allowed'
-            elif u in ('allowed-with-review', 'allowed-(with-careful-review)', 'allowed-with-careful-review'):
-                label = 'Allowed-with-Review'
-            elif u == 'discouraged':
-                label = 'Discouraged'
-            elif u == 'prohibited':
-                label = 'Prohibited'
+            u = usage.strip().lower().replace("_", "-").replace(" ", "-")
+            if u == "allowed":
+                label = "Allowed"
+            elif u in (
+                "allowed-with-review",
+                "allowed-(with-careful-review)",
+                "allowed-with-careful-review",
+            ):
+                label = "Allowed-with-Review"
+            elif u == "discouraged":
+                label = "Discouraged"
+            elif u == "prohibited":
+                label = "Prohibited"
             else:
                 logger.warning(f"Unrecognized Usage value for {cwe_id}: '{usage}'")
             if label:
@@ -269,7 +307,7 @@ def main():
         # Strategy 2: derive from abstraction when enabled
         if args.infer_by_abstraction:
             if not label:
-                label = derive_policy_label(getattr(e, 'Abstraction', None))
+                label = derive_policy_label(getattr(e, "Abstraction", None))
                 if label:
                     note = f"derived_from_abstraction={getattr(e, 'Abstraction', '')}"
 
@@ -290,13 +328,17 @@ def main():
         for cid, expected in KNOWN_EXPECTED.items():
             got = prepared_map.get(cid)
             if got is None:
-                logger.info(f"VERIFY (prepared): {cid} not in prepared set (possibly due to --limit or missing Usage)")
+                logger.info(
+                    f"VERIFY (prepared): {cid} not in prepared set (possibly due to --limit or missing Usage)"
+                )
             elif got == expected:
                 logger.info(f"VERIFY (prepared): {cid} PASS -> {got}")
             else:
-                logger.warning(f"VERIFY (prepared): {cid} FAIL -> got '{got}', expected '{expected}'")
+                logger.warning(
+                    f"VERIFY (prepared): {cid} FAIL -> got '{got}', expected '{expected}'"
+                )
 
-    if os.getenv('VERIFY_KNOWN') == '1':
+    if os.getenv("VERIFY_KNOWN") == "1":
         _verify_prepared(rows)
 
     if args.dry_run:
@@ -338,7 +380,9 @@ def main():
                     if got == expected:
                         logger.info(f"VERIFY (db): {cid} PASS -> {got}")
                     else:
-                        logger.warning(f"VERIFY (db): {cid} FAIL -> got '{got}', expected '{expected}'")
+                        logger.warning(
+                            f"VERIFY (db): {cid} FAIL -> got '{got}', expected '{expected}'"
+                        )
         except Exception as e:
             logger.warning(f"DB verification failed: {e}")
     finally:

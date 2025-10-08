@@ -1,7 +1,8 @@
 # apps/cwe_ingestion/tests/unit/test_vector_store.py
 import os
-import pytest
+
 import numpy as np
+import pytest
 
 
 @pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
@@ -33,14 +34,14 @@ def test_store_and_query_cwe_data():
 
     # Sample CWE data
     cwe_doc = {
-        'id': 'CWE-79',
-        'cwe_id': 'CWE-79',
-        'name': 'Cross-site Scripting',
-        'abstraction': 'Base',
-        'status': 'Stable',
-        'full_text': 'CWE-79: Cross-site Scripting. XSS vulnerability description...',
-        'alternate_terms_text': 'XSS; Cross Site Scripting',
-        'embedding': np.random.rand(3072).astype(np.float32)
+        "id": "CWE-79",
+        "cwe_id": "CWE-79",
+        "name": "Cross-site Scripting",
+        "abstraction": "Base",
+        "status": "Stable",
+        "full_text": "CWE-79: Cross-site Scripting. XSS vulnerability description...",
+        "alternate_terms_text": "XSS; Cross Site Scripting",
+        "embedding": np.random.rand(3072).astype(np.float32),
     }
 
     # Store the document
@@ -54,13 +55,13 @@ def test_store_and_query_cwe_data():
     assert isinstance(results, list)
     if len(results) > 0:
         result = results[0]
-        assert 'metadata' in result
-        assert 'document' in result
-        assert 'distance' in result
+        assert "metadata" in result
+        assert "document" in result
+        assert "distance" in result
         # Check metadata structure
-        metadata = result['metadata']
-        assert 'cwe_id' in metadata
-        assert 'name' in metadata
+        metadata = result["metadata"]
+        assert "cwe_id" in metadata
+        assert "name" in metadata
 
 
 @pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
@@ -73,25 +74,25 @@ def test_store_batch_cwe_data():
     # Sample CWE batch data
     cwe_batch = [
         {
-            'id': 'CWE-89',
-            'cwe_id': 'CWE-89',
-            'name': 'SQL Injection',
-            'abstraction': 'Base',
-            'status': 'Stable',
-            'full_text': 'CWE-89: SQL Injection...',
-            'alternate_terms_text': 'SQLi; SQL Injection Attack',
-            'embedding': np.random.rand(3072).astype(np.float32)
+            "id": "CWE-89",
+            "cwe_id": "CWE-89",
+            "name": "SQL Injection",
+            "abstraction": "Base",
+            "status": "Stable",
+            "full_text": "CWE-89: SQL Injection...",
+            "alternate_terms_text": "SQLi; SQL Injection Attack",
+            "embedding": np.random.rand(3072).astype(np.float32),
         },
         {
-            'id': 'CWE-22',
-            'cwe_id': 'CWE-22',
-            'name': 'Path Traversal',
-            'abstraction': 'Base',
-            'status': 'Stable',
-            'full_text': 'CWE-22: Path Traversal...',
-            'alternate_terms_text': 'Directory Traversal; Dot Dot Slash',
-            'embedding': np.random.rand(3072).astype(np.float32)
-        }
+            "id": "CWE-22",
+            "cwe_id": "CWE-22",
+            "name": "Path Traversal",
+            "abstraction": "Base",
+            "status": "Stable",
+            "full_text": "CWE-22: Path Traversal...",
+            "alternate_terms_text": "Directory Traversal; Dot Dot Slash",
+            "embedding": np.random.rand(3072).astype(np.float32),
+        },
     ]
 
     result = store.store_batch(cwe_batch)
@@ -107,14 +108,14 @@ def test_hybrid_query():
 
     # Store test data
     cwe_doc = {
-        'id': 'CWE-78',
-        'cwe_id': 'CWE-78',
-        'name': 'OS Command Injection',
-        'abstraction': 'Base',
-        'status': 'Stable',
-        'full_text': 'The software constructs system commands using external input',
-        'alternate_terms_text': 'Command Injection; Shell Injection',
-        'embedding': np.random.rand(3072).astype(np.float32)
+        "id": "CWE-78",
+        "cwe_id": "CWE-78",
+        "name": "OS Command Injection",
+        "abstraction": "Base",
+        "status": "Stable",
+        "full_text": "The software constructs system commands using external input",
+        "alternate_terms_text": "Command Injection; Shell Injection",
+        "embedding": np.random.rand(3072).astype(np.float32),
     }
 
     store.store_batch([cwe_doc])
@@ -125,21 +126,21 @@ def test_hybrid_query():
         query_text="command injection",
         query_embedding=query_embedding,
         k_vec=10,
-        limit=5
+        limit=5,
     )
 
     assert isinstance(results, list)
     if len(results) > 0:
         result = results[0]
-        assert 'metadata' in result
-        assert 'document' in result
-        assert 'scores' in result
+        assert "metadata" in result
+        assert "document" in result
+        assert "scores" in result
         # Check scores structure
-        scores = result['scores']
-        assert 'vec' in scores
-        assert 'fts' in scores
-        assert 'alias' in scores
-        assert 'hybrid' in scores
+        scores = result["scores"]
+        assert "vec" in scores
+        assert "fts" in scores
+        assert "alias" in scores
+        assert "hybrid" in scores
 
 
 @pytest.mark.skipif("DATABASE_URL" not in os.environ, reason="PostgreSQL required")
@@ -152,7 +153,7 @@ def test_vector_store_collection_stats():
     # Should be able to get stats
     stats = store.get_collection_stats()
     assert isinstance(stats, dict)
-    assert 'collection_name' in stats
-    assert 'count' in stats
-    assert stats['collection_name'] == 'cwe_embeddings'
-    assert isinstance(stats['count'], int)
+    assert "collection_name" in stats
+    assert "count" in stats
+    assert stats["collection_name"] == "cwe_embeddings"
+    assert isinstance(stats["count"], int)

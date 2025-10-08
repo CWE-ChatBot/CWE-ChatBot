@@ -9,29 +9,27 @@ import asyncio
 import logging
 import os
 import sys
-from pathlib import Path
-from typing import Dict, Any, Optional, Literal
 import time
+from typing import Any, Dict, Optional
 
 import chainlit as cl
 from chainlit.input_widget import Select, Switch
 
-from src.user_context import UserPersona, UserContext
-from src.conversation import ConversationManager
-from src.input_security import InputSanitizer, SecurityValidator
-from src.file_processor import FileProcessor
-from src.security.secure_logging import get_secure_logger
 # Use the extended config which loads from environment files automatically
 from src.app_config import config as app_config
+from src.conversation import ConversationManager
+from src.file_processor import FileProcessor
+from src.input_security import InputSanitizer, SecurityValidator
+from src.security.secure_logging import get_secure_logger
+
 # Import the new UI modules
 from src.ui import UIMessaging, UISettings, create_chat_profiles
+from src.user_context import UserPersona
 from src.utils.session import get_user_context
-
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = get_secure_logger(__name__)
 
@@ -64,7 +62,9 @@ def initialize_components() -> bool:
 
     # Log initialization attempt
     logger.debug("initialize_components() called")
-    logger.debug(f"_init_ok={_init_ok}, conversation_manager={'present' if conversation_manager else 'None'}")
+    logger.debug(
+        f"_init_ok={_init_ok}, conversation_manager={'present' if conversation_manager else 'None'}"
+    )
 
     # Prevent double initialization
     if _init_ok and conversation_manager is not None:
@@ -81,9 +81,13 @@ def initialize_components() -> bool:
             logger.debug("Configuration validation passed")
         except Exception as cfg_err:
             logger.error(f"Configuration validation FAILED: {cfg_err}")
-            logger.log_exception("Configuration validation failed", cfg_err, extra_context={
-                "component": "startup",
-            })
+            logger.log_exception(
+                "Configuration validation failed",
+                cfg_err,
+                extra_context={
+                    "component": "startup",
+                },
+            )
             _init_ok = False
             # Still attempt partial initialization to provide a helpful UI message
 
@@ -91,22 +95,32 @@ def initialize_components() -> bool:
         try:
             app_config.validate_oauth()
         except Exception as oauth_err:
-            logger.log_exception("OAuth configuration error", oauth_err, extra_context={"component": "startup"})
+            logger.log_exception(
+                "OAuth configuration error",
+                oauth_err,
+                extra_context={"component": "startup"},
+            )
             # Warning only - don't fail startup, will run in open mode
 
         # Check for database configuration
         # Option 1: Private IP with password auth (new production setup)
         # Option 2: Cloud SQL Connector with IAM (legacy)
         # Option 3: Traditional database URL (local dev)
-        use_private_ip = os.getenv('DB_HOST') and os.getenv('DB_USER') and os.getenv('DB_PASSWORD')
-        cloud_sql_instance = os.getenv('INSTANCE_CONN_NAME')
-        database_url = os.getenv('DATABASE_URL') or os.getenv('LOCAL_DATABASE_URL')
-        gemini_api_key = os.getenv('GEMINI_API_KEY') or app_config.gemini_api_key
-        offline_ai = os.getenv('DISABLE_AI') == '1' or os.getenv('GEMINI_OFFLINE') == '1'
+        use_private_ip = (
+            os.getenv("DB_HOST") and os.getenv("DB_USER") and os.getenv("DB_PASSWORD")
+        )
+        cloud_sql_instance = os.getenv("INSTANCE_CONN_NAME")
+        database_url = os.getenv("DATABASE_URL") or os.getenv("LOCAL_DATABASE_URL")
+        gemini_api_key = os.getenv("GEMINI_API_KEY") or app_config.gemini_api_key
+        offline_ai = (
+            os.getenv("DISABLE_AI") == "1" or os.getenv("GEMINI_OFFLINE") == "1"
+        )
 
-        logger.debug(f"Environment: DB_HOST={os.getenv('DB_HOST')}, DB_USER={os.getenv('DB_USER')}, "
-                     f"INSTANCE_CONN_NAME={cloud_sql_instance}, GEMINI_API_KEY={'present' if gemini_api_key else 'missing'}, "
-                     f"offline_ai={offline_ai}")
+        logger.debug(
+            f"Environment: DB_HOST={os.getenv('DB_HOST')}, DB_USER={os.getenv('DB_USER')}, "
+            f"INSTANCE_CONN_NAME={cloud_sql_instance}, GEMINI_API_KEY={'present' if gemini_api_key else 'missing'}, "
+            f"offline_ai={offline_ai}"
+        )
 
         # Initialize database connection
         db_engine = None
@@ -116,14 +130,20 @@ def initialize_components() -> bool:
             try:
                 logger.debug("Importing src.db module")
                 from src.db import engine
+
                 logger.debug("Calling engine() to create SQLAlchemy engine")
                 db_engine = engine()
-                database_url = "private-ip-connection"  # Placeholder since engine is used
+                database_url = (
+                    "private-ip-connection"  # Placeholder since engine is used
+                )
                 logger.info("Private IP database engine initialized successfully")
             except Exception as e:
-                logger.error(f"Private IP connection initialization FAILED: {type(e).__name__}: {e}")
-                if os.getenv('LOG_LEVEL') == 'DEBUG':
+                logger.error(
+                    f"Private IP connection initialization FAILED: {type(e).__name__}: {e}"
+                )
+                if os.getenv("LOG_LEVEL") == "DEBUG":
                     import traceback
+
                     traceback.print_exc()
                 logger.log_exception("Failed to initialize Private IP connection", e)
                 raise ValueError(f"Private IP connection initialization failed: {e}")
@@ -133,19 +153,25 @@ def initialize_components() -> bool:
             try:
                 logger.debug("Importing src.db module")
                 from src.db import engine
+
                 logger.debug("Calling engine() to create SQLAlchemy engine")
                 db_engine = engine()
                 database_url = "cloud-sql-connector"  # Placeholder since engine is used
                 logger.info("Cloud SQL Connector engine initialized successfully")
             except Exception as e:
-                logger.error(f"Cloud SQL Connector initialization FAILED: {type(e).__name__}: {e}")
-                if os.getenv('LOG_LEVEL') == 'DEBUG':
+                logger.error(
+                    f"Cloud SQL Connector initialization FAILED: {type(e).__name__}: {e}"
+                )
+                if os.getenv("LOG_LEVEL") == "DEBUG":
                     import traceback
+
                     traceback.print_exc()
                 logger.log_exception("Failed to initialize Cloud SQL Connector", e)
                 raise ValueError(f"Cloud SQL Connector initialization failed: {e}")
         else:
-            logger.debug("No Private IP or Cloud SQL instance, using traditional database URL")
+            logger.debug(
+                "No Private IP or Cloud SQL instance, using traditional database URL"
+            )
             # Use traditional database URL for local development
             if not database_url:
                 # Derive URL from POSTGRES_* if available
@@ -153,11 +179,15 @@ def initialize_components() -> bool:
                     database_url = f"postgresql://{app_config.pg_user}:{app_config.pg_password}@{app_config.pg_host}:{app_config.pg_port}/{app_config.pg_database}"
             if not database_url:
                 logger.error("No database configuration found!")
-                raise ValueError("Missing required configuration: database URL, Private IP config, or Cloud SQL instance")
+                raise ValueError(
+                    "Missing required configuration: database URL, Private IP config, or Cloud SQL instance"
+                )
 
         if not gemini_api_key and not offline_ai:
             logger.error("GEMINI_API_KEY is missing!")
-            raise ValueError("Missing required configuration: GEMINI_API_KEY (set DISABLE_AI=1 for offline mode)")
+            raise ValueError(
+                "Missing required configuration: GEMINI_API_KEY (set DISABLE_AI=1 for offline mode)"
+            )
 
         logger.info(f"Initializing with database: {database_url[:50]}...")
 
@@ -171,9 +201,7 @@ def initialize_components() -> bool:
         # Initialize conversation manager with all Story 2.1 components
         logger.debug("Initializing ConversationManager")
         conversation_manager = ConversationManager(
-            database_url=database_url,
-            gemini_api_key=gemini_api_key,
-            engine=db_engine
+            database_url=database_url, gemini_api_key=gemini_api_key, engine=db_engine
         )
         logger.debug("ConversationManager created")
 
@@ -181,7 +209,7 @@ def initialize_components() -> bool:
         logger.debug("Testing database connection")
         health = conversation_manager.get_system_health()
         logger.debug(f"Health check result: {health}")
-        if not health.get('database', False):
+        if not health.get("database", False):
             logger.error("Database health check FAILED!")
             raise RuntimeError("Database health check failed")
 
@@ -201,9 +229,13 @@ def initialize_components() -> bool:
                     providers.append("Google")
                 if has_github_oauth:
                     providers.append("GitHub")
-                logger.info(f"OAuth mode: enabled with {', '.join(providers)} provider(s)")
+                logger.info(
+                    f"OAuth mode: enabled with {', '.join(providers)} provider(s)"
+                )
             else:
-                logger.info("OAuth mode: enabled but no provider credentials found (running in open access mode)")
+                logger.info(
+                    "OAuth mode: enabled but no provider credentials found (running in open access mode)"
+                )
 
         _init_ok = True
         logger.info("Component initialization completed successfully")
@@ -211,9 +243,12 @@ def initialize_components() -> bool:
     except Exception as e:
         logger.error(f"Initialization FAILED: {type(e).__name__}: {e}")
         import traceback
-        if os.getenv('LOG_LEVEL') == 'DEBUG':
+
+        if os.getenv("LOG_LEVEL") == "DEBUG":
             traceback.print_exc()
-        logger.log_exception("Component initialization failed", e, extra_context={"component": "startup"})
+        logger.log_exception(
+            "Component initialization failed", e, extra_context={"component": "startup"}
+        )
         _init_ok = False
         return _init_ok
 
@@ -291,8 +326,8 @@ async def oauth_callback(
                 "email": email,
                 "name": name or email.split("@")[0],
                 "avatar_url": avatar_url,
-                "raw_data": raw_user_data
-            }
+                "raw_data": raw_user_data,
+            },
         )
 
         logger.info(f"Successfully authenticated user: {email} via {provider_id}")
@@ -309,18 +344,24 @@ async def start():
     global conversation_manager
 
     logger.debug("@cl.on_chat_start triggered - User connected to chat")
-    logger.debug(f"conversation_manager={'present' if conversation_manager else 'None'}, _init_ok={_init_ok}")
+    logger.debug(
+        f"conversation_manager={'present' if conversation_manager else 'None'}, _init_ok={_init_ok}"
+    )
 
     if not conversation_manager or not _init_ok:
-        logger.error(f"Initialization check FAILED - conversation_manager: {conversation_manager}, _init_ok: {_init_ok}")
-        await cl.Message(content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB).").send()
+        logger.error(
+            f"Initialization check FAILED - conversation_manager: {conversation_manager}, _init_ok: {_init_ok}"
+        )
+        await cl.Message(
+            content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB)."
+        ).send()
         return
 
     # Authentication enforcement - require OAuth authentication if enabled
     if requires_authentication() and not is_user_authenticated():
         await cl.Message(
             content="🔒 Authentication required. Please authenticate using Google or GitHub to access the CWE ChatBot.",
-            author="System"
+            author="System",
         ).send()
         return
 
@@ -330,7 +371,8 @@ async def start():
     selected_profile = cl.user_session.get("chat_profile")
     persona = (
         selected_profile
-        if isinstance(selected_profile, str) and selected_profile in UserPersona.get_all_personas()
+        if isinstance(selected_profile, str)
+        and selected_profile in UserPersona.get_all_personas()
         else UserPersona.DEVELOPER.value
     )
 
@@ -342,8 +384,10 @@ async def start():
                     id="detail_level",
                     label="Detail Level",
                     values=["basic", "standard", "detailed"],
-                    initial_index=["basic", "standard", "detailed"].index(default_settings.detail_level),
-                    description="How much detail to include"
+                    initial_index=["basic", "standard", "detailed"].index(
+                        default_settings.detail_level
+                    ),
+                    description="How much detail to include",
                 ),
                 Switch(
                     id="include_examples",
@@ -375,10 +419,11 @@ async def start():
         logger.log_exception("Failed to send UI hint", e)
 
     # Initialize per-user context in Chainlit with centralized helper
-    session_id = cl.context.session.id
+    _ = cl.context.session.id
 
     # Import and use centralized helper
     from src.utils.session import get_user_context
+
     user_context = get_user_context()
 
     # Set the persona from the selected chat profile (only if changed)
@@ -388,7 +433,7 @@ async def start():
     # Integrate OAuth authentication with user context (if OAuth is enabled)
     if requires_authentication():
         user = cl.user_session.get("user")
-        if user and hasattr(user, 'metadata') and user.metadata:
+        if user and hasattr(user, "metadata") and user.metadata:
             try:
                 # User is authenticated via OAuth - integrate with UserContext
                 if user_context:
@@ -396,15 +441,19 @@ async def start():
                         provider=user.metadata.get("provider"),
                         email=user.metadata.get("email"),
                         name=user.metadata.get("name"),
-                        avatar_url=user.metadata.get("avatar_url")
+                        avatar_url=user.metadata.get("avatar_url"),
                     )
                     # Update activity timestamp for session management
                     user_context.update_activity()
-                    logger.info(f"OAuth integration completed for user: {user.metadata.get('email')}")
+                    logger.info(
+                        f"OAuth integration completed for user: {user.metadata.get('email')}"
+                    )
 
                     # Integrate persona selection with authenticated user context
                     user_context.persona = persona
-                    logger.info(f"Persona '{persona}' assigned to authenticated user: {user.metadata.get('email')}")
+                    logger.info(
+                        f"Persona '{persona}' assigned to authenticated user: {user.metadata.get('email')}"
+                    )
 
                 # Store session validation data
                 cl.user_session.set("auth_timestamp", time.time())
@@ -415,7 +464,7 @@ async def start():
                 logger.log_exception("OAuth integration error during chat start", e)
                 await cl.Message(
                     content="⚠️ Authentication integration error. Some features may not work properly. Please try refreshing the page.",
-                    author="System"
+                    author="System",
                 ).send()
     else:
         # OAuth is disabled - just set persona without authentication integration
@@ -429,11 +478,14 @@ async def start():
     if requires_authentication():
         user = cl.user_session.get("user")
         if user and user.metadata:
-            user_name = user.metadata.get("name") or user.metadata.get("email", "").split("@")[0]
+            user_name = (
+                user.metadata.get("name")
+                or user.metadata.get("email", "").split("@")[0]
+            )
             provider = user.metadata.get("provider", "OAuth").title()
             user_greeting = f"Welcome back, {user_name}! 🛡️\n\n*Authenticated via {provider}*\n\n🔐 *Your session is secure and your persona preferences will be saved.*"
     else:
-        user_greeting = f"Welcome to the CWE ChatBot! 🛡️\n\n*Running in open access mode (OAuth disabled)*"
+        user_greeting = "Welcome to the CWE ChatBot! 🛡️\n\n*Running in open access mode (OAuth disabled)*"
 
     welcome_message = f"""{user_greeting}
 
@@ -465,9 +517,7 @@ Each persona provides responses tailored to your specific needs and expertise le
 
     # Create expandable element for persona details
     persona_element = cl.Text(
-        name="Persona Guide",
-        content=persona_info,
-        display="inline"
+        name="Persona Guide", content=persona_info, display="inline"
     )
 
     # Send example queries as a third guided step
@@ -498,7 +548,7 @@ async def main(message: cl.Message):
     if requires_authentication() and not is_user_authenticated():
         await cl.Message(
             content="🔒 Authentication required. Please authenticate using Google or GitHub to send messages.",
-            author="System"
+            author="System",
         ).send()
         return
 
@@ -512,7 +562,9 @@ async def main(message: cl.Message):
 
     # Check if components are initialized
     if not conversation_manager or not _init_ok:
-        await cl.Message(content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB).").send()
+        await cl.Message(
+            content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB)."
+        ).send()
         return
 
     # Get current settings and ensure session exists
@@ -528,7 +580,10 @@ async def main(message: cl.Message):
     # Ensure persona follows the top-bar ChatProfile (not settings)
     context = conversation_manager.get_session_context(session_id)
     selected_profile = cl.user_session.get("chat_profile")
-    if isinstance(selected_profile, str) and selected_profile in UserPersona.get_all_personas():
+    if (
+        isinstance(selected_profile, str)
+        and selected_profile in UserPersona.get_all_personas()
+    ):
         if not context or context.persona != selected_profile:
             await conversation_manager.update_user_persona(session_id, selected_profile)
 
@@ -557,18 +612,27 @@ async def main(message: cl.Message):
             cl.user_session.set("uploaded_file_content", None)
 
         # Process file attachments if present
-        if hasattr(message, 'elements') and message.elements and file_processor:
-            async with cl.Step(name="Process file attachments", type="tool") as file_step:
+        if hasattr(message, "elements") and message.elements and file_processor:
+            async with cl.Step(
+                name="Process file attachments", type="tool"
+            ) as file_step:
                 current_ctx = conversation_manager.get_session_context(session_id)
-                current_persona = (current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value)
-                file_step.input = f"Processing {len(message.elements)} file(s) for {current_persona}"
-                logger.info(f"Processing {len(message.elements)} file attachments for {current_persona}")
+                current_persona = (
+                    current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value
+                )
+                file_step.input = (
+                    f"Processing {len(message.elements)} file(s) for {current_persona}"
+                )
+                logger.info(
+                    f"Processing {len(message.elements)} file attachments for {current_persona}"
+                )
 
                 # Create a keepalive message to prevent WebSocket timeout during PDF processing
                 status_msg = await cl.Message(content="Processing files...").send()
 
                 # Keepalive heartbeat to prevent idle disconnects
                 heartbeat_running = True
+
                 async def heartbeat():
                     """Send periodic updates to keep WebSocket alive during PDF processing."""
                     count = 0
@@ -598,7 +662,9 @@ async def main(message: cl.Message):
                     # SECURITY: do not merge evidence into the prompt; store for isolated use
                     cl.user_session.set("uploaded_file_context", file_content)
                     file_step.output = f"Extracted {len(file_content)} characters from file(s) (stored as isolated evidence)"
-                    logger.info(f"File content extracted: {len(file_content)} characters")
+                    logger.info(
+                        f"File content extracted: {len(file_content)} characters"
+                    )
                 else:
                     file_step.output = "No content extracted from file(s)"
                     logger.warning("File attachments found but no content extracted")
@@ -606,43 +672,55 @@ async def main(message: cl.Message):
         # If user uploaded files but didn't provide a query, use a default prompt
         file_ctx = cl.user_session.get("uploaded_file_context")
         if file_ctx and (not user_query or user_query == "..."):
-            user_query = "Analyze this document for security vulnerabilities and CWE mappings."
-            logger.info(f"Using default query for file upload without user text")
+            user_query = (
+                "Analyze this document for security vulnerabilities and CWE mappings."
+            )
+            logger.info("Using default query for file upload without user text")
 
         current_ctx = conversation_manager.get_session_context(session_id)
-        current_persona = (current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value)
-        logger.info(f"Processing user query: '{user_query[:100]}...' for persona: {current_persona}")
+        current_persona = (
+            current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value
+        )
+        logger.info(
+            f"Processing user query: '{user_query[:100]}...' for persona: {current_persona}"
+        )
 
         # Check if this is a follow-up question (don't show analysis step for follow-ups)
         current_ctx = conversation_manager.get_session_context(session_id)
-        is_followup = (current_ctx and
-                      current_ctx.persona == "CWE Analyzer" and
-                      getattr(current_ctx, 'analyzer_mode', None) in ['question', 'compare'])
+        is_followup = (
+            current_ctx
+            and current_ctx.persona == "CWE Analyzer"
+            and getattr(current_ctx, "analyzer_mode", None) in ["question", "compare"]
+        )
 
         if is_followup:
             # For follow-up questions, process without showing "Analyze security query" step
             result = await conversation_manager.process_user_message_streaming(
-                session_id=session_id,
-                message_content=user_query,
-                message_id=message.id
+                session_id=session_id, message_content=user_query, message_id=message.id
             )
         else:
             # For new analysis, show the analysis step
-            async with cl.Step(name="Analyze security query", type="tool") as analysis_step:
-                analysis_step.input = f"Query: '{user_query[:100]}...' | Persona: {current_persona}"
+            async with cl.Step(
+                name="Analyze security query", type="tool"
+            ) as analysis_step:
+                analysis_step.input = (
+                    f"Query: '{user_query[:100]}...' | Persona: {current_persona}"
+                )
                 analysis_step.output = "Query validated and ready for CWE analysis"
 
                 # Process message using conversation manager with streaming (true streaming)
                 result = await conversation_manager.process_user_message_streaming(
                     session_id=session_id,
                     message_content=user_query,
-                    message_id=message.id
+                    message_id=message.id,
                 )
 
         # Create source cards as Chainlit Elements if we have retrieved chunks
         elements = []
         if result.get("retrieved_cwes") and result.get("chunk_count", 0) > 0:
-            async with cl.Step(name="Prepare source references", type="tool") as sources_step:
+            async with cl.Step(
+                name="Prepare source references", type="tool"
+            ) as sources_step:
                 # Get the retrieved chunks to create source elements
                 retrieved_chunks = result.get("retrieved_chunks", [])
                 elements = UIMessaging.create_source_elements(retrieved_chunks)
@@ -656,12 +734,16 @@ async def main(message: cl.Message):
 
         # Add metadata for debugging if needed
         if not result.get("is_safe", True):
-            logger.warning(f"Security flags detected: {result.get('security_flags', [])}")
+            logger.warning(
+                f"Security flags detected: {result.get('security_flags', [])}"
+            )
 
         # Apply progressive disclosure based on UI settings and update message with elements
         if result.get("message"):
             # Apply progressive disclosure if configured
-            elements = UIMessaging.apply_progressive_disclosure(result["message"], ui_settings, elements)
+            elements = UIMessaging.apply_progressive_disclosure(
+                result["message"], ui_settings, elements
+            )
             # Update message with all elements
             await UIMessaging.update_message_with_elements(result["message"], elements)
 
@@ -672,23 +754,31 @@ async def main(message: cl.Message):
         # Add Action buttons for CWE Analyzer persona (after response is complete)
         current_ctx = conversation_manager.get_session_context(session_id)
         if current_ctx:
-            logger.info(f"Debug: persona={current_ctx.persona}, analyzer_mode={getattr(current_ctx, 'analyzer_mode', 'MISSING')}")
+            logger.info(
+                f"Debug: persona={current_ctx.persona}, analyzer_mode={getattr(current_ctx, 'analyzer_mode', 'MISSING')}"
+            )
 
-            analyzer_mode = getattr(current_ctx, 'analyzer_mode', None)
+            analyzer_mode = getattr(current_ctx, "analyzer_mode", None)
             if current_ctx.persona == "CWE Analyzer":
                 if not analyzer_mode:
                     # Initial analysis complete - show "Ask Question" button
                     logger.info("Creating Action buttons for CWE Analyzer (initial)")
                     try:
                         actions = [
-                        cl.Action(name="ask_question", label="❓ Ask a Question", payload={"action": "ask"})
-                    ]
-                        logger.info(f"Actions created successfully: {[a.name for a in actions]}")
+                            cl.Action(
+                                name="ask_question",
+                                label="❓ Ask a Question",
+                                payload={"action": "ask"},
+                            )
+                        ]
+                        logger.info(
+                            f"Actions created successfully: {[a.name for a in actions]}"
+                        )
 
                         message = cl.Message(
                             content="**Next steps for this analysis:**",
                             actions=actions,
-                            author="System"
+                            author="System",
                         )
                         logger.info("Message with actions created successfully")
 
@@ -696,52 +786,72 @@ async def main(message: cl.Message):
                         logger.info("Action buttons sent successfully")
                     except Exception as action_error:
                         logger.error(f"Action button error type: {type(action_error)}")
-                        logger.error(f"Action button error message: {str(action_error)}")
-                        logger.error(f"Action button error details: {repr(action_error)}")
-                        if hasattr(action_error, 'errors'):
+                        logger.error(
+                            f"Action button error message: {str(action_error)}"
+                        )
+                        logger.error(
+                            f"Action button error details: {repr(action_error)}"
+                        )
+                        if hasattr(action_error, "errors"):
                             logger.error(f"Validation errors: {action_error.errors()}")  # type: ignore[attr-defined]
-                        logger.log_exception("Failed to create/send Action buttons", action_error)
+                        logger.log_exception(
+                            "Failed to create/send Action buttons", action_error
+                        )
                         # Send message without actions as fallback
                         await cl.Message(
                             content="**Next steps:** Type '/ask' to ask a question about the analysis, or '/compare' to compare CWE IDs.",
-                            author="System"
+                            author="System",
                         ).send()
                 elif analyzer_mode == "question":
                     # Question mode active - show "Exit Question Mode" button
                     logger.info("Creating Exit button for CWE Analyzer (question mode)")
                     try:
                         actions = [
-                            cl.Action(name="exit_question_mode", label="🚪 Exit Question Mode", payload={"action": "exit"})
+                            cl.Action(
+                                name="exit_question_mode",
+                                label="🚪 Exit Question Mode",
+                                payload={"action": "exit"},
+                            )
                         ]
-                        logger.info(f"Exit action created successfully: {[a.name for a in actions]}")
+                        logger.info(
+                            f"Exit action created successfully: {[a.name for a in actions]}"
+                        )
                         message = cl.Message(
                             content="**Question mode active.**",
                             actions=actions,
-                            author="System"
+                            author="System",
                         )
                         await message.send()
                         logger.info("Exit button sent successfully")
                     except Exception as action_error:
-                        logger.log_exception("Failed to create Exit button", action_error)
+                        logger.log_exception(
+                            "Failed to create Exit button", action_error
+                        )
                         # Fallback to text hint
                         await cl.Message(
                             content="**Question mode active.** Type '/exit' to leave question mode.",
-                            author="System"
+                            author="System",
                         ).send()
                 else:
                     logger.info(f"No action buttons for analyzer_mode: {analyzer_mode}")
             else:
-                logger.info(f"Not showing Action buttons - persona: {current_ctx.persona}, analyzer_mode: {analyzer_mode}")
+                logger.info(
+                    f"Not showing Action buttons - persona: {current_ctx.persona}, analyzer_mode: {analyzer_mode}"
+                )
         else:
             logger.warning("No current context found - cannot show Action buttons")
 
         # Log successful interaction
         current_persona = current_ctx.persona if current_ctx else "unknown"
-        logger.info(f"Successfully processed query for {current_persona}, retrieved {result.get('chunk_count', 0)} chunks")
+        logger.info(
+            f"Successfully processed query for {current_persona}, retrieved {result.get('chunk_count', 0)} chunks"
+        )
 
     except Exception as e:
         # Secure error handling - never expose internal details
-        logger.log_exception("Error processing message", e, extra_context={"handler": "on_message"})
+        logger.log_exception(
+            "Error processing message", e, extra_context={"handler": "on_message"}
+        )
         error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
         await cl.Message(content=error_response).send()
 
@@ -754,7 +864,7 @@ async def on_ask_action(action: cl.Action):
     if requires_authentication() and not is_user_authenticated():
         await cl.Message(
             content="🔒 Authentication required. Please authenticate to use actions.",
-            author="System"
+            author="System",
         ).send()
         return
 
@@ -767,20 +877,23 @@ async def on_ask_action(action: cl.Action):
 
         # Save the updated context back to the session (critical step)
         from src.utils.session import set_user_context
+
         set_user_context(context)
 
         await cl.Message(
             content="**❓ Question mode activated.** Ask a follow-up question about the analysis above.",
-            author="System"
+            author="System",
         ).send()
 
-        logger.info(f"Action 'ask_question' activated analyzer mode: {context.analyzer_mode}")
+        logger.info(
+            f"Action 'ask_question' activated analyzer mode: {context.analyzer_mode}"
+        )
 
     except Exception as e:
         logger.log_exception("Error handling ask action", e)
         await cl.Message(
             content="Sorry, there was an error processing that action. Please try again.",
-            author="System"
+            author="System",
         ).send()
 
 
@@ -792,7 +905,7 @@ async def on_exit_question_action(action: cl.Action):
     if requires_authentication() and not is_user_authenticated():
         await cl.Message(
             content="🔒 Authentication required. Please authenticate to use actions.",
-            author="System"
+            author="System",
         ).send()
         return
 
@@ -805,20 +918,21 @@ async def on_exit_question_action(action: cl.Action):
 
         # Save the updated context back to the session (critical step)
         from src.utils.session import set_user_context
+
         set_user_context(context)
 
         await cl.Message(
             content="✅ **Exited question mode.** You can now ask general CWE questions or start a new analysis.",
-            author="System"
+            author="System",
         ).send()
 
-        logger.info(f"Action 'exit_question_mode' deactivated analyzer mode")
+        logger.info("Action 'exit_question_mode' deactivated analyzer mode")
 
     except Exception as e:
         logger.log_exception("Error handling exit question mode action", e)
         await cl.Message(
             content="Sorry, there was an error processing that action. Please try again.",
-            author="System"
+            author="System",
         ).send()
 
 
@@ -835,7 +949,7 @@ async def on_settings_update(settings: Dict[str, Any]):
         return
 
     try:
-        session_id = cl.context.session.id
+        _ = cl.context.session.id
 
         # Normalize settings to our UISettings model and persist.
         # Merge with existing stored settings so missing fields (like persona when using top profiles)
@@ -871,17 +985,24 @@ async def collect_detailed_feedback():
             # Store detailed feedback for analysis
             session_id = cl.context.session.id
             # feedback_prompt is a dict with 'output' key containing the user's response
-            feedback_content = feedback_prompt.get("output", "") if isinstance(feedback_prompt, dict) else str(feedback_prompt)
-            cl.user_session.set("detailed_feedback", {
-                "timestamp": time.time(),
-                "content": feedback_content,
-                "session_id": session_id
-            })
+            feedback_content = (
+                feedback_prompt.get("output", "")
+                if isinstance(feedback_prompt, dict)
+                else str(feedback_prompt)
+            )
+            cl.user_session.set(
+                "detailed_feedback",
+                {
+                    "timestamp": time.time(),
+                    "content": feedback_content,
+                    "session_id": session_id,
+                },
+            )
 
             # Send acknowledgment
             await cl.Message(
                 content="🙏 Thank you for your detailed feedback! Your input helps us improve the CWE ChatBot experience.",
-                author="System"
+                author="System",
             ).send()
 
     except Exception as e:
@@ -901,14 +1022,14 @@ async def on_feedback(feedback):
         session_id = cl.context.session.id
 
         # Get message ID from feedback object
-        message_id = getattr(feedback, 'forId', getattr(feedback, 'for_id', None))
+        message_id = getattr(feedback, "forId", getattr(feedback, "for_id", None))
 
         if not message_id:
             logger.error("Feedback received but no message ID found")
             return
 
         # Convert Chainlit feedback to our rating system (1-5 scale)
-        feedback_value = getattr(feedback, 'value', None)
+        feedback_value = getattr(feedback, "value", None)
         if feedback_value is None:
             logger.error("Feedback received but no value found")
             return
@@ -919,7 +1040,9 @@ async def on_feedback(feedback):
         success = conversation_manager.record_feedback(session_id, message_id, rating)
 
         if success:
-            logger.info(f"Recorded feedback for message {message_id}: rating {rating} (feedback value: {feedback_value})")
+            logger.info(
+                f"Recorded feedback for message {message_id}: rating {rating} (feedback value: {feedback_value})"
+            )
 
             # For negative feedback, collect details directly (no actions)
             if feedback_value == 0:  # thumbs down
@@ -927,8 +1050,7 @@ async def on_feedback(feedback):
             else:
                 # Brief positive acknowledgment
                 await cl.Message(
-                    content="✅ Thanks for the positive feedback!",
-                    author="System"
+                    content="✅ Thanks for the positive feedback!", author="System"
                 ).send()
 
         else:
@@ -936,13 +1058,12 @@ async def on_feedback(feedback):
 
     except Exception as e:
         logger.log_exception("Error processing feedback", e)
-        logger.debug(f"Feedback object attributes: {dir(feedback) if feedback else 'None'}")
+        logger.debug(
+            f"Feedback object attributes: {dir(feedback) if feedback else 'None'}"
+        )
 
 
 # Actions removed; detailed feedback collected directly on thumbs-down
-
-
-
 
 
 def main_cli():
@@ -966,7 +1087,8 @@ except Exception as e:
     logger.error(f"Module-level initialization FAILED: {type(e).__name__}: {e}")
     logger.warning("Chainlit will start but components will be unavailable")
     import traceback
-    if os.getenv('LOG_LEVEL') == 'DEBUG':
+
+    if os.getenv("LOG_LEVEL") == "DEBUG":
         traceback.print_exc()
     # Don't re-raise - let Chainlit start anyway so users get helpful error messages
 
@@ -975,7 +1097,9 @@ except Exception as e:
 async def on_stop() -> None:
     """Gracefully close resources when the app stops."""
     try:
-        if conversation_manager and getattr(conversation_manager, "query_handler", None):
+        if conversation_manager and getattr(
+            conversation_manager, "query_handler", None
+        ):
             qh = conversation_manager.query_handler
             close_fn = getattr(qh, "close", None)
             if callable(close_fn):
@@ -999,7 +1123,9 @@ if app_config.enable_oauth:
             providers.append("GitHub")
         logger.info(f"OAuth callback registered for: {', '.join(providers)}")
     else:
-        logger.warning("OAuth enabled but no provider credentials found (OAUTH_*_CLIENT_ID/SECRET). Running in open access mode.")
+        logger.warning(
+            "OAuth enabled but no provider credentials found (OAUTH_*_CLIENT_ID/SECRET). Running in open access mode."
+        )
 else:
     logger.info("OAuth callback not registered (OAuth disabled)")
 
@@ -1009,4 +1135,6 @@ if __name__ == "__main__":
     main_cli()
 
     # Note: Use 'poetry run chainlit run apps/chatbot/main.py' to start the application
-    logger.info("To start the application, run: poetry run chainlit run apps/chatbot/main.py")
+    logger.info(
+        "To start the application, run: poetry run chainlit run apps/chatbot/main.py"
+    )

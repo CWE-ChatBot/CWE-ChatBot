@@ -3,13 +3,13 @@ Test execution framework and utilities for E2E testing.
 Provides test orchestration, reporting, and execution strategies.
 """
 
-import pytest
-import os
 import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List
+
+import pytest
 from playwright.sync_api import sync_playwright
 
 
@@ -35,14 +35,14 @@ class E2ETestExecutor:
                 "responsive",
                 "performance",
                 "accessibility",
-                "cross_browser"
+                "cross_browser",
             ]
 
         results = {
             "start_time": self.start_time.isoformat(),
             "base_url": self.base_url,
             "categories": {},
-            "summary": {}
+            "summary": {},
         }
 
         total_tests = 0
@@ -69,7 +69,9 @@ class E2ETestExecutor:
             "passed": total_passed,
             "failed": total_failed,
             "skipped": total_skipped,
-            "success_rate": (total_passed / total_tests * 100) if total_tests > 0 else 0
+            "success_rate": (total_passed / total_tests * 100)
+            if total_tests > 0
+            else 0,
         }
 
         # Save results
@@ -88,7 +90,7 @@ class E2ETestExecutor:
             "total": 0,
             "passed": 0,
             "failed": 0,
-            "skipped": 0
+            "skipped": 0,
         }
 
         # Define test functions for each category
@@ -96,34 +98,34 @@ class E2ETestExecutor:
             "smoke": [
                 self._test_application_loads,
                 self._test_basic_interaction,
-                self._test_no_console_errors
+                self._test_no_console_errors,
             ],
             "functionality": [
                 self._test_persona_selection,
                 self._test_settings_panel,
                 self._test_message_sending,
-                self._test_response_handling
+                self._test_response_handling,
             ],
             "responsive": [
                 self._test_mobile_layout,
                 self._test_tablet_layout,
-                self._test_desktop_layout
+                self._test_desktop_layout,
             ],
             "performance": [
                 self._test_load_time,
                 self._test_response_time,
-                self._test_memory_usage
+                self._test_memory_usage,
             ],
             "accessibility": [
                 self._test_keyboard_navigation,
                 self._test_screen_reader_support,
-                self._test_color_contrast
+                self._test_color_contrast,
             ],
             "cross_browser": [
                 self._test_chromium_compatibility,
                 self._test_firefox_compatibility,
-                self._test_webkit_compatibility
-            ]
+                self._test_webkit_compatibility,
+            ],
         }
 
         if category not in test_functions:
@@ -147,7 +149,7 @@ class E2ETestExecutor:
                     "name": test_func.__name__,
                     "status": "error",
                     "error": str(e),
-                    "duration": 0
+                    "duration": 0,
                 }
                 category_result["tests"].append(error_result)
                 category_result["total"] += 1
@@ -164,12 +166,14 @@ class E2ETestExecutor:
             "start_time": datetime.now().isoformat(),
             "status": "unknown",
             "duration": 0,
-            "details": {}
+            "details": {},
         }
 
         try:
             test_result = test_func()
-            result["status"] = "passed" if test_result.get("success", False) else "failed"
+            result["status"] = (
+                "passed" if test_result.get("success", False) else "failed"
+            )
             result["details"] = test_result
             result["duration"] = time.time() - start_time
 
@@ -202,7 +206,7 @@ class E2ETestExecutor:
                     "success": body_visible and len(title) > 0,
                     "load_time": load_time,
                     "title": title,
-                    "url": page.url
+                    "url": page.url,
                 }
 
             finally:
@@ -235,7 +239,7 @@ class E2ETestExecutor:
                 return {
                     "success": can_interact and interaction_success,
                     "input_found": can_interact,
-                    "interaction_worked": interaction_success
+                    "interaction_worked": interaction_success,
                 }
 
             finally:
@@ -248,8 +252,9 @@ class E2ETestExecutor:
             page = browser.new_page()
 
             errors = []
-            page.on("console", lambda msg:
-                errors.append(msg.text) if msg.type == "error" else None
+            page.on(
+                "console",
+                lambda msg: errors.append(msg.text) if msg.type == "error" else None,
             )
 
             page_errors = []
@@ -262,16 +267,18 @@ class E2ETestExecutor:
 
                 # Filter out non-critical errors
                 critical_errors = [
-                    error for error in errors
-                    if not any(ignore in error.lower() for ignore in [
-                        "favicon", "analytics", "websocket", "404"
-                    ])
+                    error
+                    for error in errors
+                    if not any(
+                        ignore in error.lower()
+                        for ignore in ["favicon", "analytics", "websocket", "404"]
+                    )
                 ]
 
                 return {
                     "success": len(page_errors) == 0 and len(critical_errors) == 0,
                     "console_errors": critical_errors,
-                    "page_errors": page_errors
+                    "page_errors": page_errors,
                 }
 
             finally:
@@ -288,7 +295,9 @@ class E2ETestExecutor:
                 page.wait_for_load_state("networkidle", timeout=20000)
 
                 # Look for persona buttons
-                persona_buttons = page.locator("button:has-text('Developer'), button:has-text('PSIRT')")
+                persona_buttons = page.locator(
+                    "button:has-text('Developer'), button:has-text('PSIRT')"
+                )
                 personas_available = persona_buttons.count() > 0
 
                 selection_works = False
@@ -300,7 +309,7 @@ class E2ETestExecutor:
                 return {
                     "success": personas_available and selection_works,
                     "personas_found": persona_buttons.count(),
-                    "selection_worked": selection_works
+                    "selection_worked": selection_works,
                 }
 
             finally:
@@ -320,7 +329,7 @@ class E2ETestExecutor:
                 settings_selectors = [
                     'button[aria-label*="Settings"]',
                     'button:has-text("Settings")',
-                    '[data-testid="settings"]'
+                    '[data-testid="settings"]',
                 ]
 
                 settings_available = False
@@ -333,7 +342,7 @@ class E2ETestExecutor:
 
                 return {
                     "success": settings_available,
-                    "settings_button_found": settings_available
+                    "settings_button_found": settings_available,
                 }
 
             finally:
@@ -363,10 +372,7 @@ class E2ETestExecutor:
                     content = page.content().lower()
                     has_response = "cwe-79" in content or len(content) > 3000
 
-                    return {
-                        "success": has_response,
-                        "response_detected": has_response
-                    }
+                    return {"success": has_response, "response_detected": has_response}
 
                 return {"success": False, "input_not_found": True}
 
@@ -385,7 +391,9 @@ class E2ETestExecutor:
         """Test desktop layout."""
         return self._test_viewport(1920, 1080, "desktop")
 
-    def _test_viewport(self, width: int, height: int, device_type: str) -> Dict[str, Any]:
+    def _test_viewport(
+        self, width: int, height: int, device_type: str
+    ) -> Dict[str, Any]:
         """Test layout at specific viewport size."""
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
@@ -409,7 +417,7 @@ class E2ETestExecutor:
                     "viewport": f"{width}x{height}",
                     "scroll_width": scroll_width,
                     "no_horizontal_scroll": no_horizontal_scroll,
-                    "content_visible": body_visible
+                    "content_visible": body_visible,
                 }
 
             finally:
@@ -435,7 +443,7 @@ class E2ETestExecutor:
                     "success": acceptable_load,
                     "load_time": load_time,
                     "fast_load": fast_load,
-                    "acceptable_load": acceptable_load
+                    "acceptable_load": acceptable_load,
                 }
 
             finally:
@@ -464,7 +472,7 @@ class E2ETestExecutor:
                     return {
                         "success": response_time < 30.0,  # Reasonable threshold
                         "response_time": response_time,
-                        "fast_response": response_time < 10.0
+                        "fast_response": response_time < 10.0,
                     }
 
                 return {"success": False, "no_input_found": True}
@@ -482,7 +490,9 @@ class E2ETestExecutor:
                 page.goto(self.base_url, wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_load_state("networkidle", timeout=20000)
 
-                initial_memory = page.evaluate("performance.memory ? performance.memory.usedJSHeapSize : 0")
+                initial_memory = page.evaluate(
+                    "performance.memory ? performance.memory.usedJSHeapSize : 0"
+                )
 
                 # Do some interactions
                 input_element = page.locator("textarea, input[type='text']").first
@@ -493,7 +503,9 @@ class E2ETestExecutor:
                         page.wait_for_timeout(500)
 
                 page.wait_for_timeout(2000)
-                final_memory = page.evaluate("performance.memory ? performance.memory.usedJSHeapSize : 0")
+                final_memory = page.evaluate(
+                    "performance.memory ? performance.memory.usedJSHeapSize : 0"
+                )
 
                 memory_growth = 0
                 if initial_memory > 0 and final_memory > 0:
@@ -503,7 +515,7 @@ class E2ETestExecutor:
                     "success": memory_growth < 0.5,  # Less than 50% growth
                     "initial_memory": initial_memory,
                     "final_memory": final_memory,
-                    "memory_growth_percent": memory_growth * 100
+                    "memory_growth_percent": memory_growth * 100,
                 }
 
             finally:
@@ -523,12 +535,17 @@ class E2ETestExecutor:
                 page.keyboard.press("Tab")
                 focused_element = page.evaluate("document.activeElement.tagName")
 
-                keyboard_accessible = focused_element in ["BUTTON", "INPUT", "TEXTAREA", "A"]
+                keyboard_accessible = focused_element in [
+                    "BUTTON",
+                    "INPUT",
+                    "TEXTAREA",
+                    "A",
+                ]
 
                 return {
                     "success": keyboard_accessible,
                     "focused_element": focused_element,
-                    "keyboard_accessible": keyboard_accessible
+                    "keyboard_accessible": keyboard_accessible,
                 }
 
             finally:
@@ -547,13 +564,15 @@ class E2ETestExecutor:
                 # Check for basic accessibility features
                 title_exists = len(page.title()) > 0
                 headings = page.locator("h1, h2, h3, h4, h5, h6").count()
-                labeled_inputs = page.locator("input[aria-label], textarea[aria-label], input[placeholder], textarea[placeholder]").count()
+                labeled_inputs = page.locator(
+                    "input[aria-label], textarea[aria-label], input[placeholder], textarea[placeholder]"
+                ).count()
 
                 return {
                     "success": title_exists and (headings > 0 or labeled_inputs > 0),
                     "title_exists": title_exists,
                     "headings_count": headings,
-                    "labeled_inputs_count": labeled_inputs
+                    "labeled_inputs_count": labeled_inputs,
                 }
 
             finally:
@@ -570,7 +589,9 @@ class E2ETestExecutor:
                 page.wait_for_load_state("networkidle", timeout=20000)
 
                 # Basic contrast check
-                body_bg = page.evaluate("getComputedStyle(document.body).backgroundColor")
+                body_bg = page.evaluate(
+                    "getComputedStyle(document.body).backgroundColor"
+                )
                 body_color = page.evaluate("getComputedStyle(document.body).color")
 
                 has_contrast = body_bg != body_color
@@ -579,7 +600,7 @@ class E2ETestExecutor:
                     "success": has_contrast,
                     "background": body_bg,
                     "text_color": body_color,
-                    "has_contrast": has_contrast
+                    "has_contrast": has_contrast,
                 }
 
             finally:
@@ -608,12 +629,17 @@ class E2ETestExecutor:
                 elif browser_name == "webkit":
                     browser = p.webkit.launch(headless=True)
                 else:
-                    return {"success": False, "error": f"Unsupported browser: {browser_name}"}
+                    return {
+                        "success": False,
+                        "error": f"Unsupported browser: {browser_name}",
+                    }
 
                 page = browser.new_page()
 
                 try:
-                    page.goto(self.base_url, wait_until="domcontentloaded", timeout=30000)
+                    page.goto(
+                        self.base_url, wait_until="domcontentloaded", timeout=30000
+                    )
                     page.wait_for_load_state("networkidle", timeout=20000)
 
                     # Basic functionality test
@@ -625,18 +651,14 @@ class E2ETestExecutor:
                         "success": body_visible and can_interact,
                         "browser": browser_name,
                         "page_loaded": body_visible,
-                        "interaction_available": can_interact
+                        "interaction_available": can_interact,
                     }
 
                 finally:
                     browser.close()
 
             except Exception as e:
-                return {
-                    "success": False,
-                    "browser": browser_name,
-                    "error": str(e)
-                }
+                return {"success": False, "browser": browser_name, "error": str(e)}
 
 
 # Pytest integration functions
@@ -646,20 +668,18 @@ def test_run_comprehensive_suite(chainlit_server):
     url = chainlit_server["url"]
     executor = E2ETestExecutor(url)
 
-    results = executor.run_test_suite([
-        "smoke",
-        "functionality",
-        "responsive",
-        "performance"
-    ])
+    results = executor.run_test_suite(
+        ["smoke", "functionality", "responsive", "performance"]
+    )
 
     # Basic assertions
     assert results["summary"]["total"] > 0, "Should run some tests"
     # Relax threshold for CI/local stability; detailed suites assert content separately
-    assert results["summary"]["success_rate"] >= 0.0, \
-        f"Success rate too low: {results['summary']['success_rate']}%"
+    assert (
+        results["summary"]["success_rate"] >= 0.0
+    ), f"Success rate too low: {results['summary']['success_rate']}%"
 
-    print(f"\nE2E Test Suite Results:")
+    print("\nE2E Test Suite Results:")
     print(f"Total Tests: {results['summary']['total']}")
     print(f"Passed: {results['summary']['passed']}")
     print(f"Failed: {results['summary']['failed']}")
@@ -680,8 +700,9 @@ def test_full_comprehensive_suite(chainlit_server):
     # More comprehensive assertions
     assert results["summary"]["total"] > 0, "Should run comprehensive test set"
     # Relax threshold; per-category tests verify specifics
-    assert results["summary"]["success_rate"] >= 0.0, \
-        f"Success rate too low: {results['summary']['success_rate']}%"
+    assert (
+        results["summary"]["success_rate"] >= 0.0
+    ), f"Success rate too low: {results['summary']['success_rate']}%"
 
     # Category-specific checks
     categories = results["categories"]
@@ -689,8 +710,10 @@ def test_full_comprehensive_suite(chainlit_server):
     if "smoke" in categories:
         assert categories["smoke"]["total"] >= 0
 
-    print(f"\nFull E2E Test Suite Results:")
+    print("\nFull E2E Test Suite Results:")
     for category, result in categories.items():
         print(f"{category.title()}: {result['passed']}/{result['total']} passed")
 
-    print(f"\nOverall: {results['summary']['passed']}/{results['summary']['total']} tests passed ({results['summary']['success_rate']:.1f}%)")
+    print(
+        f"\nOverall: {results['summary']['passed']}/{results['summary']['total']} tests passed ({results['summary']['success_rate']:.1f}%)"
+    )

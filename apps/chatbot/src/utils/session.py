@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import chainlit as cl
 from typing import Optional
 
+import chainlit as cl
 from src.user_context import UserContext
-
 
 SESSION_KEY = "user_context"
 
@@ -21,4 +20,3 @@ def get_user_context() -> UserContext:
 def set_user_context(ctx: UserContext) -> None:
     """Persist an updated user context back into Chainlit's session."""
     cl.user_session.set(SESSION_KEY, ctx)
-

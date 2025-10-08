@@ -10,13 +10,14 @@ Based on user personas from docs/personas_scenarios/User Personas.md
 and query format from apps/cwe_ingestion/README.md
 """
 
-from typing import List, Dict, Any
 from dataclasses import dataclass
+from typing import Any, Dict, List
 
 
 @dataclass
 class TestQuery:
     """Represents a test query with persona and configuration metadata."""
+
     query_text: str
     persona: str
     use_case: str
@@ -36,9 +37,8 @@ PSIRT_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-89"],
         optimal_weights={"w_vec": 0.65, "w_fts": 0.25, "w_alias": 0.10},
-        description="PSIRT members need to map technical bug reports to precise CWEs under time pressure"
+        description="PSIRT members need to map technical bug reports to precise CWEs under time pressure",
     ),
-
     TestQuery(
         query_text="user controlled script execution in web browser DOM manipulation",
         persona="PSIRT Member",
@@ -46,9 +46,8 @@ PSIRT_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-79", "CWE-94"],
         optimal_weights={"w_vec": 0.65, "w_fts": 0.25, "w_alias": 0.10},
-        description="Complex XSS scenarios requiring precise CWE mapping for customer advisories"
+        description="Complex XSS scenarios requiring precise CWE mapping for customer advisories",
     ),
-
     TestQuery(
         query_text="xss csrf sqli vulnerability report",
         persona="PSIRT Member",
@@ -56,9 +55,8 @@ PSIRT_QUERIES = [
         query_type="hybrid",
         expected_cwes=["CWE-79", "CWE-352", "CWE-89"],
         optimal_weights={"w_vec": 0.55, "w_fts": 0.25, "w_alias": 0.20},
-        description="PSIRT often receives reports with security acronyms requiring alias matching"
+        description="PSIRT often receives reports with security acronyms requiring alias matching",
     ),
-
     TestQuery(
         query_text="CWE-22",
         persona="PSIRT Member",
@@ -66,7 +64,7 @@ PSIRT_QUERIES = [
         query_type="direct",
         expected_cwes=["CWE-22"],
         optimal_weights={"w_vec": 0.65, "w_fts": 0.25, "w_alias": 0.10},
-        description="PSIRT needs to verify CWE details when reviewing external reports"
+        description="PSIRT needs to verify CWE details when reviewing external reports",
     ),
 ]
 
@@ -80,9 +78,8 @@ DEVELOPER_QUERIES = [
         expected_cwes=["CWE-89"],
         optimal_weights={"w_vec": 0.55, "w_fts": 0.30, "w_alias": 0.15},
         section_boost="Mitigations",
-        description="Developers need actionable guidance on fixing vulnerabilities"
+        description="Developers need actionable guidance on fixing vulnerabilities",
     ),
-
     TestQuery(
         query_text="input validation sanitization user data",
         persona="Developer",
@@ -90,9 +87,8 @@ DEVELOPER_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-20", "CWE-79", "CWE-89"],
         optimal_weights={"w_vec": 0.65, "w_fts": 0.25, "w_alias": 0.10},
-        description="Developers need to understand underlying weakness patterns"
+        description="Developers need to understand underlying weakness patterns",
     ),
-
     TestQuery(
         query_text="buffer overflow memory corruption example code",
         persona="Developer",
@@ -101,9 +97,8 @@ DEVELOPER_QUERIES = [
         expected_cwes=["CWE-119", "CWE-120", "CWE-787"],
         optimal_weights={"w_vec": 0.60, "w_fts": 0.25, "w_alias": 0.15},
         section_boost="Examples",
-        description="Developers prefer concrete code examples over abstract descriptions"
+        description="Developers prefer concrete code examples over abstract descriptions",
     ),
-
     TestQuery(
         query_text="path traversal directory file access vulnerability fix",
         persona="Developer",
@@ -112,7 +107,7 @@ DEVELOPER_QUERIES = [
         expected_cwes=["CWE-22", "CWE-23", "CWE-36"],
         optimal_weights={"w_vec": 0.55, "w_fts": 0.30, "w_alias": 0.15},
         section_boost="Mitigations",
-        description="Developers need specific guidance on path validation and sanitization"
+        description="Developers need specific guidance on path validation and sanitization",
     ),
 ]
 
@@ -125,9 +120,8 @@ ACADEMIC_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-74", "CWE-89", "CWE-79", "CWE-78"],
         optimal_weights={"w_vec": 0.70, "w_fts": 0.20, "w_alias": 0.10},
-        description="Researchers need to explore hierarchical relationships in CWE corpus"
+        description="Researchers need to explore hierarchical relationships in CWE corpus",
     ),
-
     TestQuery(
         query_text="difference between CWE-23 and CWE-36 path traversal variants",
         persona="Academic Researcher",
@@ -135,9 +129,8 @@ ACADEMIC_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-23", "CWE-36", "CWE-22"],
         optimal_weights={"w_vec": 0.65, "w_fts": 0.25, "w_alias": 0.10},
-        description="Researchers need precise understanding of CWE distinctions for accurate categorization"
+        description="Researchers need precise understanding of CWE distinctions for accurate categorization",
     ),
-
     TestQuery(
         query_text="memory safety vulnerabilities buffer overflow heap stack",
         persona="Academic Researcher",
@@ -145,9 +138,8 @@ ACADEMIC_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-119", "CWE-120", "CWE-121", "CWE-122", "CWE-787"],
         optimal_weights={"w_vec": 0.70, "w_fts": 0.20, "w_alias": 0.10},
-        description="Academic analysis of memory safety vulnerability patterns and relationships"
+        description="Academic analysis of memory safety vulnerability patterns and relationships",
     ),
-
     TestQuery(
         query_text="authentication authorization access control weakness patterns",
         persona="Academic Researcher",
@@ -155,7 +147,7 @@ ACADEMIC_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-287", "CWE-862", "CWE-863", "CWE-284"],
         optimal_weights={"w_vec": 0.65, "w_fts": 0.25, "w_alias": 0.10},
-        description="Comprehensive research into authentication and authorization weakness families"
+        description="Comprehensive research into authentication and authorization weakness families",
     ),
 ]
 
@@ -168,9 +160,8 @@ BUG_BOUNTY_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-434", "CWE-20", "CWE-436"],
         optimal_weights={"w_vec": 0.60, "w_fts": 0.30, "w_alias": 0.10},
-        description="Bug bounty hunters need to map exploitation techniques to precise CWEs"
+        description="Bug bounty hunters need to map exploitation techniques to precise CWEs",
     ),
-
     TestQuery(
         query_text="IDOR direct object reference bypass access control",
         persona="Bug Bounty Hunter",
@@ -178,9 +169,8 @@ BUG_BOUNTY_QUERIES = [
         query_type="hybrid",
         expected_cwes=["CWE-639", "CWE-862", "CWE-863"],
         optimal_weights={"w_vec": 0.60, "w_fts": 0.25, "w_alias": 0.15},
-        description="Common bug bounty finding requiring precise CWE classification"
+        description="Common bug bounty finding requiring precise CWE classification",
     ),
-
     TestQuery(
         query_text="parameter pollution HTTP request manipulation bypass",
         persona="Bug Bounty Hunter",
@@ -188,9 +178,8 @@ BUG_BOUNTY_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-444", "CWE-20", "CWE-235"],
         optimal_weights={"w_vec": 0.65, "w_fts": 0.25, "w_alias": 0.10},
-        description="Advanced exploitation techniques requiring careful CWE mapping"
+        description="Advanced exploitation techniques requiring careful CWE mapping",
     ),
-
     TestQuery(
         query_text="xxe xml external entity payload file disclosure",
         persona="Bug Bounty Hunter",
@@ -198,7 +187,7 @@ BUG_BOUNTY_QUERIES = [
         query_type="hybrid",
         expected_cwes=["CWE-611", "CWE-827"],
         optimal_weights={"w_vec": 0.60, "w_fts": 0.25, "w_alias": 0.15},
-        description="XXE exploits common in bug bounty, need precise CWE for professional reports"
+        description="XXE exploits common in bug bounty, need precise CWE for professional reports",
     ),
 ]
 
@@ -211,9 +200,8 @@ PRODUCT_MANAGER_QUERIES = [
         query_type="keyword",
         expected_cwes=["CWE-79", "CWE-787", "CWE-20", "CWE-125", "CWE-89"],
         optimal_weights={"w_vec": 0.55, "w_fts": 0.35, "w_alias": 0.10},
-        description="Product managers need credible industry data for resource allocation decisions"
+        description="Product managers need credible industry data for resource allocation decisions",
     ),
-
     TestQuery(
         query_text="web application security common vulnerabilities prevention",
         persona="Product Manager",
@@ -222,9 +210,8 @@ PRODUCT_MANAGER_QUERIES = [
         expected_cwes=["CWE-79", "CWE-89", "CWE-287", "CWE-352"],
         optimal_weights={"w_vec": 0.60, "w_fts": 0.25, "w_alias": 0.15},
         section_boost="Mitigations",
-        description="Strategic planning requires understanding common web vulnerability patterns"
+        description="Strategic planning requires understanding common web vulnerability patterns",
     ),
-
     TestQuery(
         query_text="injection vulnerabilities impact business risk assessment",
         persona="Product Manager",
@@ -232,9 +219,8 @@ PRODUCT_MANAGER_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-74", "CWE-89", "CWE-79", "CWE-78"],
         optimal_weights={"w_vec": 0.65, "w_fts": 0.25, "w_alias": 0.10},
-        description="Product managers need to communicate security risks to business stakeholders"
+        description="Product managers need to communicate security risks to business stakeholders",
     ),
-
     TestQuery(
         query_text="mobile application security weaknesses common patterns",
         persona="Product Manager",
@@ -242,7 +228,7 @@ PRODUCT_MANAGER_QUERIES = [
         query_type="semantic",
         expected_cwes=["CWE-200", "CWE-327", "CWE-311", "CWE-312"],
         optimal_weights={"w_vec": 0.65, "w_fts": 0.25, "w_alias": 0.10},
-        description="Mobile-specific security planning requires understanding platform-specific weaknesses"
+        description="Mobile-specific security planning requires understanding platform-specific weaknesses",
     ),
 ]
 
@@ -287,7 +273,7 @@ def print_query_summary():
 
     print(f"{'Total':20s}: {len(ALL_QUERIES):2d} queries")
 
-    print(f"\nQuery Types:")
+    print("\nQuery Types:")
     for query_type in ["semantic", "keyword", "hybrid", "direct"]:
         count = len(get_queries_by_type(query_type))
         print(f"  {query_type:10s}: {count:2d} queries")
@@ -308,7 +294,7 @@ def export_for_cli_testing() -> List[Dict[str, Any]]:
             "type": query.query_type,
             "expected_cwes": query.expected_cwes,
             "weights": query.optimal_weights,
-            "description": query.description
+            "description": query.description,
         }
 
         if query.section_boost:
@@ -322,7 +308,7 @@ def export_for_cli_testing() -> List[Dict[str, Any]]:
 if __name__ == "__main__":
     print_query_summary()
 
-    print(f"\n🔍 Sample Queries by Persona:")
+    print("\n🔍 Sample Queries by Persona:")
     print("-" * 40)
 
     for persona_key, queries in ALL_PERSONA_QUERIES.items():
@@ -332,4 +318,6 @@ if __name__ == "__main__":
             print(f"  Query: '{sample.query_text}'")
             print(f"  Use Case: {sample.use_case}")
             print(f"  Type: {sample.query_type}")
-            print(f"  Expected: {', '.join(sample.expected_cwes[:3])}{'...' if len(sample.expected_cwes) > 3 else ''}")
+            print(
+                f"  Expected: {', '.join(sample.expected_cwes[:3])}{'...' if len(sample.expected_cwes) > 3 else ''}"
+            )

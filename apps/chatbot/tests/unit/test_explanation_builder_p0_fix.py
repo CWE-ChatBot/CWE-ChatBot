@@ -23,7 +23,7 @@ class TestExplanationBuilderP0Fix:
                 "document": "Buffer overflow vulnerability allows attackers to overwrite memory",
                 "content": "This should be ignored when document field exists",
                 "metadata": {"section": "Description"},
-                "score": 0.8
+                "score": 0.8,
             }
         ]
 
@@ -51,7 +51,7 @@ class TestExplanationBuilderP0Fix:
             {
                 "content": "SQL injection attacks exploit vulnerable database queries",
                 "metadata": {"section": "Description"},
-                "score": 0.7
+                "score": 0.7,
             }
         ]
 
@@ -67,7 +67,9 @@ class TestExplanationBuilderP0Fix:
                 found_content = True
                 break
 
-        assert found_content, "Should fall back to 'content' field when 'document' is missing"
+        assert (
+            found_content
+        ), "Should fall back to 'content' field when 'document' is missing"
 
     def test_extract_snippet_candidates_handles_empty_fields(self):
         """Test that ExplanationBuilder handles empty or missing content gracefully."""
@@ -80,21 +82,21 @@ class TestExplanationBuilderP0Fix:
                 "document": "",
                 "content": "Some fallback content",
                 "metadata": {"section": "Description"},
-                "score": 0.5
+                "score": 0.5,
             },
             {
                 # No document field
                 "content": "",
                 "metadata": {"section": "Description"},
-                "score": 0.3
+                "score": 0.3,
             },
             {
                 # Both empty
                 "document": "",
                 "content": "",
                 "metadata": {"section": "Description"},
-                "score": 0.1
-            }
+                "score": 0.1,
+            },
         ]
 
         candidates = builder._extract_snippet_candidates(query, chunks)
@@ -104,7 +106,9 @@ class TestExplanationBuilderP0Fix:
 
         # Verify no empty content was extracted
         for candidate in candidates:
-            assert len(candidate["text"].strip()) > 0, "Should not extract empty content"
+            assert (
+                len(candidate["text"].strip()) > 0
+            ), "Should not extract empty content"
 
     def test_build_explanation_uses_document_field(self):
         """Test that build() method correctly uses document field for explanations."""
@@ -119,9 +123,9 @@ class TestExplanationBuilderP0Fix:
                 "metadata": {
                     "section": "Description",
                     "name": "Cross-site Scripting",
-                    "cwe_name": "Cross-site Scripting"
+                    "cwe_name": "Cross-site Scripting",
                 },
-                "score": 0.9
+                "score": 0.9,
             }
         ]
 

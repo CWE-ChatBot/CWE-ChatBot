@@ -1,11 +1,13 @@
-import os
 import logging
+import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-def load_environments():
+
+def load_environments() -> None:
     """
     Loads environment variables from a context-specific .env file.
 
@@ -14,9 +16,7 @@ def load_environments():
     """
     context = os.getenv("ENV_CONTEXT", "production").lower()
 
-    path_map = {
-        "local": Path.home() / "work" / "env" / ".env_cwe_chatbot"
-    }
+    path_map = {"local": Path.home() / "work" / "env" / ".env_cwe_chatbot"}
 
     if context not in path_map:
         logger.info(

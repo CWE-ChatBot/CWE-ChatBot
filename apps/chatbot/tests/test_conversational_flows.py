@@ -12,14 +12,16 @@ Run this script while the CWE ChatBot is running to validate fixes:
 """
 
 import asyncio
-import time
 import json
-from typing import Dict, Any, List
 import logging
+from typing import Any, Dict, List
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
+
 
 class ConversationalFlowTester:
     """Test conversational flows with the running CWE ChatBot."""
@@ -37,31 +39,38 @@ class ConversationalFlowTester:
             {
                 "name": "Animal Query",
                 "input": "what is a dog?",
-                "expected_keywords": ["cybersecurity", "security topics", "CWE", "redirect"],
-                "should_not_contain": ["animal", "mammal", "pet"]
+                "expected_keywords": [
+                    "cybersecurity",
+                    "security topics",
+                    "CWE",
+                    "redirect",
+                ],
+                "should_not_contain": ["animal", "mammal", "pet"],
             },
             {
                 "name": "Cooking Query",
                 "input": "how do I cook pasta?",
                 "expected_keywords": ["cybersecurity", "security topics", "CWE"],
-                "should_not_contain": ["recipe", "cooking", "boil"]
+                "should_not_contain": ["recipe", "cooking", "boil"],
             },
             {
                 "name": "Weather Query",
                 "input": "what's the weather today?",
                 "expected_keywords": ["cybersecurity", "security topics", "CWE"],
-                "should_not_contain": ["temperature", "rain", "sunny"]
-            }
+                "should_not_contain": ["temperature", "rain", "sunny"],
+            },
         ]
 
         for test_case in test_cases:
             result = await self._run_single_test(test_case)
-            self.test_results.append({
-                "category": "Off-Topic Handling",
-                "test_name": test_case["name"],
-                "passed": result["passed"],
-                "details": result
-            })
+            self.test_results.append(
+                {
+                    "category": "Off-Topic Handling",
+                    "test_name": test_case["name"],
+                    "passed": result["passed"],
+                    "details": result,
+                }
+            )
 
     async def test_follow_up_context(self):
         """Test that follow-up queries maintain correct CWE context."""
@@ -74,14 +83,14 @@ class ConversationalFlowTester:
                     {
                         "input": "what is CWE-79?",
                         "expected_keywords": ["cross-site scripting", "XSS", "CWE-79"],
-                        "context_setup": "CWE-79"
+                        "context_setup": "CWE-79",
                     },
                     {
                         "input": "tell me more",
                         "expected_keywords": ["cross-site scripting", "XSS", "CWE-79"],
-                        "should_not_contain": ["CWE-401", "CWE-84", "memory", "SQL"]
-                    }
-                ]
+                        "should_not_contain": ["CWE-401", "CWE-84", "memory", "SQL"],
+                    },
+                ],
             },
             {
                 "name": "SQL Injection Follow-up",
@@ -89,15 +98,15 @@ class ConversationalFlowTester:
                     {
                         "input": "explain CWE-89",
                         "expected_keywords": ["SQL injection", "CWE-89", "database"],
-                        "context_setup": "CWE-89"
+                        "context_setup": "CWE-89",
                     },
                     {
                         "input": "what are the consequences?",
                         "expected_keywords": ["SQL", "database", "CWE-89"],
-                        "should_not_contain": ["XSS", "cross-site", "CWE-79"]
-                    }
-                ]
-            }
+                        "should_not_contain": ["XSS", "cross-site", "CWE-79"],
+                    },
+                ],
+            },
         ]
 
         for conv_test in conversation_tests:
@@ -117,12 +126,14 @@ class ConversationalFlowTester:
                 # Small delay between conversation turns
                 await asyncio.sleep(1)
 
-            self.test_results.append({
-                "category": "Follow-up Context",
-                "test_name": conv_test["name"],
-                "passed": conversation_passed,
-                "details": conversation_details
-            })
+            self.test_results.append(
+                {
+                    "category": "Follow-up Context",
+                    "test_name": conv_test["name"],
+                    "passed": conversation_passed,
+                    "details": conversation_details,
+                }
+            )
 
     async def test_security_topic_handling(self):
         """Test that legitimate security topics are properly processed."""
@@ -133,24 +144,34 @@ class ConversationalFlowTester:
                 "name": "Firewall Query (should be processed)",
                 "input": "what is a firewall?",
                 "expected_keywords": ["network", "security", "protection"],
-                "should_not_contain": ["cybersecurity assistant", "redirect", "not related"]
+                "should_not_contain": [
+                    "cybersecurity assistant",
+                    "redirect",
+                    "not related",
+                ],
             },
             {
                 "name": "Buffer Overflow",
                 "input": "explain buffer overflow",
                 "expected_keywords": ["buffer", "overflow", "memory", "CWE"],
-                "should_not_contain": ["cybersecurity assistant", "redirect", "not related"]
-            }
+                "should_not_contain": [
+                    "cybersecurity assistant",
+                    "redirect",
+                    "not related",
+                ],
+            },
         ]
 
         for test_case in test_cases:
             result = await self._run_single_test(test_case)
-            self.test_results.append({
-                "category": "Security Topic Handling",
-                "test_name": test_case["name"],
-                "passed": result["passed"],
-                "details": result
-            })
+            self.test_results.append(
+                {
+                    "category": "Security Topic Handling",
+                    "test_name": test_case["name"],
+                    "passed": result["passed"],
+                    "details": result,
+                }
+            )
 
     async def _run_single_test(self, test_case: Dict[str, Any]) -> Dict[str, Any]:
         """Run a single test case and return results."""
@@ -174,7 +195,7 @@ class ConversationalFlowTester:
                 "response": simulated_response,
                 "passed": passed,
                 "expected_keywords": test_case.get("expected_keywords", []),
-                "should_not_contain": test_case.get("should_not_contain", [])
+                "should_not_contain": test_case.get("should_not_contain", []),
             }
 
         except Exception as e:
@@ -183,7 +204,7 @@ class ConversationalFlowTester:
                 "input": test_case["input"],
                 "response": None,
                 "passed": False,
-                "error": str(e)
+                "error": str(e),
             }
 
     async def _simulate_query(self, query: str) -> str:
@@ -201,14 +222,26 @@ class ConversationalFlowTester:
         # Replace with actual WebSocket communication to http://localhost:8080
 
         off_topic_queries = ["dog", "pasta", "weather", "cook", "recipe"]
-        security_queries = ["CWE", "SQL injection", "XSS", "buffer overflow", "firewall"]
+        security_queries = [
+            "CWE",
+            "SQL injection",
+            "XSS",
+            "buffer overflow",
+            "firewall",
+        ]
 
         query_lower = query.lower()
 
-        if any(term in query_lower for term in off_topic_queries) and not any(term in query_lower for term in security_queries):
+        if any(term in query_lower for term in off_topic_queries) and not any(
+            term in query_lower for term in security_queries
+        ):
             return "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. Your question doesn't appear to be related to cybersecurity topics. I can help you with: • CWE Analysis: Understanding specific weaknesses like CWE-79 (XSS) • Vulnerability Assessment: Mapping CVEs to CWEs • Security Best Practices: Prevention and mitigation strategies • Threat Modeling: Risk assessment and security guidance What cybersecurity topic can I help you with today?"
 
-        elif "CWE-79" in query or "cross-site scripting" in query_lower or "xss" in query_lower:
+        elif (
+            "CWE-79" in query
+            or "cross-site scripting" in query_lower
+            or "xss" in query_lower
+        ):
             return "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting') — Cross-site scripting (XSS) vulnerabilities occur when applications include untrusted data in web pages without proper validation or escaping..."
 
         elif "tell me more" in query_lower:
@@ -239,7 +272,7 @@ class ConversationalFlowTester:
                 logger.warning(f"      Contains forbidden keyword: '{keyword}'")
                 return False
 
-        logger.info(f"      ✅ Response analysis passed")
+        logger.info("      ✅ Response analysis passed")
         return True
 
     async def run_all_tests(self):
@@ -288,7 +321,9 @@ class ConversationalFlowTester:
             total = data["passed"] + data["failed"]
             rate = (data["passed"] / total) * 100 if total > 0 else 0
 
-            status = "✅" if data["failed"] == 0 else "❌" if data["passed"] == 0 else "⚠️"
+            status = (
+                "✅" if data["failed"] == 0 else "❌" if data["passed"] == 0 else "⚠️"
+            )
             logger.info(f"{status} {category}: {data['passed']}/{total} ({rate:.1f}%)")
 
             for test in data["tests"]:
@@ -299,12 +334,17 @@ class ConversationalFlowTester:
         with open("test_results.json", "w") as f:
             json.dump(self.test_results, f, indent=2)
 
-        logger.info(f"\n💾 Detailed results saved to: test_results.json")
+        logger.info("\n💾 Detailed results saved to: test_results.json")
 
         if passed_tests == total_tests:
-            logger.info("🎉 ALL TESTS PASSED! The conversational flows are working correctly.")
+            logger.info(
+                "🎉 ALL TESTS PASSED! The conversational flows are working correctly."
+            )
         else:
-            logger.warning("⚠️  Some tests failed. Review the results above for details.")
+            logger.warning(
+                "⚠️  Some tests failed. Review the results above for details."
+            )
+
 
 async def main():
     """Main test runner."""
@@ -315,6 +355,7 @@ async def main():
 
     tester = ConversationalFlowTester()
     await tester.run_all_tests()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

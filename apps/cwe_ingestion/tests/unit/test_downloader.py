@@ -15,6 +15,7 @@ def test_cwe_downloader_class_exists():
     assert downloader is not None
     # This test MUST fail first - CWEDownloader doesn't exist yet
 
+
 def test_downloader_initializes_with_default_url():
     """Test downloader initializes with correct default MITRE URL."""
     from apps.cwe_ingestion.downloader import CWEDownloader
@@ -23,6 +24,7 @@ def test_downloader_initializes_with_default_url():
     assert downloader.source_url == "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip"
     assert downloader.timeout == 30
     assert downloader.verify_ssl is True
+
 
 def test_downloader_accepts_custom_configuration():
     """Test downloader can be configured with custom parameters."""
@@ -35,7 +37,8 @@ def test_downloader_accepts_custom_configuration():
     assert downloader.timeout == 60
     assert downloader.verify_ssl is False
 
-@patch('requests.get')
+
+@patch("requests.get")
 def test_download_file_success(mock_get):
     """Test successful CWE file download."""
     from apps.cwe_ingestion.downloader import CWEDownloader
@@ -43,7 +46,7 @@ def test_download_file_success(mock_get):
     # Mock successful response
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.iter_content.return_value = [b'test_content']
+    mock_response.iter_content.return_value = [b"test_content"]
     mock_get.return_value = mock_response
 
     downloader = CWEDownloader()
@@ -55,13 +58,11 @@ def test_download_file_success(mock_get):
         assert result is True
         assert output_path.exists()
         mock_get.assert_called_once_with(
-            downloader.source_url,
-            timeout=30,
-            verify=True,
-            stream=True
+            downloader.source_url, timeout=30, verify=True, stream=True
         )
 
-@patch('requests.get')
+
+@patch("requests.get")
 def test_download_file_network_error(mock_get):
     """Test download handles network errors gracefully."""
     from apps.cwe_ingestion.downloader import CWEDownloader
@@ -77,6 +78,7 @@ def test_download_file_network_error(mock_get):
         with pytest.raises(Exception):
             downloader.download_file(str(output_path))
 
+
 def test_extract_cwe_xml_from_zip():
     """Test extraction of CWE XML from ZIP archive."""
     from apps.cwe_ingestion.downloader import CWEDownloader
@@ -85,7 +87,8 @@ def test_extract_cwe_xml_from_zip():
 
     # This test will validate ZIP extraction functionality
     # Implementation details will be added after downloader module is created
-    assert hasattr(downloader, '_extract_cwe_xml')
+    assert hasattr(downloader, "_extract_cwe_xml")
+
 
 def test_downloader_security_features():
     """Test that downloader has security features enabled."""

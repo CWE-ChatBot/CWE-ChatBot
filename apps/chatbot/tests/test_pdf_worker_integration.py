@@ -12,16 +12,16 @@ NOTE: These tests require the PDF worker to be deployed to Cloud Functions.
 Set PDF_WORKER_URL environment variable to the deployed function URL.
 """
 import os
-import pytest
-import httpx
-from google.auth import compute_engine
-import google.auth.transport.requests
 
+import google.auth.transport.requests
+import httpx
+import pytest
+from google.auth import compute_engine
 
 # Skip if PDF_WORKER_URL not configured
 pytestmark = pytest.mark.skipif(
-    not os.getenv('PDF_WORKER_URL'),
-    reason="PDF_WORKER_URL not set - skipping integration tests"
+    not os.getenv("PDF_WORKER_URL"),
+    reason="PDF_WORKER_URL not set - skipping integration tests",
 )
 
 
@@ -31,14 +31,14 @@ class TestPDFWorkerDeployment:
     @pytest.fixture
     def pdf_worker_url(self):
         """Get PDF worker URL from environment."""
-        return os.getenv('PDF_WORKER_URL')
+        return os.getenv("PDF_WORKER_URL")
 
     @pytest.fixture
     def oidc_token(self, pdf_worker_url):
         """Get OIDC token for authentication."""
         credentials = compute_engine.IDTokenCredentials(
             request=google.auth.transport.requests.Request(),
-            target_audience=pdf_worker_url
+            target_audience=pdf_worker_url,
         )
         credentials.refresh(google.auth.transport.requests.Request())
         return credentials.token
@@ -47,9 +47,9 @@ class TestPDFWorkerDeployment:
         """Should return 403 for requests without OIDC token (AC5)."""
         response = httpx.post(
             pdf_worker_url,
-            content=b'%PDF-1.7\ntest',
-            headers={'Content-Type': 'application/pdf'},
-            follow_redirects=False
+            content=b"%PDF-1.7\ntest",
+            headers={"Content-Type": "application/pdf"},
+            follow_redirects=False,
         )
         assert response.status_code == 403
 
@@ -57,56 +57,56 @@ class TestPDFWorkerDeployment:
         """Should return security headers on all responses (AC8)."""
         response = httpx.post(
             pdf_worker_url,
-            content=b'%PDF-1.7\ntest',
+            content=b"%PDF-1.7\ntest",
             headers={
-                'Authorization': f'Bearer {oidc_token}',
-                'Content-Type': 'application/pdf'
+                "Authorization": f"Bearer {oidc_token}",
+                "Content-Type": "application/pdf",
             },
-            follow_redirects=False
+            follow_redirects=False,
         )
 
-        assert 'X-Content-Type-Options' in response.headers
-        assert response.headers['X-Content-Type-Options'] == 'nosniff'
-        assert 'Referrer-Policy' in response.headers
-        assert response.headers['Referrer-Policy'] == 'no-referrer'
-        assert 'X-Frame-Options' in response.headers
-        assert response.headers['X-Frame-Options'] == 'DENY'
+        assert "X-Content-Type-Options" in response.headers
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert "Referrer-Policy" in response.headers
+        assert response.headers["Referrer-Policy"] == "no-referrer"
+        assert "X-Frame-Options" in response.headers
+        assert response.headers["X-Frame-Options"] == "DENY"
 
     def test_worker_rejects_missing_pdf_magic_bytes(self, pdf_worker_url, oidc_token):
         """Should reject files without PDF magic bytes (AC2)."""
         response = httpx.post(
             pdf_worker_url,
-            content=b'Not a PDF file',
+            content=b"Not a PDF file",
             headers={
-                'Authorization': f'Bearer {oidc_token}',
-                'Content-Type': 'application/pdf'
+                "Authorization": f"Bearer {oidc_token}",
+                "Content-Type": "application/pdf",
             },
-            follow_redirects=False
+            follow_redirects=False,
         )
 
         assert response.status_code == 422
         data = response.json()
-        assert data['error'] == 'pdf_magic_missing'
+        assert data["error"] == "pdf_magic_missing"
 
     def test_worker_rejects_file_exceeding_10mb(self, pdf_worker_url, oidc_token):
         """Should reject files exceeding 10MB (AC6)."""
         # Create 11MB payload
-        large_pdf = b'%PDF-1.7\n' + b'a' * (11 * 1024 * 1024)
+        large_pdf = b"%PDF-1.7\n" + b"a" * (11 * 1024 * 1024)
 
         response = httpx.post(
             pdf_worker_url,
             content=large_pdf,
             headers={
-                'Authorization': f'Bearer {oidc_token}',
-                'Content-Type': 'application/pdf'
+                "Authorization": f"Bearer {oidc_token}",
+                "Content-Type": "application/pdf",
             },
             follow_redirects=False,
-            timeout=30
+            timeout=30,
         )
 
         assert response.status_code == 413
         data = response.json()
-        assert data['error'] == 'pdf_too_large'
+        assert data["error"] == "pdf_too_large"
 
     @pytest.mark.integration
     def test_worker_processes_valid_pdf(self, pdf_worker_url, oidc_token):
@@ -150,18 +150,18 @@ startxref
             pdf_worker_url,
             content=minimal_pdf,
             headers={
-                'Authorization': f'Bearer {oidc_token}',
-                'Content-Type': 'application/pdf'
+                "Authorization": f"Bearer {oidc_token}",
+                "Content-Type": "application/pdf",
             },
             follow_redirects=False,
-            timeout=30
+            timeout=30,
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert 'text' in data
-        assert 'pages' in data
-        assert data['pages'] >= 1
+        assert "text" in data
+        assert "pages" in data
+        assert data["pages"] >= 1
 
     @pytest.mark.integration
     def test_worker_sanitizes_javascript(self, pdf_worker_url, oidc_token):
@@ -194,11 +194,11 @@ startxref
             pdf_worker_url,
             content=pdf_with_js,
             headers={
-                'Authorization': f'Bearer {oidc_token}',
-                'Content-Type': 'application/pdf'
+                "Authorization": f"Bearer {oidc_token}",
+                "Content-Type": "application/pdf",
             },
             follow_redirects=False,
-            timeout=30
+            timeout=30,
         )
 
         # Should either sanitize successfully or reject dangerous PDF
@@ -206,7 +206,7 @@ startxref
         if response.status_code == 200:
             # If sanitized, verify no JavaScript execution warnings in metadata
             data = response.json()
-            assert 'text' in data
+            assert "text" in data
 
     def test_worker_rejects_excessive_pages(self, pdf_worker_url, oidc_token):
         """Should reject PDFs exceeding 50 pages (AC6)."""
@@ -220,13 +220,13 @@ class TestPDFWorkerErrors:
 
     @pytest.fixture
     def pdf_worker_url(self):
-        return os.getenv('PDF_WORKER_URL')
+        return os.getenv("PDF_WORKER_URL")
 
     @pytest.fixture
     def oidc_token(self, pdf_worker_url):
         credentials = compute_engine.IDTokenCredentials(
             request=google.auth.transport.requests.Request(),
-            target_audience=pdf_worker_url
+            target_audience=pdf_worker_url,
         )
         credentials.refresh(google.auth.transport.requests.Request())
         return credentials.token
@@ -235,8 +235,8 @@ class TestPDFWorkerErrors:
         """Should return stable error codes for different failure modes."""
         # Test various error conditions
         test_cases = [
-            (b'Not a PDF', 422, 'pdf_magic_missing'),
-            (b'%PDF-1.7\n' + b'a' * (11 * 1024 * 1024), 413, 'pdf_too_large'),
+            (b"Not a PDF", 422, "pdf_magic_missing"),
+            (b"%PDF-1.7\n" + b"a" * (11 * 1024 * 1024), 413, "pdf_too_large"),
         ]
 
         for content, expected_status, expected_error in test_cases:
@@ -244,14 +244,14 @@ class TestPDFWorkerErrors:
                 pdf_worker_url,
                 content=content,
                 headers={
-                    'Authorization': f'Bearer {oidc_token}',
-                    'Content-Type': 'application/pdf'
+                    "Authorization": f"Bearer {oidc_token}",
+                    "Content-Type": "application/pdf",
                 },
                 follow_redirects=False,
-                timeout=30
+                timeout=30,
             )
 
             assert response.status_code == expected_status
             if expected_error:
                 data = response.json()
-                assert data['error'] == expected_error
+                assert data["error"] == expected_error

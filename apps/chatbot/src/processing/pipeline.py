@@ -6,21 +6,24 @@ This module separates the business logic of turning raw chunks into recommendati
 from the data retrieval logic, implementing proper separation of concerns.
 """
 
-import logging
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, TypedDict, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 
-from src.processing.confidence_calculator import ConfidenceCalculator, create_aggregated_cwe
-from src.processing.cwe_filter import CWEFilter, create_default_filter
+from src.processing.confidence_calculator import (
+    ConfidenceCalculator,
+    create_aggregated_cwe,
+)
+from src.processing.cwe_filter import create_default_filter
 from src.processing.explanation_builder import ExplanationBuilder
-from src.processing.query_suggester import QuerySuggester
 from src.processing.query_processor import QueryProcessor
+from src.processing.query_suggester import QuerySuggester
 from src.security.secure_logging import get_secure_logger
 
 
 class Recommendation(TypedDict):
     """Structured CWE recommendation with confidence and explanation."""
+
     cwe_id: str
     name: str
     confidence: float
@@ -32,6 +35,7 @@ class Recommendation(TypedDict):
 
 class QueryResult(TypedDict):
     """Result of processing a query with recommendations."""
+
     recommendations: List[Recommendation]
     low_confidence: bool
     improvement_guidance: Optional[Dict[str, Any]]
@@ -40,6 +44,7 @@ class QueryResult(TypedDict):
 @dataclass
 class PipelineResult:
     """Standardized output from the processing pipeline."""
+
     final_response_text: str
     recommendations: List[Recommendation] = field(default_factory=list)
     retrieved_cwes: List[str] = field(default_factory=list)
@@ -47,6 +52,7 @@ class PipelineResult:
     is_low_confidence: bool = False
     improvement_guidance: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+
 
 logger = get_secure_logger(__name__)
 
@@ -66,7 +72,7 @@ class ProcessingPipeline:
     a clean, testable pipeline that's separate from data retrieval concerns.
     """
 
-    def __init__(self, query_handler=None, response_generator=None):
+    def __init__(self, query_handler: Any = None, response_generator: Any = None):
         """
         Initialize the pipeline with dependencies.
 
@@ -87,7 +93,9 @@ class ProcessingPipeline:
 
         logger.info("ProcessingPipeline initialized with all components")
 
-    def generate_recommendations(self, query: str, chunks: List[Dict], user_context: Dict[str, Any]) -> QueryResult:
+    def generate_recommendations(
+        self, query: str, chunks: List[Dict], user_context: Dict[str, Any]
+    ) -> QueryResult:
         """
         Transform raw retrieved chunks into structured CWE recommendations.
 
@@ -100,7 +108,9 @@ class ProcessingPipeline:
             QueryResult with recommendations, confidence assessment, and guidance
         """
         try:
-            logger.info(f"Processing {len(chunks)} chunks into recommendations for query: '{query[:50]}...'")
+            logger.info(
+                f"Processing {len(chunks)} chunks into recommendations for query: '{query[:50]}...'"
+            )
 
             if not chunks:
                 return self._handle_empty_results(query, user_context)
@@ -113,13 +123,15 @@ class ProcessingPipeline:
             scored_cwes = self._calculate_confidence_scores(query, cwe_chunks)
 
             # Step 3: Sort by confidence score
-            scored_cwes.sort(key=lambda x: x['confidence'], reverse=True)
+            scored_cwes.sort(key=lambda x: x["confidence"], reverse=True)
 
             # Step 4: Filter and cap recommendations
             filter_result = self.cwe_filter.filter(scored_cwes)
-            filtered_recommendations = filter_result['recommendations']
+            filtered_recommendations = filter_result["recommendations"]
 
-            logger.info(f"Filtered recommendations: {filter_result['original_count']} → {filter_result['final_count']}")
+            logger.info(
+                f"Filtered recommendations: {filter_result['original_count']} → {filter_result['final_count']}"
+            )
 
             # Step 5: Convert to Recommendation TypedDict format
             recommendations = self._format_recommendations(filtered_recommendations)
@@ -130,13 +142,17 @@ class ProcessingPipeline:
             )
 
             # Step 7: Determine overall confidence assessment
-            avg_confidence = sum(r['confidence'] for r in recommendations) / len(recommendations) if recommendations else 0.0
+            avg_confidence = (
+                sum(r["confidence"] for r in recommendations) / len(recommendations)
+                if recommendations
+                else 0.0
+            )
             is_low_confidence = avg_confidence < 0.6 or len(recommendations) < 2
 
             return QueryResult(
                 recommendations=recommendations,
                 low_confidence=is_low_confidence,
-                improvement_guidance=improvement_guidance
+                improvement_guidance=improvement_guidance,
             )
 
         except Exception as e:
@@ -144,7 +160,9 @@ class ProcessingPipeline:
             # Return empty result with guidance on error
             return self._handle_empty_results(query, user_context)
 
-    async def process_user_request(self, query: str, user_context) -> PipelineResult:
+    async def process_user_request(
+        self, query: str, user_context: Any
+    ) -> PipelineResult:
         """
         Complete end-to-end processing from query to validated response.
 
@@ -165,7 +183,9 @@ class ProcessingPipeline:
             PipelineResult with final response and metadata
         """
         if not self.query_handler or not self.response_generator:
-            raise ValueError("ProcessingPipeline requires query_handler and response_generator for end-to-end processing")
+            raise ValueError(
+                "ProcessingPipeline requires query_handler and response_generator for end-to-end processing"
+            )
 
         try:
             logger.info(f"Processing end-to-end request for query: '{query[:50]}...'")
@@ -178,27 +198,33 @@ class ProcessingPipeline:
             processed_chunks = self._apply_retrieval_business_logic(query, raw_chunks)
 
             # Step 3: Generate recommendations (existing logic)
-            query_result = self.generate_recommendations(query, processed_chunks, user_prefs)
-            recommendations = query_result['recommendations']
+            query_result = self.generate_recommendations(
+                query, processed_chunks, user_prefs
+            )
+            recommendations = query_result["recommendations"]
 
             # Step 4: Fetch canonical metadata (MOVED FROM ConversationManager)
-            rec_ids = [r['cwe_id'] for r in recommendations]
+            rec_ids = [r["cwe_id"] for r in recommendations]
             canonical_metadata = {}
             policy_labels = {}
 
-            if rec_ids and hasattr(self.query_handler, 'get_canonical_cwe_metadata'):
-                canonical_metadata = self.query_handler.get_canonical_cwe_metadata(rec_ids)
+            if rec_ids and hasattr(self.query_handler, "get_canonical_cwe_metadata"):
+                canonical_metadata = self.query_handler.get_canonical_cwe_metadata(
+                    rec_ids
+                )
                 policy_labels = self.query_handler.get_cwe_policy_labels(rec_ids)
 
             # Step 5: Build enhanced prompt with metadata
-            llm_prompt = self._build_llm_prompt(query, processed_chunks, user_context, canonical_metadata, policy_labels)
+            llm_prompt = self._build_llm_prompt(
+                query, processed_chunks, user_context, canonical_metadata, policy_labels
+            )
 
             # Step 6: Generate LLM response
             raw_response = await self.response_generator.generate_response_full_once(
                 llm_prompt,
                 processed_chunks,
                 user_context.persona,
-                user_evidence=getattr(user_context, 'file_evidence', None),
+                user_evidence=getattr(user_context, "file_evidence", None),
             )
 
             # Step 7: Post-process and validate response (MOVED FROM ConversationManager)
@@ -209,8 +235,8 @@ class ProcessingPipeline:
                 recommendations=recommendations,
                 retrieved_cwes=rec_ids,
                 chunk_count=len(processed_chunks),
-                is_low_confidence=query_result['low_confidence'],
-                improvement_guidance=query_result['improvement_guidance']
+                is_low_confidence=query_result["low_confidence"],
+                improvement_guidance=query_result["improvement_guidance"],
             )
 
         except Exception as e:
@@ -218,19 +244,23 @@ class ProcessingPipeline:
             # Return fallback result
             return PipelineResult(
                 final_response_text="I apologize, but I'm experiencing technical difficulties processing your request. Please try again.",
-                is_low_confidence=True
+                is_low_confidence=True,
             )
 
-    def _handle_empty_results(self, query: str, user_context: Dict[str, Any]) -> QueryResult:
+    def _handle_empty_results(
+        self, query: str, user_context: Dict[str, Any]
+    ) -> QueryResult:
         """Handle case when no chunks are retrieved."""
-        persona = user_context.get('persona', 'Developer')
+        persona = user_context.get("persona", "Developer")
         improvement_guidance = self.query_suggester.generate_improvement_banner(
             query, persona, 0.0
         )
         return QueryResult(
             recommendations=[],
             low_confidence=True,
-            improvement_guidance=improvement_guidance if improvement_guidance["show_banner"] else None
+            improvement_guidance=improvement_guidance
+            if improvement_guidance["show_banner"]
+            else None,
         )
 
     def _aggregate_chunks_by_cwe(self, chunks: List[Dict]) -> Dict[str, Dict]:
@@ -253,16 +283,18 @@ class ProcessingPipeline:
 
             if cwe_id not in cwe_groups:
                 cwe_groups[cwe_id] = {
-                    'name': metadata.get("name", "Unknown"),
-                    'chunks': [],
-                    'exact_match': False  # This would be set by caller based on query analysis
+                    "name": metadata.get("name", "Unknown"),
+                    "chunks": [],
+                    "exact_match": False,  # This would be set by caller based on query analysis
                 }
 
-            cwe_groups[cwe_id]['chunks'].append(chunk)
+            cwe_groups[cwe_id]["chunks"].append(chunk)
 
         return cwe_groups
 
-    def _calculate_confidence_scores(self, query: str, cwe_chunks: Dict[str, Dict]) -> List[Dict]:
+    def _calculate_confidence_scores(
+        self, query: str, cwe_chunks: Dict[str, Dict]
+    ) -> List[Dict]:
         """Calculate confidence scores and build explanations for each CWE."""
         scored_cwes = []
 
@@ -270,18 +302,20 @@ class ProcessingPipeline:
             try:
                 # Determine exact alias/name match to boost confidence
                 ql = (query or "").lower()
-                name_lower = (cwe_data['name'] or "").lower()
+                name_lower = (cwe_data["name"] or "").lower()
                 exact_match = False
                 if name_lower and name_lower in ql:
                     exact_match = True
                 else:
                     # Look for Aliases chunk and check for phrase matches
-                    for ch in cwe_data['chunks']:
-                        section = (ch.get('metadata') or {}).get('section', '')
-                        if section == 'Aliases':
-                            alias_text = (ch.get('document') or '').lower()
+                    for ch in cwe_data["chunks"]:
+                        section = (ch.get("metadata") or {}).get("section", "")
+                        if section == "Aliases":
+                            alias_text = (ch.get("document") or "").lower()
                             # Aliases are joined with ';' per entry_to_sections
-                            for alias in [a.strip() for a in alias_text.split(';') if a.strip()]:
+                            for alias in [
+                                a.strip() for a in alias_text.split(";") if a.strip()
+                            ]:
                                 if alias and alias in ql:
                                     exact_match = True
                                     break
@@ -291,26 +325,32 @@ class ProcessingPipeline:
                 # Create AggregatedCWE for confidence calculation
                 aggregated = create_aggregated_cwe(
                     cwe_id=cwe_id,
-                    name=cwe_data['name'],
-                    chunks=cwe_data['chunks'],
-                    exact_match=exact_match
+                    name=cwe_data["name"],
+                    chunks=cwe_data["chunks"],
+                    exact_match=exact_match,
                 )
 
                 # Calculate confidence
-                confidence, level = self.confidence_calculator.score_and_level(aggregated)
+                confidence, level = self.confidence_calculator.score_and_level(
+                    aggregated
+                )
 
                 # Build explanation
-                explanation = self.explanation_builder.build(query, cwe_id, cwe_data['chunks'])
+                explanation = self.explanation_builder.build(
+                    query, cwe_id, cwe_data["chunks"]
+                )
 
-                scored_cwes.append({
-                    'cwe_id': cwe_id,
-                    'name': cwe_data['name'],
-                    'confidence': confidence,
-                    'level': level,
-                    'explanation': explanation,
-                    'top_chunks': cwe_data['chunks'][:5],  # Limit for performance
-                    'relationships': None  # TODO: Implement in future task
-                })
+                scored_cwes.append(
+                    {
+                        "cwe_id": cwe_id,
+                        "name": cwe_data["name"],
+                        "confidence": confidence,
+                        "level": level,
+                        "explanation": explanation,
+                        "top_chunks": cwe_data["chunks"][:5],  # Limit for performance
+                        "relationships": None,  # TODO: Implement in future task
+                    }
+                )
 
             except Exception as e:
                 logger.warning(f"Failed to process CWE {cwe_id}: {e}")
@@ -318,38 +358,51 @@ class ProcessingPipeline:
 
         return scored_cwes
 
-    def _format_recommendations(self, filtered_recommendations: List[Dict]) -> List[Recommendation]:
+    def _format_recommendations(
+        self, filtered_recommendations: List[Dict]
+    ) -> List[Recommendation]:
         """Convert internal format to Recommendation TypedDict format."""
         recommendations = []
 
         for rec in filtered_recommendations:
             try:
-                recommendations.append(Recommendation(
-                    cwe_id=rec['cwe_id'],
-                    name=rec['name'],
-                    confidence=rec['confidence'],
-                    level=rec['level'],
-                    explanation=rec['explanation'],
-                    top_chunks=rec['top_chunks'],
-                    relationships=rec['relationships']
-                ))
+                recommendations.append(
+                    Recommendation(
+                        cwe_id=rec["cwe_id"],
+                        name=rec["name"],
+                        confidence=rec["confidence"],
+                        level=rec["level"],
+                        explanation=rec["explanation"],
+                        top_chunks=rec["top_chunks"],
+                        relationships=rec["relationships"],
+                    )
+                )
             except Exception as e:
-                logger.warning(f"Failed to format recommendation for {rec.get('cwe_id', 'unknown')}: {e}")
+                logger.warning(
+                    f"Failed to format recommendation for {rec.get('cwe_id', 'unknown')}: {e}"
+                )
                 continue
 
         return recommendations
 
-    def _generate_improvement_guidance(self, query: str, recommendations: List[Recommendation], user_context: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_improvement_guidance(
+        self,
+        query: str,
+        recommendations: List[Recommendation],
+        user_context: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
         """Generate improvement guidance if confidence is low."""
         if not recommendations:
             avg_confidence = 0.0
         else:
-            avg_confidence = sum(r['confidence'] for r in recommendations) / len(recommendations)
+            avg_confidence = sum(r["confidence"] for r in recommendations) / len(
+                recommendations
+            )
 
         is_low_confidence = avg_confidence < 0.6 or len(recommendations) < 2
 
         if is_low_confidence:
-            persona = user_context.get('persona', 'Developer')
+            persona = user_context.get("persona", "Developer")
             guidance = self.query_suggester.generate_improvement_banner(
                 query, persona, avg_confidence
             )
@@ -358,7 +411,9 @@ class ProcessingPipeline:
 
         return None
 
-    def _apply_retrieval_business_logic(self, query: str, raw_chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _apply_retrieval_business_logic(
+        self, query: str, raw_chunks: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """
         Apply business logic that was moved from CWEQueryHandler.
 
@@ -366,19 +421,23 @@ class ProcessingPipeline:
         """
         # Extract CWE IDs from query using QueryProcessor
         query_analysis = self.query_processor.preprocess_query(query)
-        extracted_cwe_ids = query_analysis.get('cwe_ids', set())
+        extracted_cwe_ids = query_analysis.get("cwe_ids", set())
 
         processed_chunks = list(raw_chunks)  # Start with raw results
 
         # Force-inject canonical sections if no results for mentioned CWE IDs
         if extracted_cwe_ids and not processed_chunks and self.query_handler:
-            forced_sections = self.query_handler.fetch_canonical_sections_for_cwes(list(extracted_cwe_ids))
+            forced_sections = self.query_handler.fetch_canonical_sections_for_cwes(
+                list(extracted_cwe_ids)
+            )
             for chunk in forced_sections:
                 scores = chunk.get("scores", {})
                 scores["hybrid"] = scores.get("hybrid", 0.0) + 3.0  # Strong boost
                 chunk["scores"] = scores
             processed_chunks.extend(forced_sections)
-            logger.info(f"Force-injected sections for mentioned CWE IDs: {extracted_cwe_ids}")
+            logger.info(
+                f"Force-injected sections for mentioned CWE IDs: {extracted_cwe_ids}"
+            )
 
         # Boost mentioned CWE IDs in existing results
         if extracted_cwe_ids and processed_chunks:
@@ -391,11 +450,20 @@ class ProcessingPipeline:
                         chunk["scores"] = scores
 
             # Re-sort after boosting
-            processed_chunks.sort(key=lambda x: x.get("scores", {}).get("hybrid", 0.0), reverse=True)
+            processed_chunks.sort(
+                key=lambda x: x.get("scores", {}).get("hybrid", 0.0), reverse=True
+            )
 
         return processed_chunks
 
-    def _build_llm_prompt(self, query: str, chunks: List[Dict], user_context, canonical_metadata: Dict, policy_labels: Dict) -> str:
+    def _build_llm_prompt(
+        self,
+        query: str,
+        chunks: List[Dict[str, Any]],
+        user_context: Any,
+        canonical_metadata: Dict[str, Any],
+        policy_labels: Dict[str, Any],
+    ) -> str:
         """
         Build enhanced LLM prompt with canonical metadata.
 
@@ -419,10 +487,10 @@ class ProcessingPipeline:
                 meta = canonical_metadata.get(key, {})
                 pol = policy_labels.get(key, {})
 
-                name = meta.get('name', '')
-                abstraction = meta.get('abstraction', '')
-                status = meta.get('status', '')
-                mapping_label = pol.get('mapping_label', '')
+                name = meta.get("name", "")
+                abstraction = meta.get("abstraction", "")
+                status = meta.get("status", "")
+                mapping_label = pol.get("mapping_label", "")
 
                 parts = [f"- {cwe_id}"]
                 if name:
@@ -436,7 +504,9 @@ class ProcessingPipeline:
                 lines.append("".join(parts))
 
             if lines:
-                canonical_block = "\n\n[Canonical CWE Metadata]\n" + "\n".join(lines) + "\n"
+                canonical_block = (
+                    "\n\n[Canonical CWE Metadata]\n" + "\n".join(lines) + "\n"
+                )
                 enhanced_prompt += canonical_block
                 enhanced_prompt += (
                     "\n[Policy Rules]\n"
@@ -475,8 +545,14 @@ class ProcessingPipeline:
             policies = self.query_handler.get_cwe_policy_labels(all_cwe_ids)
 
             # Build mapping dictionaries
-            id_to_name = {k.upper(): v['name'] for k, v in canon.items() if v.get('name')}
-            id_to_policy = {k.upper(): v['mapping_label'] for k, v in policies.items() if v.get('mapping_label')}
+            id_to_name = {
+                k.upper(): v["name"] for k, v in canon.items() if v.get("name")
+            }
+            id_to_policy = {
+                k.upper(): v["mapping_label"]
+                for k, v in policies.items()
+                if v.get("mapping_label")
+            }
 
             # Apply harmonization
             return harmonize_cwe_names_in_table(llm_response, id_to_name, id_to_policy)
@@ -494,5 +570,5 @@ class ProcessingPipeline:
             "query_suggester": bool(self.query_suggester),
             "query_handler": bool(self.query_handler),
             "response_generator": bool(self.response_generator),
-            "status": "healthy"
+            "status": "healthy",
         }

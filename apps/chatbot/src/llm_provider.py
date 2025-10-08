@@ -8,15 +8,15 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, AsyncGenerator, Dict, Optional, cast
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, Optional, cast
 
 logger = logging.getLogger(__name__)
 
 
 class LLMProvider:
     async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
-        # Hint to type checkers that this is an async generator
-        if False:  # pragma: no cover
+        # Make this appear as an async generator to static type checkers
+        if TYPE_CHECKING:  # pragma: no cover
             yield ""  # ensures AsyncGenerator return type compatibility
         raise NotImplementedError
 
@@ -32,29 +32,31 @@ class GoogleProvider(LLMProvider):
         generation_config: Dict[str, Any] | None = None,
         safety_settings: Dict[str, Any] | None = None,
     ) -> None:
-        import google.generativeai as genai  # type: ignore
+        import google.generativeai as genai
 
         # Some type stubs for google.generativeai may not export these symbols;
         # cast to Any to avoid false positives.
         _genai_any = cast(Any, genai)
-        _genai_any.configure(api_key=api_key)  # type: ignore[attr-defined]
-        self._model = _genai_any.GenerativeModel(model_name)  # type: ignore[attr-defined]
+        _genai_any.configure(api_key=api_key)
+        self._model = _genai_any.GenerativeModel(model_name)
         self._gen_cfg = generation_config or {}
 
         # Configure safety settings - use provided settings or default
         # to permissive for cybersecurity content
+        self._safety: Any = safety_settings if safety_settings is not None else None
         if safety_settings is not None:
-            self._safety = safety_settings
+            # Already provided by caller
             logger.info(
                 "GoogleProvider using explicit safety_settings: %s", safety_settings
             )
         else:
             # Default to permissive settings for cybersecurity content
             try:
-                from google.generativeai.types import (  # type: ignore
+                from google.generativeai.types import (
                     HarmBlockThreshold,
                     HarmCategory,
                 )
+
                 self._safety = [
                     {
                         "category": HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -101,10 +103,10 @@ class GoogleProvider(LLMProvider):
             "Starting streaming generation with safety_settings: %s", self._safety
         )
         try:
-            stream = await cast(Any, self._model).generate_content_async(  # type: ignore[attr-defined]
+            stream = await cast(Any, self._model).generate_content_async(
                 prompt,
-                generation_config=cast(Any, self._gen_cfg),  # type: ignore[arg-type]
-                safety_settings=cast(Any, self._safety),      # type: ignore[arg-type]
+                generation_config=cast(Any, self._gen_cfg),
+                safety_settings=cast(Any, self._safety),
                 stream=True,
             )
             logger.debug("Streaming generation started successfully")
@@ -121,10 +123,10 @@ class GoogleProvider(LLMProvider):
             "Starting non-streaming generation with safety_settings: %s", self._safety
         )
         try:
-            resp = await cast(Any, self._model).generate_content_async(  # type: ignore[attr-defined]
+            resp = await cast(Any, self._model).generate_content_async(
                 prompt,
-                generation_config=cast(Any, self._gen_cfg),  # type: ignore[arg-type]
-                safety_settings=cast(Any, self._safety),      # type: ignore[arg-type]
+                generation_config=cast(Any, self._gen_cfg),
+                safety_settings=cast(Any, self._safety),
             )
             logger.debug("Non-streaming generation completed successfully")
             return resp.text or ""
@@ -144,8 +146,8 @@ class VertexProvider(LLMProvider):
         safety_settings: Dict[str, Any] | None = None,
     ) -> None:
         try:
-            import vertexai  # type: ignore
-            from vertexai.generative_models import GenerativeModel  # type: ignore
+            import vertexai
+            from vertexai.generative_models import GenerativeModel
         except Exception as e:  # pragma: no cover - optional dependency
             raise RuntimeError(
                 "Vertex AI libraries not installed (install google-cloud-aiplatform)"
@@ -167,8 +169,8 @@ class VertexProvider(LLMProvider):
 
         # Configure safety settings - use provided settings or default to
         # permissive for cybersecurity content
+        self._safety: Any = safety_settings if safety_settings is not None else None
         if safety_settings is not None:
-            self._safety = safety_settings
             logger.info(
                 "VertexProvider using explicit safety_settings: %s", safety_settings
             )
@@ -176,11 +178,12 @@ class VertexProvider(LLMProvider):
             # Default to permissive settings for cybersecurity content (same as
             # GoogleProvider). Vertex AI uses its own SafetySetting types.
             try:
-                from vertexai.generative_models import (  # type: ignore
+                from vertexai.generative_models import (
                     HarmBlockThreshold,
                     HarmCategory,
                     SafetySetting,
                 )
+
                 self._safety = [
                     SafetySetting(
                         category=HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -213,10 +216,10 @@ class VertexProvider(LLMProvider):
         )
         try:
             # Use async method with stream=True
-            stream = await cast(Any, self._model).generate_content_async(  # type: ignore[attr-defined]
+            stream = await cast(Any, self._model).generate_content_async(
                 prompt,
-                generation_config=cast(Any, self._gen_cfg),  # type: ignore[arg-type]
-                safety_settings=cast(Any, self._safety),      # type: ignore[arg-type]
+                generation_config=cast(Any, self._gen_cfg),
+                safety_settings=cast(Any, self._safety),
                 stream=True,
             )
             logger.debug("Vertex streaming generation started successfully")
@@ -235,10 +238,10 @@ class VertexProvider(LLMProvider):
         )
         try:
             # Use async method
-            resp = await cast(Any, self._model).generate_content_async(  # type: ignore[attr-defined]
+            resp = await cast(Any, self._model).generate_content_async(
                 prompt,
-                generation_config=cast(Any, self._gen_cfg),  # type: ignore[arg-type]
-                safety_settings=cast(Any, self._safety),      # type: ignore[arg-type]
+                generation_config=cast(Any, self._gen_cfg),
+                safety_settings=cast(Any, self._safety),
             )
             logger.debug("Vertex non-streaming generation completed successfully")
             return resp.text or ""

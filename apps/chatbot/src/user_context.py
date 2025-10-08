@@ -5,11 +5,11 @@ Manages user personas, context, and session state for personalized CWE responses
 """
 
 import logging
-from typing import Dict, List, Any, Optional, Literal
-from enum import Enum
-from dataclasses import dataclass, field
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,9 @@ class UserContext:
         """Update last activity timestamp."""
         self.last_active = datetime.now(timezone.utc)
 
-    def set_oauth_data(self, provider: str, email: str, name: str, avatar_url: Optional[str] = None) -> None:
+    def set_oauth_data(
+        self, provider: str, email: str, name: str, avatar_url: Optional[str] = None
+    ) -> None:
         """Set OAuth authentication data from provider."""
         self.oauth_provider = provider
         self.user_email = email
@@ -96,15 +98,19 @@ class UserContext:
         """Check if user is authenticated via OAuth."""
         return bool(self.oauth_provider and self.user_email)
 
-    def add_conversation_entry(self, query: str, response: str, retrieved_cwes: List[str]) -> None:
+    def add_conversation_entry(
+        self, query: str, response: str, retrieved_cwes: List[str]
+    ) -> None:
         """Add conversation entry to history."""
-        self.conversation_history.append({
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "query": query,
-            "response_length": len(response),
-            "retrieved_cwes": retrieved_cwes,
-            "persona": self.persona
-        })
+        self.conversation_history.append(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "response_length": len(response),
+                "retrieved_cwes": retrieved_cwes,
+                "persona": self.persona,
+            }
+        )
 
         # Keep only last 10 conversations for memory efficiency
         if len(self.conversation_history) > 10:
@@ -122,45 +128,50 @@ class UserContext:
             "section_boost": self.section_boost,
             "response_detail_level": self.response_detail_level,
             "include_examples": self.include_examples,
-            "include_mitigations": self.include_mitigations
+            "include_mitigations": self.include_mitigations,
         }
 
         # Add persona-specific defaults and preferences
         persona_configs = {
             UserPersona.PSIRT_MEMBER.value: {
                 "section_boost": "Impact",
-                "preferred_sections": ["Impact", "Likelihood", "Detection", "Mitigation"],
+                "preferred_sections": [
+                    "Impact",
+                    "Likelihood",
+                    "Detection",
+                    "Mitigation",
+                ],
                 "response_focus": "advisory_creation",
                 "include_cvss": True,
-                "include_exploitability": True
+                "include_exploitability": True,
             },
             UserPersona.DEVELOPER.value: {
                 "section_boost": "Mitigation",
                 "preferred_sections": ["Mitigation", "Description", "Example"],
                 "response_focus": "remediation",
                 "include_code_examples": True,
-                "include_prevention": True
+                "include_prevention": True,
             },
             UserPersona.ACADEMIC_RESEARCHER.value: {
                 "section_boost": "Description",
                 "preferred_sections": ["Description", "Relationships", "Taxonomy"],
                 "response_focus": "comprehensive_analysis",
                 "include_relationships": True,
-                "include_taxonomy": True
+                "include_taxonomy": True,
             },
             UserPersona.BUG_BOUNTY_HUNTER.value: {
                 "section_boost": "Example",
                 "preferred_sections": ["Example", "Detection", "Exploitation"],
                 "response_focus": "exploitation_patterns",
                 "include_detection_methods": True,
-                "include_real_world_examples": True
+                "include_real_world_examples": True,
             },
             UserPersona.PRODUCT_MANAGER.value: {
                 "section_boost": "Impact",
                 "preferred_sections": ["Impact", "Likelihood", "Mitigation"],
                 "response_focus": "business_impact",
                 "include_trend_analysis": True,
-                "include_prevention_strategies": True
+                "include_prevention_strategies": True,
             },
             UserPersona.CWE_ANALYZER.value: {
                 "section_boost": "Description",
@@ -168,7 +179,7 @@ class UserContext:
                 "response_focus": "cve_mapping_analysis",
                 "include_confidence_scores": True,
                 "include_relationship_analysis": True,
-                "include_vulnerability_chains": True
+                "include_vulnerability_chains": True,
             },
             UserPersona.CVE_CREATOR.value: {
                 "section_boost": "Description",
@@ -176,8 +187,8 @@ class UserContext:
                 "response_focus": "cve_description_creation",
                 "include_structured_format": True,
                 "include_component_breakdown": True,
-                "include_severity_assessment": True
-            }
+                "include_severity_assessment": True,
+            },
         }
 
         if self.persona in persona_configs:
@@ -196,7 +207,9 @@ class UserContext:
         for entry in self.conversation_history[-3:]:  # Last 3 conversations
             recent_cwes.extend(entry.get("retrieved_cwes", []))
 
-        unique_recent_cwes = list(dict.fromkeys(recent_cwes))  # Preserve order, remove duplicates
+        unique_recent_cwes = list(
+            dict.fromkeys(recent_cwes)
+        )  # Preserve order, remove duplicates
 
         if unique_recent_cwes:
             return f"Recently discussed CWEs: {', '.join(unique_recent_cwes[:5])}"

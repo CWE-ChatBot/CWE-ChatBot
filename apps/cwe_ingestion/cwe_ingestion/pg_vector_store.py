@@ -1,6 +1,6 @@
 # apps/cwe_ingestion/pg_vector_store.py
-import os
 import logging
+import os
 from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
@@ -8,7 +8,9 @@ import numpy as np
 try:
     import psycopg
 except ImportError as e:
-    raise ImportError("psycopg (v3) is required for Postgres vector store. Install with: pip install psycopg[binary]") from e
+    raise ImportError(
+        "psycopg (v3) is required for Postgres vector store. Install with: pip install psycopg[binary]"
+    ) from e
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +58,19 @@ BEGIN
 END $$;
 """
 
+
 class PostgresVectorStore:
     """
     Postgres + pgvector store with hybrid retrieval (vector + FTS + alias boost).
     Table: cwe_embeddings (single row per CWE).
     """
 
-    def __init__(self, table: str = "cwe_embeddings", dims: int = 3072, database_url: Optional[str] = None):
+    def __init__(
+        self,
+        table: str = "cwe_embeddings",
+        dims: int = 3072,
+        database_url: Optional[str] = None,
+    ):
         self.table = table
         self.dims = int(dims)
         self.database_url = database_url or os.environ.get("DATABASE_URL")
@@ -73,8 +81,12 @@ class PostgresVectorStore:
         conn_params = self._prepare_connection_params(self.database_url)
         self.conn = psycopg.connect(**conn_params)
         self.conn.execute("SET statement_timeout = '30s';")
-        self.conn.execute("SET ivfflat.probes = 10;")  # Improve IVFFlat recall (harmless if HNSW is used)
-        self.conn.execute("SET hnsw.ef_search = 80;")  # Improve HNSW recall (harmless if IVFFlat is used)
+        self.conn.execute(
+            "SET ivfflat.probes = 10;"
+        )  # Improve IVFFlat recall (harmless if HNSW is used)
+        self.conn.execute(
+            "SET hnsw.ef_search = 80;"
+        )  # Improve HNSW recall (harmless if IVFFlat is used)
         self._ensure_schema()
 
     def _prepare_connection_params(self, database_url: str) -> Dict[str, Any]:
@@ -88,15 +100,11 @@ class PostgresVectorStore:
         # Check if this looks like Google Cloud SQL IAM format
         # Format: postgresql://username@project:region:instance/dbname
         # The netloc will be "username@project:region:instance"
-        netloc = (parsed.netloc or "")
+        netloc = parsed.netloc or ""
         has_at_symbol = "@" in netloc
         has_colon_after_at = "@" in netloc and ":" in netloc.split("@", 1)[-1]
 
-        is_gcp_iam = (
-            has_at_symbol and
-            has_colon_after_at and
-            parsed.password is None
-        )
+        is_gcp_iam = has_at_symbol and has_colon_after_at and parsed.password is None
 
         if is_gcp_iam:
             logger.info("Detected Google Cloud SQL IAM authentication format.")
@@ -171,11 +179,17 @@ class PostgresVectorStore:
     def _recommended_ivf_lists(self, table: str) -> int:
         """Calculate IVF lists from current table count (sqrt(N), clamped)."""
         from psycopg import sql
+
         with self.conn.cursor() as cur:
-            cur.execute(sql.SQL("SELECT GREATEST(1, COUNT(*)) FROM {}").format(sql.Identifier(table)))
+            cur.execute(
+                sql.SQL("SELECT GREATEST(1, COUNT(*)) FROM {}").format(
+                    sql.Identifier(table)
+                )
+            )
             result = cur.fetchone()
             (n,) = result if result else (1,)
         import math
+
         return max(64, min(8192, int(math.sqrt(n))))
 
     # ---- Write ----
@@ -191,16 +205,18 @@ class PostgresVectorStore:
             emb = d["embedding"]
             if isinstance(emb, np.ndarray):
                 emb = emb.tolist()
-            rows.append((
-                d["id"],
-                d.get("cwe_id", d["id"]),
-                d["name"],
-                d.get("abstraction", ""),
-                d.get("status", ""),
-                d["full_text"],
-                d.get("alternate_terms_text", "") or "",
-                emb,
-            ))
+            rows.append(
+                (
+                    d["id"],
+                    d.get("cwe_id", d["id"]),
+                    d["name"],
+                    d.get("abstraction", ""),
+                    d.get("status", ""),
+                    d["full_text"],
+                    d.get("alternate_terms_text", "") or "",
+                    emb,
+                )
+            )
         sql = f"""
         INSERT INTO {self.table}
             (id, cwe_id, name, abstraction, status, full_text, alternate_terms_text, embedding)
@@ -221,15 +237,20 @@ class PostgresVectorStore:
         # Refresh statistics after significant batch inserts for optimal query planning
         if len(rows) >= 10:  # Only for meaningful batch sizes
             from psycopg import sql
+
             with self.conn.cursor() as cur:
                 cur.execute(sql.SQL("ANALYZE {}").format(sql.Identifier(self.table)))
             self.conn.commit()
-            logger.debug(f"Refreshed table statistics after inserting {len(rows)} embeddings")
+            logger.debug(
+                f"Refreshed table statistics after inserting {len(rows)} embeddings"
+            )
 
         return len(rows)
 
     # ---- Read: vector-only (compat) ----
-    def query_similar(self, query_embedding: np.ndarray, n_results: int = 5) -> List[Dict]:
+    def query_similar(
+        self, query_embedding: np.ndarray, n_results: int = 5
+    ) -> List[Dict]:
         if isinstance(query_embedding, np.ndarray):
             query_embedding = query_embedding.tolist()
         sql = f"""
@@ -244,16 +265,18 @@ class PostgresVectorStore:
             rows = cur.fetchall()
         out: List[Dict] = []
         for r in rows:
-            out.append({
-                "metadata": {
-                    "cwe_id": r[1],
-                    "name": r[2],
-                    "abstraction": r[3],
-                    "status": r[4],
-                },
-                "document": r[5],
-                "distance": float(r[6]),
-            })
+            out.append(
+                {
+                    "metadata": {
+                        "cwe_id": r[1],
+                        "name": r[2],
+                        "abstraction": r[3],
+                        "status": r[4],
+                    },
+                    "document": r[5],
+                    "distance": float(r[6]),
+                }
+            )
         return out
 
     # ---- Read: hybrid retrieval ----
@@ -311,10 +334,17 @@ class PostgresVectorStore:
          LIMIT %s;
         """
         params = (
-            query_embedding, query_embedding, k_vec,
-            query_text, query_text,
-            query_text, query_text,
-            w_vec, w_fts, w_alias, limit
+            query_embedding,
+            query_embedding,
+            k_vec,
+            query_text,
+            query_text,
+            query_text,
+            query_text,
+            w_vec,
+            w_fts,
+            w_alias,
+            limit,
         )
         with self.conn.cursor() as cur:
             cur.execute(sql, params)  # type: ignore[arg-type]
@@ -322,27 +352,32 @@ class PostgresVectorStore:
 
         results: List[Dict] = []
         for r in rows:
-            results.append({
-                "metadata": {
-                    "cwe_id": r[1],
-                    "name": r[2],
-                    "abstraction": r[3],
-                    "status": r[4],
-                },
-                "document": r[5],
-                "scores": {
-                    "vec": float(r[6]) if r[6] is not None else 0.0,
-                    "fts": float(r[7]) if r[7] is not None else 0.0,
-                    "alias": float(r[8]) if r[8] is not None else 0.0,
-                    "hybrid": float(r[9]),
+            results.append(
+                {
+                    "metadata": {
+                        "cwe_id": r[1],
+                        "name": r[2],
+                        "abstraction": r[3],
+                        "status": r[4],
+                    },
+                    "document": r[5],
+                    "scores": {
+                        "vec": float(r[6]) if r[6] is not None else 0.0,
+                        "fts": float(r[7]) if r[7] is not None else 0.0,
+                        "alias": float(r[8]) if r[8] is not None else 0.0,
+                        "hybrid": float(r[9]),
+                    },
                 }
-            })
+            )
         return results
 
     def get_collection_stats(self) -> Dict[str, Any]:
         from psycopg import sql
+
         with self.conn.cursor() as cur:
-            cur.execute(sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier(self.table)))
+            cur.execute(
+                sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier(self.table))
+            )
             result = cur.fetchone()
             (cnt,) = result if result else (0,)
         return {"collection_name": self.table, "count": cnt}

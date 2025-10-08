@@ -3,11 +3,11 @@ Comprehensive E2E UI testing covering advanced user flows and edge cases.
 Focuses on real-world usage patterns, error recovery, and user experience.
 """
 
-import pytest
-import time
-from playwright.sync_api import sync_playwright, expect
-from pathlib import Path
 import os
+import time
+
+import pytest
+from playwright.sync_api import expect, sync_playwright
 
 
 @pytest.mark.e2e
@@ -55,20 +55,26 @@ def test_persona_switching_workflow(chainlit_server, sample_roles):
 
                 # Verify persona is reflected in response
                 page_content = page.content().lower()
-                assert len(page_content) > 1000, f"Should get substantial response for {persona}"
+                assert (
+                    len(page_content) > 1000
+                ), f"Should get substantial response for {persona}"
 
             # Verify context persistence across persona switches
             # The chat history should still be visible
             messages = page.locator("[class*='message'], [data-testid*='message']")
-            assert messages.count() >= len(personas_to_test), "Chat history should persist across persona switches"
+            assert messages.count() >= len(
+                personas_to_test
+            ), "Chat history should persist across persona switches"
 
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_persona_switching_workflow.webm')
+                    video.save_as(
+                        "test-results/videos/test_persona_switching_workflow.webm"
+                    )
             except Exception:
                 pass
             context.close()
@@ -108,7 +114,9 @@ def test_error_recovery_scenarios(chainlit_server):
             page.wait_for_timeout(2000)
 
             # Should not crash the application
-            assert page.url.startswith("http"), "Application should remain functional after long message"
+            assert page.url.startswith(
+                "http"
+            ), "Application should remain functional after long message"
 
             # Test 2: Special characters and potential XSS
             special_chars_message = "<script>alert('test')</script> What about CWE-79?"
@@ -129,7 +137,9 @@ def test_error_recovery_scenarios(chainlit_server):
                     except Exception:
                         # Fallback to text if inner_html is unavailable
                         html = messages.nth(i).text_content() or ""
-                    assert "<script" not in (html or "").lower(), "Script tags should be sanitized in message content"
+                    assert (
+                        "<script" not in (html or "").lower()
+                    ), "Script tags should be sanitized in message content"
             assert page.url.startswith("http"), "Application should remain functional"
 
             # Test 3: Rapid message sending (stress test)
@@ -149,15 +159,19 @@ def test_error_recovery_scenarios(chainlit_server):
                 page.wait_for_timeout(500)
 
             # Should gracefully handle empty messages
-            assert page.url.startswith("http"), "Application should handle empty messages"
+            assert page.url.startswith(
+                "http"
+            ), "Application should handle empty messages"
 
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_error_recovery_scenarios.webm')
+                    video.save_as(
+                        "test-results/videos/test_error_recovery_scenarios.webm"
+                    )
             except Exception:
                 pass
             context.close()
@@ -172,7 +186,7 @@ def test_mobile_responsive_ui(chainlit_server):
     mobile_devices = [
         {"name": "iPhone 12", "width": 390, "height": 844},
         {"name": "Samsung Galaxy S21", "width": 360, "height": 800},
-        {"name": "iPad Mini", "width": 768, "height": 1024}
+        {"name": "iPad Mini", "width": 768, "height": 1024},
     ]
 
     with sync_playwright() as p:
@@ -181,7 +195,7 @@ def test_mobile_responsive_ui(chainlit_server):
         for device in mobile_devices:
             context = browser.new_context(
                 viewport={"width": device["width"], "height": device["height"]},
-                record_video_dir="test-results/videos/"
+                record_video_dir="test-results/videos/",
             )
             page = context.new_page()
 
@@ -230,21 +244,25 @@ def test_mobile_responsive_ui(chainlit_server):
                             box = button.bounding_box()
                             if box:
                                 # Touch target should be at least 44x44px for accessibility
-                                assert box["height"] >= 32 or box["width"] >= 32, \
-                                    f"Interactive element should be large enough for touch on {device['name']}"
+                                assert (
+                                    box["height"] >= 32 or box["width"] >= 32
+                                ), f"Interactive element should be large enough for touch on {device['name']}"
 
                 # Test horizontal scrolling (should not be needed)
                 scroll_width = page.evaluate("document.body.scrollWidth")
-                assert scroll_width <= device["width"] + 20, \
-                    f"Content should not require horizontal scrolling on {device['name']}"
+                assert (
+                    scroll_width <= device["width"] + 20
+                ), f"Content should not require horizontal scrolling on {device['name']}"
 
             finally:
                 page.close()
                 try:
-                    os.makedirs('test-results/videos', exist_ok=True)
+                    os.makedirs("test-results/videos", exist_ok=True)
                     video = page.video
                     if video:
-                        video.save_as(f'test-results/videos/test_mobile_responsive_ui_{device["name"].replace(" ", "_")}.webm')
+                        video.save_as(
+                            f'test-results/videos/test_mobile_responsive_ui_{device["name"].replace(" ", "_")}.webm'
+                        )
                 except Exception:
                     pass
                 context.close()
@@ -285,7 +303,9 @@ def test_session_persistence_and_recovery(chainlit_server):
 
             # Capture initial state
             initial_content = page.content()
-            initial_messages_count = page.locator("[class*='message'], [data-testid*='message']").count()
+            initial_messages_count = page.locator(
+                "[class*='message'], [data-testid*='message']"
+            ).count()
 
             # Test browser refresh
             page.reload(wait_until="domcontentloaded", timeout=30000)
@@ -295,7 +315,9 @@ def test_session_persistence_and_recovery(chainlit_server):
             post_refresh_content = page.content()
 
             # At minimum, the application should remain functional
-            assert page.url.startswith("http"), "Application should remain functional after refresh"
+            assert page.url.startswith(
+                "http"
+            ), "Application should remain functional after refresh"
 
             # Find input again after refresh
             input_element = None
@@ -314,8 +336,9 @@ def test_session_persistence_and_recovery(chainlit_server):
 
                 # Should be able to continue conversation
                 final_content = page.content()
-                assert len(final_content) > len(post_refresh_content), \
-                    "Should be able to continue conversation after refresh"
+                assert len(final_content) > len(
+                    post_refresh_content
+                ), "Should be able to continue conversation after refresh"
 
             # Test multiple tabs/sessions (if supported)
             second_page = context.new_page()
@@ -336,18 +359,24 @@ def test_session_persistence_and_recovery(chainlit_server):
                 page.wait_for_timeout(2000)
 
                 # Both sessions should remain functional
-                assert page.url.startswith("http"), "Original session should remain functional"
-                assert second_page.url.startswith("http"), "New session should be functional"
+                assert page.url.startswith(
+                    "http"
+                ), "Original session should remain functional"
+                assert second_page.url.startswith(
+                    "http"
+                ), "New session should be functional"
 
             second_page.close()
 
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_session_persistence_and_recovery.webm')
+                    video.save_as(
+                        "test-results/videos/test_session_persistence_and_recovery.webm"
+                    )
             except Exception:
                 pass
             context.close()
@@ -373,7 +402,9 @@ def test_performance_and_load_behavior(chainlit_server):
             load_time = time.time() - start_time
 
             # Initial load should be reasonable (under 10 seconds)
-            assert load_time < 10.0, f"Initial load took {load_time:.2f}s, should be under 10s"
+            assert (
+                load_time < 10.0
+            ), f"Initial load took {load_time:.2f}s, should be under 10s"
 
             # Find input
             input_element = None
@@ -392,7 +423,7 @@ def test_performance_and_load_behavior(chainlit_server):
                 "Explain SQL injection",
                 "List common vulnerabilities",
                 "How to prevent XSS?",
-                "Buffer overflow mitigation"
+                "Buffer overflow mitigation",
             ]
 
             response_times = []
@@ -429,11 +460,17 @@ def test_performance_and_load_behavior(chainlit_server):
                 max_response_time = max(response_times)
 
                 # Performance expectations (adjust based on your requirements)
-                assert avg_response_time < 30.0, f"Average response time {avg_response_time:.2f}s too slow"
-                assert max_response_time < 45.0, f"Max response time {max_response_time:.2f}s too slow"
+                assert (
+                    avg_response_time < 30.0
+                ), f"Average response time {avg_response_time:.2f}s too slow"
+                assert (
+                    max_response_time < 45.0
+                ), f"Max response time {max_response_time:.2f}s too slow"
 
             # Test memory usage stability (check for obvious memory leaks)
-            initial_memory = page.evaluate("performance.memory ? performance.memory.usedJSHeapSize : 0")
+            initial_memory = page.evaluate(
+                "performance.memory ? performance.memory.usedJSHeapSize : 0"
+            )
 
             # Generate some load
             for i in range(10):
@@ -443,20 +480,26 @@ def test_performance_and_load_behavior(chainlit_server):
 
             page.wait_for_timeout(5000)  # Let things settle
 
-            final_memory = page.evaluate("performance.memory ? performance.memory.usedJSHeapSize : 0")
+            final_memory = page.evaluate(
+                "performance.memory ? performance.memory.usedJSHeapSize : 0"
+            )
 
             if initial_memory > 0 and final_memory > 0:
                 memory_growth = (final_memory - initial_memory) / initial_memory
                 # Memory should not grow excessively (>100% growth might indicate leak)
-                assert memory_growth < 1.0, f"Memory grew {memory_growth:.2%}, possible memory leak"
+                assert (
+                    memory_growth < 1.0
+                ), f"Memory grew {memory_growth:.2%}, possible memory leak"
 
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_performance_and_load_behavior.webm')
+                    video.save_as(
+                        "test-results/videos/test_performance_and_load_behavior.webm"
+                    )
             except Exception:
                 pass
             context.close()
@@ -480,8 +523,12 @@ def test_accessibility_compliance(chainlit_server):
             # Test 1: Keyboard navigation
             page.keyboard.press("Tab")  # Should focus first interactive element
             focused_element = page.evaluate("document.activeElement.tagName")
-            assert focused_element in ["BUTTON", "INPUT", "TEXTAREA", "A"], \
-                "Tab should focus on interactive element"
+            assert focused_element in [
+                "BUTTON",
+                "INPUT",
+                "TEXTAREA",
+                "A",
+            ], "Tab should focus on interactive element"
 
             # Test 2: Screen reader support
             # Check for proper heading structure
@@ -498,7 +545,9 @@ def test_accessibility_compliance(chainlit_server):
                 if input_elem.is_visible():
                     # Should have label, placeholder, or aria-label
                     has_label = input_elem.get_attribute("aria-label") is not None
-                    has_placeholder = input_elem.get_attribute("placeholder") is not None
+                    has_placeholder = (
+                        input_elem.get_attribute("placeholder") is not None
+                    )
 
                     # Check for associated label
                     input_id = input_elem.get_attribute("id")
@@ -507,8 +556,9 @@ def test_accessibility_compliance(chainlit_server):
                         label = page.locator(f"label[for='{input_id}']")
                         has_associated_label = label.count() > 0
 
-                    assert has_label or has_placeholder or has_associated_label, \
-                        "Form inputs should have accessible labels"
+                    assert (
+                        has_label or has_placeholder or has_associated_label
+                    ), "Form inputs should have accessible labels"
 
             # Test 4: Color contrast (basic check)
             # Check that text is visible (not white on white, etc.)
@@ -524,8 +574,12 @@ def test_accessibility_compliance(chainlit_server):
                 first_button.focus()
 
                 # Should have focus indicator (outline, box-shadow, etc.)
-                outline = page.evaluate("getComputedStyle(document.querySelector('button:focus')).outline")
-                box_shadow = page.evaluate("getComputedStyle(document.querySelector('button:focus')).boxShadow")
+                outline = page.evaluate(
+                    "getComputedStyle(document.querySelector('button:focus')).outline"
+                )
+                box_shadow = page.evaluate(
+                    "getComputedStyle(document.querySelector('button:focus')).boxShadow"
+                )
 
                 # At least one focus indicator should be present
                 has_focus_indicator = outline != "none" or box_shadow != "none"
@@ -545,16 +599,20 @@ def test_accessibility_compliance(chainlit_server):
 
             # Test 7: Skip links for screen readers
             # Check for skip navigation links
-            skip_links = page.locator("a[href*='#main'], a[href*='#content'], a:has-text('Skip')")
+            skip_links = page.locator(
+                "a[href*='#main'], a[href*='#content'], a:has-text('Skip')"
+            )
             # Skip links are good practice but not always required for simple apps
 
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_accessibility_compliance.webm')
+                    video.save_as(
+                        "test-results/videos/test_accessibility_compliance.webm"
+                    )
             except Exception:
                 pass
             context.close()
@@ -593,7 +651,9 @@ def test_real_world_user_workflows(chainlit_server):
                 page.wait_for_timeout(1000)
 
             # Step 1: Ask about a specific vulnerability
-            input_element.fill("I found CWE-89 in our code review. What exactly is this?")
+            input_element.fill(
+                "I found CWE-89 in our code review. What exactly is this?"
+            )
             input_element.press("Enter")
             page.wait_for_timeout(4000)
 
@@ -614,12 +674,16 @@ def test_real_world_user_workflows(chainlit_server):
                 page.wait_for_timeout(1000)
 
             # Step 1: Assess severity
-            input_element.fill("We have a CWE-787 buffer overflow. How critical is this?")
+            input_element.fill(
+                "We have a CWE-787 buffer overflow. How critical is this?"
+            )
             input_element.press("Enter")
             page.wait_for_timeout(4000)
 
             # Step 2: Ask about business impact
-            input_element.fill("What should we tell our customers about this vulnerability?")
+            input_element.fill(
+                "What should we tell our customers about this vulnerability?"
+            )
             input_element.press("Enter")
             page.wait_for_timeout(4000)
 
@@ -629,8 +693,8 @@ def test_real_world_user_workflows(chainlit_server):
                 'button[aria-label*="Settings"]',
                 '[data-testid="settings-button"]',
                 'button:has-text("Settings")',
-                '.gear-icon',
-                '[title*="Settings"]'
+                ".gear-icon",
+                '[title*="Settings"]',
             ]
 
             settings_opened = False
@@ -649,7 +713,7 @@ def test_real_world_user_workflows(chainlit_server):
                 detail_selectors = [
                     "select:has-option('detailed')",
                     "button:has-text('detailed')",
-                    "input[value='detailed']"
+                    "input[value='detailed']",
                 ]
 
                 for selector in detail_selectors:
@@ -666,29 +730,42 @@ def test_real_world_user_workflows(chainlit_server):
                 page.wait_for_timeout(500)
 
             # Test that conversation continues smoothly after settings changes
-            input_element.fill("Can you provide more detailed information about CWE-79?")
+            input_element.fill(
+                "Can you provide more detailed information about CWE-79?"
+            )
             input_element.press("Enter")
             page.wait_for_timeout(4000)
 
             # Verify the conversation has substantial content
             final_content = page.content()
-            assert len(final_content) > 5000, "Should have substantial conversation content"
+            assert (
+                len(final_content) > 5000
+            ), "Should have substantial conversation content"
 
             # Verify no obvious errors in the UI
-            error_indicators = page.locator("text=Error, text=error, text=failed, .error")
-            visible_errors = [err for i in range(error_indicators.count())
-                           if error_indicators.nth(i).is_visible()]
+            error_indicators = page.locator(
+                "text=Error, text=error, text=failed, .error"
+            )
+            visible_errors = [
+                err
+                for i in range(error_indicators.count())
+                if error_indicators.nth(i).is_visible()
+            ]
 
             # Allow for some system messages that might contain "error" in context
-            assert len(visible_errors) < 3, f"Should not have many visible errors: {len(visible_errors)}"
+            assert (
+                len(visible_errors) < 3
+            ), f"Should not have many visible errors: {len(visible_errors)}"
 
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_real_world_user_workflows.webm')
+                    video.save_as(
+                        "test-results/videos/test_real_world_user_workflows.webm"
+                    )
             except Exception:
                 pass
             context.close()

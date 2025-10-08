@@ -12,7 +12,7 @@ import asyncio
 import logging
 import os
 import uuid
-from typing import Any, List, Optional, Tuple, cast
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 
@@ -29,7 +29,7 @@ def validate_gemini_environment() -> bool:
     Raises:
         ValueError: If API key is missing or invalid
     """
-    api_key = os.getenv('GEMINI_API_KEY')
+    api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
         raise ValueError(
@@ -129,7 +129,7 @@ class CWEEmbedder:
                 if attempt == retries - 1:
                     # Return zero vector on final failure
                     return np.zeros(self.embedding_dimension, dtype=np.float32)
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                await asyncio.sleep(2**attempt)  # Exponential backoff
         # Should not be reached, but for type safety
         return np.zeros(self.embedding_dimension, dtype=np.float32)
 
@@ -138,7 +138,9 @@ class CWEEmbedder:
         # Use hash of text to generate consistent embeddings
         text_hash = hash(text) % (2**32)
         np.random.seed(text_hash)
-        embedding = np.random.rand(self.embedding_dimension).astype(np.float32) # DevSkim: ignore DS148264
+        embedding = np.random.rand(self.embedding_dimension).astype(
+            np.float32
+        )  # DevSkim: ignore DS148264
         # Normalize to unit vector
         norm = np.linalg.norm(embedding)
         if norm > 0:
@@ -163,7 +165,7 @@ class GeminiEmbedder:
         Raises:
             ValueError: If API key is missing or invalid
         """
-        api_key = api_key or os.getenv('GEMINI_API_KEY')
+        api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError(
                 "GEMINI_API_KEY environment variable is required for Gemini embeddings. "
@@ -173,7 +175,9 @@ class GeminiEmbedder:
         # Security: Generate correlation ID for error tracking without exposing API key (HIGH-001)
         self.correlation_id = str(uuid.uuid4())[:8]
         self.is_local_model = False
-        self.embedding_dimension = 3072  # Requested 3072D for enhanced semantic precision
+        self.embedding_dimension = (
+            3072  # Requested 3072D for enhanced semantic precision
+        )
         logger.info(f"GeminiEmbedder initialized (correlation: {self.correlation_id})")
 
         # Configure the Gemini API
@@ -181,6 +185,7 @@ class GeminiEmbedder:
             # Optional dependency; ignore Pylance missing import in environments
             # where google-generativeai isn't installed.
             import google.generativeai as genai  # type: ignore[reportMissingImports]
+
             # Avoid private/exported attribute warnings by using getattr.
             configure_fn = getattr(genai, "configure", None)
             if callable(configure_fn):
@@ -231,16 +236,19 @@ class GeminiEmbedder:
 
             # Make API call with gemini-embedding-001 (native 3072D support)
             result: Any = self.genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=sanitized_text
+                model="models/gemini-embedding-001", content=sanitized_text
             )
 
             # Extract embedding from response
             # google-generativeai typically returns {'embedding': {'values': [...]}}
-            embedding_payload: Any = result.get('embedding') if hasattr(result, 'get') else result['embedding']
+            embedding_payload: Any = (
+                result.get("embedding")
+                if hasattr(result, "get")
+                else result["embedding"]
+            )
             embedding_list = (
-                embedding_payload.get('values')
-                if isinstance(embedding_payload, dict) and 'values' in embedding_payload
+                embedding_payload.get("values")
+                if isinstance(embedding_payload, dict) and "values" in embedding_payload
                 else embedding_payload
             )
             embedding = np.array(embedding_list, dtype=np.float32)
@@ -257,7 +265,9 @@ class GeminiEmbedder:
         except Exception as e:
             # Security: Use correlation ID instead of API key for error tracking (HIGH-001)
             error_type = type(e).__name__
-            logger.error(f"Gemini API error (correlation: {self.correlation_id}): {error_type}")
+            logger.error(
+                f"Gemini API error (correlation: {self.correlation_id}): {error_type}"
+            )
             raise Exception(f"Gemini API error (correlation: {self.correlation_id})")
 
     def embed_batch(self, texts: List[str], max_workers: int = 5) -> List[np.ndarray]:
@@ -283,9 +293,13 @@ class GeminiEmbedder:
 
             if not valid_texts:
                 logger.warning("No valid texts provided for batch embedding")
-                return [np.zeros(self.embedding_dimension, dtype=np.float32) for _ in texts]
+                return [
+                    np.zeros(self.embedding_dimension, dtype=np.float32) for _ in texts
+                ]
 
-            logger.info(f"Generating Gemini embeddings for {len(valid_texts)} texts (max_workers={max_workers})")
+            logger.info(
+                f"Generating Gemini embeddings for {len(valid_texts)} texts (max_workers={max_workers})"
+            )
 
             # Choose strategy based on batch size
             if len(valid_texts) <= 10:
@@ -299,7 +313,9 @@ class GeminiEmbedder:
             logger.error(f"Failed to generate batch embeddings: {e}")
             raise
 
-    def _embed_batch_sequential(self, texts: List[str], smart_delay: bool = True) -> List[np.ndarray]:
+    def _embed_batch_sequential(
+        self, texts: List[str], smart_delay: bool = True
+    ) -> List[np.ndarray]:
         """Sequential embedding with smart delay strategy."""
         import time
 
@@ -312,7 +328,7 @@ class GeminiEmbedder:
                 if smart_delay and i > 0:
                     if consecutive_failures > 0:
                         # Exponential backoff after failures
-                        delay = min(0.5 * (2 ** consecutive_failures), 5.0)
+                        delay = min(0.5 * (2**consecutive_failures), 5.0)
                         time.sleep(delay)
                     elif i % 20 == 0:
                         # Small delay every 20 requests to be respectful
@@ -333,7 +349,9 @@ class GeminiEmbedder:
 
         return embeddings
 
-    def _embed_batch_parallel(self, texts: List[str], max_workers: int) -> List[np.ndarray]:
+    def _embed_batch_parallel(
+        self, texts: List[str], max_workers: int
+    ) -> List[np.ndarray]:
         """Parallel embedding using thread pool with rate limiting."""
         import concurrent.futures
         import time
@@ -343,7 +361,9 @@ class GeminiEmbedder:
             np.zeros(self.embedding_dimension, dtype=np.float32) for _ in texts
         ]
 
-        def embed_with_retry(args: Tuple[int, str]) -> Tuple[int, np.ndarray, Optional[Exception]]:
+        def embed_with_retry(
+            args: Tuple[int, str]
+        ) -> Tuple[int, np.ndarray, Optional[Exception]]:
             index, text = args
             max_retries = 3
             base_delay = 0.1
@@ -353,20 +373,24 @@ class GeminiEmbedder:
                     # Add jitter to prevent thundering herd
                     if attempt > 0:
                         jitter = 0.1 * (hash(text) % 10) / 10
-                        time.sleep(base_delay * (2 ** attempt) + jitter)
+                        time.sleep(base_delay * (2**attempt) + jitter)
 
                     embedding = self.embed_text(text)
                     return (index, embedding, None)
                 except Exception as e:
                     if attempt == max_retries - 1:
-                        logger.error(f"Failed to embed text {index} after {max_retries} attempts: {e}")
+                        logger.error(
+                            f"Failed to embed text {index} after {max_retries} attempts: {e}"
+                        )
                         return (
                             index,
                             np.zeros(self.embedding_dimension, dtype=np.float32),
                             e,
                         )
                     else:
-                        logger.warning(f"Embedding attempt {attempt + 1} failed for text {index}: {e}")
+                        logger.warning(
+                            f"Embedding attempt {attempt + 1} failed for text {index}: {e}"
+                        )
 
             # Fallback to satisfy type checker; should be unreachable
             return (
@@ -396,6 +420,8 @@ class GeminiEmbedder:
                 except Exception as e:
                     index = future_to_index[future]
                     logger.error(f"Unexpected error processing text {index}: {e}")
-                    embeddings[index] = np.zeros(self.embedding_dimension, dtype=np.float32)
+                    embeddings[index] = np.zeros(
+                        self.embedding_dimension, dtype=np.float32
+                    )
 
         return embeddings

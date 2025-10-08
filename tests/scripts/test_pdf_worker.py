@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 """Test PDF worker with local OIDC tokens"""
-import subprocess
-import requests
 import json
+import subprocess
 from pathlib import Path
+
+import requests
 
 FUNCTION_URL = "https://pdf-worker-bmgj6wj65a-uc.a.run.app"
 SA = "cwe-chatbot-run-sa@cwechatbot.iam.gserviceaccount.com"
 FIXTURES_DIR = Path(__file__).parent / "tests" / "fixtures"
 
+
 def get_token():
     """Get OIDC token via service account impersonation"""
     result = subprocess.run(
         [
-            "gcloud", "auth", "print-identity-token",
+            "gcloud",
+            "auth",
+            "print-identity-token",
             f"--impersonate-service-account={SA}",
-            f"--audiences={FUNCTION_URL}"
+            f"--audiences={FUNCTION_URL}",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
     if result.returncode != 0:
         print(f"STDERR: {result.stderr}")
@@ -26,7 +30,10 @@ def get_token():
         raise RuntimeError(f"Failed to get token: {result.stderr}")
 
     # Return only the token (skip WARNING lines)
-    return [line for line in result.stdout.strip().split('\n') if line.startswith('eyJ')][0]
+    return [
+        line for line in result.stdout.strip().split("\n") if line.startswith("eyJ")
+    ][0]
+
 
 def test_unauthenticated():
     """Test 1: Unauthenticated request (expect 403)"""
@@ -36,29 +43,28 @@ def test_unauthenticated():
     assert resp.status_code == 403, f"Expected 403, got {resp.status_code}"
     print("✅ PASS\n")
 
+
 def test_get_with_auth(token):
     """Test 2: GET with auth (expect 405 Method Not Allowed)"""
     print("=== Test 2: GET with auth (expect 405 Method Not Allowed) ===")
-    resp = requests.get(
-        FUNCTION_URL,
-        headers={"Authorization": f"Bearer {token}"}
-    )
+    resp = requests.get(FUNCTION_URL, headers={"Authorization": f"Bearer {token}"})
     print(f"Status: {resp.status_code}")
     assert resp.status_code == 405, f"Expected 405, got {resp.status_code}"
     print("✅ PASS\n")
+
 
 def test_sample_pdf(token):
     """Test 3: POST with sample.pdf (expect 200 with JSON)"""
     print("=== Test 3: POST with sample.pdf (expect 200 with JSON) ===")
     pdf_path = FIXTURES_DIR / "sample.pdf"
-    with open(pdf_path, 'rb') as f:
+    with open(pdf_path, "rb") as f:
         resp = requests.post(
             FUNCTION_URL,
             headers={
                 "Authorization": f"Bearer {token}",
-                "Content-Type": "application/pdf"
+                "Content-Type": "application/pdf",
             },
-            data=f.read()
+            data=f.read(),
         )
     print(f"Status: {resp.status_code}")
     if resp.status_code == 200:
@@ -73,35 +79,37 @@ def test_sample_pdf(token):
         print(f"Response: {resp.text[:200]}")
         raise AssertionError(f"Expected 200, got {resp.status_code}")
 
+
 def test_encrypted_pdf(token):
     """Test 4: POST with encrypted.pdf (expect 422)"""
     print("=== Test 4: POST with encrypted.pdf (expect 422) ===")
     pdf_path = FIXTURES_DIR / "encrypted.pdf"
-    with open(pdf_path, 'rb') as f:
+    with open(pdf_path, "rb") as f:
         resp = requests.post(
             FUNCTION_URL,
             headers={
                 "Authorization": f"Bearer {token}",
-                "Content-Type": "application/pdf"
+                "Content-Type": "application/pdf",
             },
-            data=f.read()
+            data=f.read(),
         )
     print(f"Status: {resp.status_code}")
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}"
     print("✅ PASS\n")
 
+
 def test_scanned_pdf(token):
     """Test 5: POST with scanned.pdf (expect 422 or 200 with empty/minimal text)"""
     print("=== Test 5: POST with scanned.pdf (expect 422 or 200) ===")
     pdf_path = FIXTURES_DIR / "scanned.pdf"
-    with open(pdf_path, 'rb') as f:
+    with open(pdf_path, "rb") as f:
         resp = requests.post(
             FUNCTION_URL,
             headers={
                 "Authorization": f"Bearer {token}",
-                "Content-Type": "application/pdf"
+                "Content-Type": "application/pdf",
             },
-            data=f.read()
+            data=f.read(),
         )
     print(f"Status: {resp.status_code}")
     if resp.status_code == 200:
@@ -112,6 +120,7 @@ def test_scanned_pdf(token):
         print("✅ PASS (422 for image-only PDF is acceptable)\n")
     else:
         raise AssertionError(f"Expected 200 or 422, got {resp.status_code}")
+
 
 if __name__ == "__main__":
     try:
@@ -129,9 +138,9 @@ if __name__ == "__main__":
         test_encrypted_pdf(token)
         test_scanned_pdf(token)
 
-        print("="*60)
+        print("=" * 60)
         print("ALL TESTS PASSED ✅")
-        print("="*60)
+        print("=" * 60)
 
     except Exception as e:
         print(f"\n❌ TEST FAILED: {e}")

@@ -3,9 +3,10 @@ E2E test: update settings via the gear panel and verify confirmation message app
 Skips if settings panel cannot be interacted with in this environment.
 """
 
+import os
+
 import pytest
 from playwright.sync_api import sync_playwright
-import os
 
 
 @pytest.mark.e2e
@@ -51,7 +52,7 @@ def test_settings_update_confirmation(chainlit_server):
 
             # Close panel and look for confirmation message
             try:
-                page.keyboard.press('Escape')
+                page.keyboard.press("Escape")
             except Exception:
                 pass
 
@@ -63,10 +64,12 @@ def test_settings_update_confirmation(chainlit_server):
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_settings_update_confirmation.webm')
+                    video.save_as(
+                        "test-results/videos/test_settings_update_confirmation.webm"
+                    )
             except Exception:
                 pass
             context.close()

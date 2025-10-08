@@ -1,8 +1,9 @@
 # apps/cwe_ingestion/tests/unit/test_embedder.py
 
+import os
+
 import numpy as np
 import pytest
-import os
 
 
 def test_cwe_embedder_class_exists():
@@ -59,7 +60,7 @@ def test_cwe_embed_batch_processes_multiple_texts():
     test_texts = [
         "Cross-site Scripting vulnerability",
         "SQL Injection vulnerability",
-        "Buffer overflow in C applications"
+        "Buffer overflow in C applications",
     ]
 
     embeddings = embedder.embed_batch(test_texts)
@@ -104,17 +105,19 @@ def test_gemini_embedder_requires_api_key():
     from apps.cwe_ingestion.embedder import GeminiEmbedder
 
     # Clear API key for this test
-    original_key = os.environ.get('GEMINI_API_KEY')
-    if 'GEMINI_API_KEY' in os.environ:
-        del os.environ['GEMINI_API_KEY']
+    original_key = os.environ.get("GEMINI_API_KEY")
+    if "GEMINI_API_KEY" in os.environ:
+        del os.environ["GEMINI_API_KEY"]
 
     try:
-        with pytest.raises(ValueError, match="GEMINI_API_KEY environment variable is required"):
+        with pytest.raises(
+            ValueError, match="GEMINI_API_KEY environment variable is required"
+        ):
             GeminiEmbedder()
     finally:
         # Restore original key
         if original_key:
-            os.environ['GEMINI_API_KEY'] = original_key
+            os.environ["GEMINI_API_KEY"] = original_key
 
 
 def test_gemini_embedder_configuration():

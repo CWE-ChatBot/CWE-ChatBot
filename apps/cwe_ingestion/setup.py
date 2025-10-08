@@ -4,7 +4,7 @@ Setup script for CWE Ingestion package.
 This package provides data models and database utilities for CWE corpus processing.
 """
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="cwe-ingestion",

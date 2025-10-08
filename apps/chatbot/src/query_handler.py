@@ -5,11 +5,12 @@ Integrates with existing production hybrid retrieval system from Story 1.5.
 """
 
 import asyncio
-import logging
 import os
-from typing import Dict, List, Any, Optional, TypedDict, Literal
-from src.security.secure_logging import get_secure_logger
+from typing import Any, Dict, List, Literal, Optional, TypedDict
+
 from src.processing.query_processor import QueryProcessor
+from src.security.secure_logging import get_secure_logger
+
 # Processing components moved to ProcessingPipeline
 # from src.processing.confidence_calculator import ConfidenceCalculator, create_aggregated_cwe
 # from src.processing.cwe_filter import CWEFilter, create_default_filter
@@ -18,15 +19,17 @@ from src.processing.query_processor import QueryProcessor
 
 # Prefer a clean package import; fall back to legacy path if package is unavailable
 try:  # minimal path when cwe_ingestion is installed
-    from cwe_ingestion.pg_chunk_store import PostgresChunkStore  # type: ignore
     from cwe_ingestion.embedder import GeminiEmbedder  # type: ignore
+    from cwe_ingestion.pg_chunk_store import PostgresChunkStore  # type: ignore
 except Exception:  # fallback to legacy repo layout/env var
-    import os, sys
+    import os
+    import sys
+
     ingestion_path = os.getenv("CWE_INGESTION_PATH")
     if ingestion_path and os.path.isdir(ingestion_path):
         sys.path.insert(0, ingestion_path)
-        from pg_chunk_store import PostgresChunkStore  # type: ignore
         from embedder import GeminiEmbedder  # type: ignore
+        from pg_chunk_store import PostgresChunkStore  # type: ignore
     else:  # pragma: no cover
         raise
 
@@ -35,17 +38,19 @@ logger = get_secure_logger(__name__)
 
 class Recommendation(TypedDict):
     """Unified recommendation format for CWE suggestions."""
+
     cwe_id: str
     name: str
     confidence: float
     level: Literal["High", "Medium", "Low", "Very Low"]
-    explanation: Dict[str, Any]        # {"snippets":[...], "bullets":[...]}
-    top_chunks: List[Dict[str, Any]]   # server-side only
+    explanation: Dict[str, Any]  # {"snippets":[...], "bullets":[...]}
+    top_chunks: List[Dict[str, Any]]  # server-side only
     relationships: Optional[Dict[str, Any]]
 
 
 class QueryResult(TypedDict):
     """Complete query processing result."""
+
     recommendations: List[Recommendation]
     low_confidence: bool
     improvement_guidance: Optional[Dict[str, Any]]
@@ -60,7 +65,13 @@ class CWEQueryHandler:
     - GeminiEmbedder: Production Gemini embeddings (3072D)
     """
 
-    def __init__(self, database_url: str, gemini_api_key: str, hybrid_weights: Optional[Dict[str, float]] = None, engine=None) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        gemini_api_key: str,
+        hybrid_weights: Optional[Dict[str, float]] = None,
+        engine: Any = None,
+    ) -> None:
         """
         Initialize handler with Story 1.5 production components.
 
@@ -74,14 +85,22 @@ class CWEQueryHandler:
             # Use existing production components from Story 1.5
             # Use dependency injection: prefer engine (Cloud SQL) over database_url (local/proxy)
             # Skip schema initialization in Cloud Run - schema already exists from ingestion pipeline
-            skip_schema = engine is not None  # Skip when using Cloud SQL (production Cloud Run)
+            skip_schema = (
+                engine is not None
+            )  # Skip when using Cloud SQL (production Cloud Run)
 
             if engine is not None:
-                logger.info("Using SQLAlchemy engine for Cloud SQL Connector (skipping schema init)")
-                self.store = PostgresChunkStore(dims=3072, engine=engine, skip_schema_init=skip_schema)
+                logger.info(
+                    "Using SQLAlchemy engine for Cloud SQL Connector (skipping schema init)"
+                )
+                self.store = PostgresChunkStore(
+                    dims=3072, engine=engine, skip_schema_init=skip_schema
+                )
             else:
                 logger.info("Using psycopg with database URL")
-                self.store = PostgresChunkStore(dims=3072, database_url=database_url, skip_schema_init=skip_schema)
+                self.store = PostgresChunkStore(
+                    dims=3072, database_url=database_url, skip_schema_init=skip_schema
+                )
 
             self.embedder = GeminiEmbedder(api_key=gemini_api_key)
 
@@ -93,20 +112,27 @@ class CWEQueryHandler:
             # Store hybrid weights (use provided weights or fall back to config defaults)
             if hybrid_weights is None:
                 from src.app_config import config
+
                 self.hybrid_weights = config.get_hybrid_weights()
             else:
                 self.hybrid_weights = hybrid_weights
 
-            logger.info("CWEQueryHandler initialized with Story 1.5 production infrastructure")
+            logger.info(
+                "CWEQueryHandler initialized with Story 1.5 production infrastructure"
+            )
             logger.info(f"RRF weights: {self.hybrid_weights}")
 
             # Verify database connection (skip if SKIP_DB_STATS=true for quick deployment)
-            if os.getenv('SKIP_DB_STATS', '').lower() != 'true':
+            if os.getenv("SKIP_DB_STATS", "").lower() != "true":
                 stats = self.store.get_collection_stats()
-                logger.info(f"Connected to production database: {stats['count']} chunks available")
+                logger.info(
+                    f"Connected to production database: {stats['count']} chunks available"
+                )
 
-                if stats['count'] == 0:
-                    logger.warning("Production database appears empty. Verify Story 1.5 ingestion completed.")
+                if stats["count"] == 0:
+                    logger.warning(
+                        "Production database appears empty. Verify Story 1.5 ingestion completed."
+                    )
             else:
                 logger.warning("Skipping database stats check (SKIP_DB_STATS=true)")
 
@@ -137,20 +163,25 @@ class CWEQueryHandler:
         """
         try:
             import time
+
             query_start = time.time()
 
-            logger.info(f"Processing query: '{query[:50]}...' for persona: {user_context.get('persona', 'unknown')}")
+            logger.info(
+                f"Processing query: '{query[:50]}...' for persona: {user_context.get('persona', 'unknown')}"
+            )
 
             # Use QueryProcessor to properly extract CWE IDs and analyze query
             query_analysis = self.query_processor.preprocess_query(query)
-            extracted_cwe_ids = query_analysis.get('cwe_ids', set())
+            extracted_cwe_ids = query_analysis.get("cwe_ids", set())
             logger.debug(f"Extracted CWE IDs: {extracted_cwe_ids}")
 
             # Generate embedding using existing Gemini embedder from Story 1.5 (non-blocking)
             embed_start = time.time()
             query_embedding = await asyncio.to_thread(self.embedder.embed_text, query)
             embed_time = (time.time() - embed_start) * 1000
-            logger.info(f"✓ Embedding generated: {len(query_embedding)}D in {embed_time:.1f}ms")
+            logger.info(
+                f"✓ Embedding generated: {len(query_embedding)}D in {embed_time:.1f}ms"
+            )
 
             # Use centralized hybrid weights from Config (Story 1.5 validated weights)
             weights = hybrid_weights_override or self.hybrid_weights
@@ -162,13 +193,14 @@ class CWEQueryHandler:
                 "query_embedding": query_embedding,
                 "limit_chunks": 10,
                 "k_vec": 50,  # vector candidate pool size
-                **weights
+                **weights,
             }
 
             if section_boost:
                 # Pull boost value from centralized config
                 try:
                     from src.app_config import config
+
                     boost_value = getattr(config, "section_boost_value", 0.15)
                 except Exception:
                     boost_value = 0.15
@@ -183,22 +215,28 @@ class CWEQueryHandler:
 
             total_time = (time.time() - query_start) * 1000
 
-            logger.info(f"✓ Retrieved {len(results)} chunks in {db_time:.1f}ms (total: {total_time:.1f}ms)")
+            logger.info(
+                f"✓ Retrieved {len(results)} chunks in {db_time:.1f}ms (total: {total_time:.1f}ms)"
+            )
 
             # Log top results for debugging
             if results:
                 top_cwes = [r["metadata"]["cwe_id"] for r in results[:3]]
                 top_scores = [r["scores"]["hybrid"] for r in results[:3]]
-                logger.info(f"Top results: {list(zip(top_cwes, [f'{s:.2f}' for s in top_scores]))}")
+                logger.info(
+                    f"Top results: {list(zip(top_cwes, [f'{s:.2f}' for s in top_scores]))}"
+                )
 
-            return results
+            return list(results)
 
         except Exception as e:
             logger.log_exception("Query processing failed", e)
             # Return empty results on error to ensure graceful degradation
             return []
 
-    def fetch_canonical_sections_for_cwes(self, cwe_ids: List[str], limit_per_cwe: int = 3) -> List[Dict[str, Any]]:
+    def fetch_canonical_sections_for_cwes(
+        self, cwe_ids: List[str], limit_per_cwe: int = 3
+    ) -> List[Dict[str, Any]]:
         """
         Fetch canonical sections for specific CWE IDs. Used by ProcessingPipeline for business logic.
 
@@ -232,7 +270,9 @@ class CWEQueryHandler:
             logger.log_exception("Failed to get database stats", e)
             return {"count": 0, "error": str(e)}
 
-    def get_canonical_cwe_metadata(self, cwe_ids: List[str]) -> Dict[str, Dict[str, str]]:
+    def get_canonical_cwe_metadata(
+        self, cwe_ids: List[str]
+    ) -> Dict[str, Dict[str, str]]:
         """
         Fetch canonical CWE metadata (name, abstraction, status) from the embeddings table.
 
@@ -281,7 +321,7 @@ class CWEQueryHandler:
         except Exception as e:
             # Downgrade noise when tables are not present
             msg = str(e)
-            if 'UndefinedTable' in msg or 'undefined table' in msg.lower():
+            if "UndefinedTable" in msg or "undefined table" in msg.lower():
                 logger.info("Canonical CWE metadata table(s) not available; skipping")
             else:
                 logger.log_exception("Failed to fetch canonical CWE metadata", e)
@@ -321,7 +361,9 @@ class CWEQueryHandler:
                             }
                     except Exception as e:
                         # Table may not exist; log at info to avoid noise
-                        logger.info(f"Policy labels table not available or fetch failed: {e}")
+                        logger.info(
+                            f"Policy labels table not available or fetch failed: {e}"
+                        )
         except Exception:
             pass
         return labels
@@ -356,7 +398,9 @@ class CWEQueryHandler:
         except Exception as e:
             logger.log_exception("Error closing QueryHandler resources", e)
 
-    def _fetch_cwe_sections(self, cwe_id: str, *, limit: int = 3) -> List[Dict[str, Any]]:
+    def _fetch_cwe_sections(
+        self, cwe_id: str, *, limit: int = 3
+    ) -> List[Dict[str, Any]]:
         """Fetch top sections for a given CWE ID directly from the store.
         Returns chunks shaped like query_hybrid outputs.
         """
@@ -374,18 +418,32 @@ class CWEQueryHandler:
                         """,
                         (cwe_id.upper(), int(limit)),
                     )
-                    for (chunk_id, cid, section, section_rank, name, full_text) in cur.fetchall():
-                        rows.append({
-                            "chunk_id": str(chunk_id),
-                            "metadata": {
-                                "cwe_id": cid,
-                                "section": section,
-                                "section_rank": section_rank,
-                                "name": name,
-                            },
-                            "document": full_text,
-                            "scores": {"vec": 0.0, "fts": 0.0, "alias": 0.0, "hybrid": 0.0},
-                        })
+                    for (
+                        chunk_id,
+                        cid,
+                        section,
+                        section_rank,
+                        name,
+                        full_text,
+                    ) in cur.fetchall():
+                        rows.append(
+                            {
+                                "chunk_id": str(chunk_id),
+                                "metadata": {
+                                    "cwe_id": cid,
+                                    "section": section,
+                                    "section_rank": section_rank,
+                                    "name": name,
+                                },
+                                "document": full_text,
+                                "scores": {
+                                    "vec": 0.0,
+                                    "fts": 0.0,
+                                    "alias": 0.0,
+                                    "hybrid": 0.0,
+                                },
+                            }
+                        )
         except Exception as e:
             logger.log_exception("Forced CWE section fetch failed", e)
         return rows

@@ -4,24 +4,23 @@ UI Messaging Module - Modularized Chainlit UI components from main.py.
 Handles progressive disclosure, element creation, and UI interactions.
 """
 
-from typing import Dict, List, Any, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Literal
+
 import chainlit as cl
+from pydantic import BaseModel, Field
 
 
 class UISettings(BaseModel):
     """Pydantic Chat Settings for native UI."""
+
     detail_level: Literal["basic", "standard", "detailed"] = Field(
-        default="standard",
-        description="Level of detail in responses"
+        default="standard", description="Level of detail in responses"
     )
     include_examples: bool = Field(
-        default=True,
-        description="Include code examples and practical demonstrations"
+        default=True, description="Include code examples and practical demonstrations"
     )
     include_mitigations: bool = Field(
-        default=True,
-        description="Include prevention and mitigation guidance"
+        default=True, description="Include prevention and mitigation guidance"
     )
 
 
@@ -45,11 +44,13 @@ class UIMessaging:
             # Use Chainlit's Text element with expandable content
             return [
                 cl.Text(name="Summary", content=summary, display="inline"),
-                cl.Text(name="Detailed Information", content=remaining, display="side")
+                cl.Text(name="Detailed Information", content=remaining, display="side"),
             ]
         elif detail_level == "detailed":
             # Show full content with additional context
-            return [cl.Text(name="Detailed Response", content=content, display="inline")]
+            return [
+                cl.Text(name="Detailed Response", content=content, display="inline")
+            ]
         else:
             # Standard level - show full content normally
             return [cl.Text(name="Response", content=content, display="inline")]
@@ -67,17 +68,20 @@ class UIMessaging:
         for chunk in retrieved_chunks:
             cwe_id = chunk["metadata"]["cwe_id"]
             if cwe_id not in cwe_groups:
-                cwe_groups[cwe_id] = {
-                    "name": chunk["metadata"]["name"],
-                    "chunks": []
-                }
+                cwe_groups[cwe_id] = {"name": chunk["metadata"]["name"], "chunks": []}
             cwe_groups[cwe_id]["chunks"].append(chunk)
 
         # Create source elements for each CWE (skip evidence pseudo-source)
-        filtered = [(cid, info) for cid, info in cwe_groups.items() if cid not in ("EVIDENCE", "FILE")]
+        filtered = [
+            (cid, info)
+            for cid, info in cwe_groups.items()
+            if cid not in ("EVIDENCE", "FILE")
+        ]
         for cwe_id, cwe_info in filtered[:3]:  # Limit to top 3 CWEs
             # Get best scoring chunk for this CWE
-            best_chunk = max(cwe_info["chunks"], key=lambda x: x.get("scores", {}).get("hybrid", 0.0))
+            best_chunk = max(
+                cwe_info["chunks"], key=lambda x: x.get("scores", {}).get("hybrid", 0.0)
+            )
             score = best_chunk.get("scores", {}).get("hybrid", 0.0)
 
             # Create source content showing the CWE information
@@ -99,7 +103,7 @@ class UIMessaging:
             source_element = cl.Text(
                 name=f"Source: {cwe_id}",
                 content=source_content,
-                display="side"  # Display in sidebar
+                display="side",  # Display in sidebar
             )
             elements.append(source_element)
 
@@ -116,24 +120,18 @@ class UIMessaging:
         if len(preview) > 800:
             preview = preview[:800] + "..."
 
-        return cl.Text(
-            name="Uploaded Evidence",
-            content=preview,
-            display="side"
-        )
+        return cl.Text(name="Uploaded Evidence", content=preview, display="side")
 
     @staticmethod
     def apply_progressive_disclosure(
-        message: cl.Message,
-        ui_settings: Dict[str, Any],
-        elements: List[cl.Text]
+        message: cl.Message, ui_settings: Dict[str, Any], elements: List[cl.Text]
     ) -> List[cl.Text]:
         """
         Apply progressive disclosure to a message based on UI settings.
         Returns updated elements list.
         """
         detail_level = ui_settings.get("detail_level", "standard")
-        if detail_level == "basic" and hasattr(message, 'content'):
+        if detail_level == "basic" and hasattr(message, "content"):
             # Create progressive disclosure for long responses
             content = message.content
             if len(content) > 300:
@@ -146,16 +144,16 @@ class UIMessaging:
 
                 # Add detailed content as a side element
                 detail_element = cl.Text(
-                    name="Detailed Information",
-                    content=details,
-                    display="side"
+                    name="Detailed Information", content=details, display="side"
                 )
                 elements.append(detail_element)
 
         return elements
 
     @staticmethod
-    async def update_message_with_elements(message: cl.Message, elements: List[cl.Text]) -> None:
+    async def update_message_with_elements(
+        message: cl.Message, elements: List[Any]
+    ) -> None:
         """
         Update a Chainlit message with elements.
         Centralizes the message update pattern.
@@ -166,6 +164,6 @@ class UIMessaging:
 
 
 # Convenience function for backward compatibility
-def create_progressive_response(content: str, detail_level: str) -> List[cl.Text]:
+def create_progressive_response(content: str, detail_level: str) -> List[Any]:
     """Backward compatibility function."""
     return UIMessaging.create_progressive_response(content, detail_level)

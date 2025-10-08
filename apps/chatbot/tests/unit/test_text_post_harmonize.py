@@ -16,10 +16,10 @@ def test_harmonize_cwe_names_in_table_replaces_name_cells():
 
     out = harmonize_cwe_names_in_table(content, mapping, {})
     # Ensure the canonical names are present on the same lines as their CWE IDs
-    line_306 = next((ln for ln in out.splitlines() if 'CWE-306' in ln), '')
-    assert 'Missing Authentication for Critical Function' in line_306
-    line_79 = next((ln for ln in out.splitlines() if 'CWE-79' in ln), '')
-    assert 'Cross-site Scripting' in line_79
+    line_306 = next((ln for ln in out.splitlines() if "CWE-306" in ln), "")
+    assert "Missing Authentication for Critical Function" in line_306
+    line_79 = next((ln for ln in out.splitlines() if "CWE-79" in ln), "")
+    assert "Cross-site Scripting" in line_79
 
 
 def test_harmonize_cwe_names_in_tab_separated_rows():
@@ -38,6 +38,7 @@ def test_harmonize_cwe_names_in_tab_separated_rows():
     assert "CWE-306\t Missing Authentication for Critical Function\t" in out
     assert "CWE-79\t Cross-site Scripting\t" in out
 
+
 def test_harmonize_cwe_policy_in_table():
     content = (
         "| CWE ID | CWE Name | Confidence | CWE Abstraction Level | CWE Vulnerability Mapping Label | CWE-Vulnerability Mapping Notes |\n"
@@ -53,5 +54,5 @@ def test_harmonize_cwe_policy_in_table():
     }
 
     out = harmonize_cwe_names_in_table(content, id_to_name, id_to_policy)
-    line_287 = next((ln for ln in out.splitlines() if 'CWE-287' in ln), '')
-    assert '| Discouraged |' in line_287
+    line_287 = next((ln for ln in out.splitlines() if "CWE-287" in ln), "")
+    assert "| Discouraged |" in line_287

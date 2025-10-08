@@ -21,4 +21,3 @@ def test_session_context_smoke(monkeypatch):
     ctx.persona = "Developer"
     set_user_context(ctx)
     assert get_user_context().persona == "Developer"
-

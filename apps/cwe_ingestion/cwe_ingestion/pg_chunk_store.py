@@ -1,13 +1,15 @@
 # apps/cwe_ingestion/pg_chunk_store.py
-import os
-import logging
 import contextlib
+import logging
+import os
 import re
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
+
 import numpy as np
 
 try:
     import psycopg
+
     HAS_PSYCOPG = True
 except ImportError:
     # Allow import of this module even without psycopg for type definitions
@@ -17,6 +19,7 @@ except ImportError:
 try:
     import sqlalchemy as sa
     from sqlalchemy.engine import Engine
+
     HAS_SQLALCHEMY = True
 except ImportError:
     sa = None
@@ -98,11 +101,14 @@ class PostgresChunkStore:
                 cur.close()
             except Exception:
                 pass
-    def __init__(self,
-                 dims: int = 3072,
-                 database_url: Optional[str] = None,
-                 engine: Optional["Engine"] = None,
-                 skip_schema_init: bool = False):
+
+    def __init__(
+        self,
+        dims: int = 3072,
+        database_url: Optional[str] = None,
+        engine: Optional["Engine"] = None,
+        skip_schema_init: bool = False,
+    ):
         """
         Always reuse connections:
           - Prefer a pooled SQLAlchemy Engine (created here if not provided).
@@ -111,7 +117,9 @@ class PostgresChunkStore:
         self.dims = int(dims)
         self.database_url = database_url or os.environ.get("DATABASE_URL")
         self._engine: Optional["Engine"] = engine
-        self._persistent_conn = None  # psycopg connection kept open if engine is unavailable
+        self._persistent_conn = (
+            None  # psycopg connection kept open if engine is unavailable
+        )
 
         if not self.database_url and self._engine is None:
             raise ValueError("Either database_url or engine must be provided")
@@ -137,19 +145,26 @@ class PostgresChunkStore:
                     "pip install psycopg[binary]  OR  pip install sqlalchemy"
                 )
             # Lazy-open on first use inside _get_connection()
-            logger.info("Using single persistent psycopg connection (no SQLAlchemy engine detected)")
+            logger.info(
+                "Using single persistent psycopg connection (no SQLAlchemy engine detected)"
+            )
 
         # Initialize schema (skip if flag set - used in Cloud Run where schema already exists)
         if not skip_schema_init:
             self._ensure_schema()
         else:
-            logger.info("Skipping schema initialization (schema already exists from ingestion pipeline)")
+            logger.info(
+                "Skipping schema initialization (schema already exists from ingestion pipeline)"
+            )
 
     @property
     def _using_pg8000(self) -> bool:
         """True iff the SQLAlchemy engine is present and uses pg8000 driver."""
         try:
-            return self._engine is not None and getattr(self._engine.dialect, "driver", "") == "pg8000"
+            return (
+                self._engine is not None
+                and getattr(self._engine.dialect, "driver", "") == "pg8000"
+            )
         except Exception:
             return False
 
@@ -198,7 +213,9 @@ class PostgresChunkStore:
             try:
                 cur.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
             except Exception:
-                logger.warning("unaccent extension not available, continuing without it")
+                logger.warning(
+                    "unaccent extension not available, continuing without it"
+                )
 
             # Create table and indexes
             cur.execute(DDL_CHUNKED % {"dims": self.dims})
@@ -236,15 +253,17 @@ class PostgresChunkStore:
                 if self._using_pg8000:
                     emb = self._to_vector_literal(emb)
 
-                values.append((
-                    chunk["cwe_id"],
-                    chunk["section"],
-                    chunk["section_rank"],
-                    chunk["name"],
-                    chunk.get("alternate_terms_text", ""),
-                    chunk["full_text"],
-                    emb
-                ))
+                values.append(
+                    (
+                        chunk["cwe_id"],
+                        chunk["section"],
+                        chunk["section_rank"],
+                        chunk["name"],
+                        chunk.get("alternate_terms_text", ""),
+                        chunk["full_text"],
+                        emb,
+                    )
+                )
 
             # Batch insert with appropriate casting for pg8000
             if self._using_pg8000:
@@ -264,7 +283,9 @@ class PostgresChunkStore:
 
             # Update halfvec if available
             try:
-                cur.execute("UPDATE cwe_chunks SET embedding_halfvec = embedding::halfvec;")
+                cur.execute(
+                    "UPDATE cwe_chunks SET embedding_halfvec = embedding::halfvec;"
+                )
                 logger.info("Updated halfvec embeddings")
             except Exception:
                 pass
@@ -279,7 +300,7 @@ class PostgresChunkStore:
         query_embedding: List[float],
         query_text: str = "",
         limit: int = 5,
-        similarity_threshold: float = 0.1
+        similarity_threshold: float = 0.1,
     ) -> List[Dict[str, Any]]:
         """Perform hybrid search combining vector similarity and text search."""
         with self._get_connection() as conn, self._cursor(conn) as cur:
@@ -293,12 +314,12 @@ class PostgresChunkStore:
             if self._using_pg8000:
                 vec_param = self._to_vector_literal(qe)
                 halfvec_left = "%s::halfvec"
-                vector_left  = "%s::vector"
+                vector_left = "%s::vector"
             else:
                 vec_param = qe
                 # psycopg is fine with no cast, but explicit cast is also safe:
                 halfvec_left = "%s::halfvec"
-                vector_left  = "%s::vector"
+                vector_left = "%s::vector"
 
             # Prefer halfvec; if that errors, fall back to vector
             try:
@@ -327,9 +348,16 @@ class PostgresChunkStore:
                 LIMIT %s;
                 """
                 params = [
-                    vec_param, vec_param, (1.0 - similarity_threshold), vec_param, (limit * 2),
-                    query_text, query_text, query_text, (limit * 2),
-                    limit
+                    vec_param,
+                    vec_param,
+                    (1.0 - similarity_threshold),
+                    vec_param,
+                    (limit * 2),
+                    query_text,
+                    query_text,
+                    query_text,
+                    (limit * 2),
+                    limit,
                 ]
                 cur.execute(search_sql, params)
             except Exception:
@@ -359,9 +387,16 @@ class PostgresChunkStore:
                 LIMIT %s;
                 """
                 params = [
-                    vec_param, vec_param, (1.0 - similarity_threshold), vec_param, (limit * 2),
-                    query_text, query_text, query_text, (limit * 2),
-                    limit
+                    vec_param,
+                    vec_param,
+                    (1.0 - similarity_threshold),
+                    vec_param,
+                    (limit * 2),
+                    query_text,
+                    query_text,
+                    query_text,
+                    (limit * 2),
+                    limit,
                 ]
                 cur.execute(search_sql, params)
 
@@ -383,7 +418,9 @@ class PostgresChunkStore:
 
             # Check if halfvec is available
             try:
-                cur.execute("SELECT COUNT(*) FROM cwe_chunks WHERE embedding_halfvec IS NOT NULL;")
+                cur.execute(
+                    "SELECT COUNT(*) FROM cwe_chunks WHERE embedding_halfvec IS NOT NULL;"
+                )
                 halfvec_count = cur.fetchone()[0]
                 has_halfvec = halfvec_count > 0
             except Exception:
@@ -394,7 +431,7 @@ class PostgresChunkStore:
                 "unique_cwes": unique_cwes,
                 "unique_sections": unique_sections,
                 "has_halfvec_optimization": has_halfvec,
-                "dimensions": self.dims
+                "dimensions": self.dims,
             }
 
     def query_hybrid(
@@ -402,7 +439,7 @@ class PostgresChunkStore:
         query_text: str,
         query_embedding: List[float],
         limit_chunks: int = 10,
-        k_vec: int = 50,                 # vector candidate pool size
+        k_vec: int = 50,  # vector candidate pool size
         w_vec: float = 0.65,
         w_fts: float = 0.25,
         w_alias: float = 0.10,
@@ -429,18 +466,20 @@ class PostgresChunkStore:
         if self._using_pg8000:
             vec_param = self._to_vector_literal(qe)
             halfvec_cast = "%s::halfvec"
-            vector_cast  = "%s::vector"
+            vector_cast = "%s::vector"
         else:
             vec_param = qe
             halfvec_cast = "%s::halfvec"
-            vector_cast  = "%s::vector"
+            vector_cast = "%s::vector"
 
         def _begin_with_knn_hints(cur, ef_search: int = 32):
             """Apply transaction-scoped planner hints for HNSW KNN queries."""
             cur.execute("BEGIN;")
             cur.execute("SET LOCAL enable_seqscan = off;")
             cur.execute("SET LOCAL jit = off;")
-            cur.execute(f"SET LOCAL hnsw.ef_search = {ef_search};")  # Direct value, not parameter
+            cur.execute(
+                f"SET LOCAL hnsw.ef_search = {ef_search};"
+            )  # Direct value, not parameter
             cur.execute("SET LOCAL random_page_cost = 1.1;")
 
         # --- Try halfvec fast path; fallback to main vector column ---
@@ -509,17 +548,28 @@ LIMIT %s;
 """
             params = [
                 # vec
-                vec_param, k_vec,
+                vec_param,
+                k_vec,
                 # fts (guard + ts_rank + where + limit)
-                q_clean, q_clean, q_clean, k_vec,
+                q_clean,
+                q_clean,
+                q_clean,
+                k_vec,
                 # alias_hits (guard + two patterns)
-                q_clean, alias_pattern, alias_pattern,
+                q_clean,
+                alias_pattern,
+                alias_pattern,
                 # scored: vector distance again + fts tsquery + alias sim (3 variants)
                 vec_param,
                 q_clean,
-                q_clean, q_clean, q_clean,
+                q_clean,
+                q_clean,
+                q_clean,
                 # weights + limit
-                w_vec, w_fts, w_alias, limit_chunks,
+                w_vec,
+                w_fts,
+                w_alias,
+                limit_chunks,
             ]
             cur.execute(sql, params)
             rows = cur.fetchall()
@@ -540,15 +590,22 @@ SELECT
     ) cand) as total_candidates;
                 """
                 stats_params = [
-                    vec_param, k_vec,
-                    q_clean, q_clean, k_vec,
-                    q_clean, alias_pattern, alias_pattern
+                    vec_param,
+                    k_vec,
+                    q_clean,
+                    q_clean,
+                    k_vec,
+                    q_clean,
+                    alias_pattern,
+                    alias_pattern,
                 ]
                 cur.execute(stats_sql, stats_params)
                 stats_rows = cur.fetchall()
                 if stats_rows:
                     vec_cnt, fts_cnt, alias_cnt, total_cnt = stats_rows[0]
-                    logger.info(f"Candidate pooling: vec={vec_cnt}, fts={fts_cnt}, alias={alias_cnt}, total={total_cnt}")
+                    logger.info(
+                        f"Candidate pooling: vec={vec_cnt}, fts={fts_cnt}, alias={alias_cnt}, total={total_cnt}"
+                    )
             except Exception as e:
                 logger.debug(f"Could not log candidate stats: {e}")
 
@@ -622,13 +679,24 @@ ORDER BY hybrid_score DESC NULLS LAST
 LIMIT %s;
 """
                 params = [
-                    vec_param, k_vec,
-                    q_clean, q_clean, q_clean, k_vec,
-                    q_clean, alias_pattern, alias_pattern,
+                    vec_param,
+                    k_vec,
+                    q_clean,
+                    q_clean,
+                    q_clean,
+                    k_vec,
+                    q_clean,
+                    alias_pattern,
+                    alias_pattern,
                     vec_param,
                     q_clean,
-                    q_clean, q_clean, q_clean,
-                    w_vec, w_fts, w_alias, limit_chunks,
+                    q_clean,
+                    q_clean,
+                    q_clean,
+                    w_vec,
+                    w_fts,
+                    w_alias,
+                    limit_chunks,
                 ]
                 cur.execute(sql, params)
                 rows = cur.fetchall()
@@ -653,10 +721,10 @@ LIMIT %s;
                     "fts": float(r[7]) if r[7] is not None else 0.0,
                     "alias": float(r[8]) if r[8] is not None else 0.0,
                     "hybrid": float(r[9]),
-                }
+                },
             }
             if section_intent_boost and r[2] == section_intent_boost:
-                chunk["scores"]["hybrid"] *= (1.0 + section_boost_value)
+                chunk["scores"]["hybrid"] *= 1.0 + section_boost_value
             results.append(chunk)
 
         if section_intent_boost:

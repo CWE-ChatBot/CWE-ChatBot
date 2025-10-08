@@ -10,5 +10,5 @@ __all__ = [
     "UIMessaging",
     "UISettings",
     "create_progressive_response",
-    "create_chat_profiles"
+    "create_chat_profiles",
 ]

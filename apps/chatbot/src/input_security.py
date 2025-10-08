@@ -4,10 +4,10 @@ Security Input Sanitization - Story 2.1
 Provides input sanitization and validation to prevent prompt injection and other security attacks.
 """
 
+import logging
 import os
 import re
-import logging
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -30,33 +30,29 @@ class InputSanitizer:
         # Prompt injection patterns to detect and neutralize
         self.prompt_injection_patterns = [
             # Direct command injection attempts
-            r'ignore\s+(?:all\s+)?(?:previous\s+)?instructions?',
-            r'your\s+new\s+instructions?\s+are',
-            r'system\s*:\s*',
-            r'assistant\s*:\s*',
-            r'human\s*:\s*',
-
+            r"ignore\s+(?:all\s+)?(?:previous\s+)?instructions?",
+            r"your\s+new\s+instructions?\s+are",
+            r"system\s*:\s*",
+            r"assistant\s*:\s*",
+            r"human\s*:\s*",
             # Role-playing manipulation
-            r'pretend\s+(?:to\s+be|you\s+are)',
-            r'act\s+(?:as|like)\s+(?:a\s+)?',
-            r'roleplay\s+(?:as\s+)?',
-            r'simulate\s+(?:being\s+)?',
-
+            r"pretend\s+(?:to\s+be|you\s+are)",
+            r"act\s+(?:as|like)\s+(?:a\s+)?",
+            r"roleplay\s+(?:as\s+)?",
+            r"simulate\s+(?:being\s+)?",
             # System prompt exposure attempts
-            r'(?:show|tell|reveal|output)\s+(?:me\s+)?(?:your\s+)?(?:system\s+)?prompt',
-            r'what\s+(?:are\s+)?(?:your\s+)?(?:initial\s+)?instructions',
-            r'repeat\s+(?:your\s+)?(?:original\s+)?instructions',
-
+            r"(?:show|tell|reveal|output)\s+(?:me\s+)?(?:your\s+)?(?:system\s+)?prompt",
+            r"what\s+(?:are\s+)?(?:your\s+)?(?:initial\s+)?instructions",
+            r"repeat\s+(?:your\s+)?(?:original\s+)?instructions",
             # Context manipulation
-            r'forget\s+(?:everything|all|previous)',
-            r'override\s+(?:your\s+)?(?:previous\s+)?',
-            r'instead\s+of\s+(?:answering|responding)',
-
+            r"forget\s+(?:everything|all|previous)",
+            r"override\s+(?:your\s+)?(?:previous\s+)?",
+            r"instead\s+of\s+(?:answering|responding)",
             # Jailbreak attempts
-            r'developer\s+mode',
-            r'jailbreak\s+mode',
-            r'unrestricted\s+mode',
-            r'bypass\s+(?:safety|security|restrictions)',
+            r"developer\s+mode",
+            r"jailbreak\s+mode",
+            r"unrestricted\s+mode",
+            r"bypass\s+(?:safety|security|restrictions)",
         ]
 
         # Compile patterns for efficiency
@@ -67,17 +63,18 @@ class InputSanitizer:
 
         # Command injection patterns - refined to avoid false positives on legitimate security content
         self.command_patterns = [
-            r'[\;\|\&\$\`](?!\w)',  # Shell metacharacters (not followed by word chars)
-            r'\b(?:sudo|su|chmod|rm|del|format)\s+',  # Dangerous commands with space (actual command usage)
-            r'\.\.[\\/]',  # Path traversal (../ or ..\)
+            r"[\;\|\&\$\`](?!\w)",  # Shell metacharacters (not followed by word chars)
+            r"\b(?:sudo|su|chmod|rm|del|format)\s+",  # Dangerous commands with space (actual command usage)
+            r"\.\.[\\/]",  # Path traversal (../ or ..\)
         ]
 
         self.compiled_command_patterns = [
-            re.compile(pattern, re.IGNORECASE)
-            for pattern in self.command_patterns
+            re.compile(pattern, re.IGNORECASE) for pattern in self.command_patterns
         ]
 
-    def sanitize_input(self, user_input: str, user_persona: str = "Developer") -> Dict[str, Any]:
+    def sanitize_input(
+        self, user_input: str, user_persona: str = "Developer"
+    ) -> Dict[str, Any]:
         """
         Sanitize user input and return results with security analysis.
 
@@ -99,7 +96,7 @@ class InputSanitizer:
                 "security_flags": ["empty_or_invalid_input"],
                 "is_safe": False,
                 "original_length": 0,
-                "sanitized_length": 0
+                "sanitized_length": 0,
             }
 
         logger.debug(f"Sanitizing input of length {len(user_input)}")
@@ -116,7 +113,9 @@ class InputSanitizer:
 
         # Step 2: Ignore fenced code blocks when checking for risky patterns
         sanitized_input = user_input
-        text_for_scanning, _code_blocks = self._strip_fenced_code_for_scan(sanitized_input)
+        text_for_scanning, _code_blocks = self._strip_fenced_code_for_scan(
+            sanitized_input
+        )
 
         # Step 3: Check for prompt injection patterns (flag only; do not rewrite semantics)
         prompt_hits = any(p.search(text_for_scanning) for p in self.compiled_patterns)
@@ -124,7 +123,9 @@ class InputSanitizer:
             security_flags.append("prompt_injection_detected")
 
         # Step 4: Check for command injection patterns (flag only; do not mutate text)
-        command_hits = any(p.search(text_for_scanning) for p in self.compiled_command_patterns)
+        command_hits = any(
+            p.search(text_for_scanning) for p in self.compiled_command_patterns
+        )
         if command_hits:
             security_flags.append("command_injection_detected")
 
@@ -136,7 +137,7 @@ class InputSanitizer:
 
         if security_mode == "FLAG_ONLY":
             is_safe = True
-        else: # BLOCK mode
+        else:  # BLOCK mode
             # Under strict mode, any high-risk signal blocks. Otherwise require multiple signals to block.
             env_val = os.getenv("ENABLE_STRICT_SANITIZATION", "true").lower().strip()
             strict_mode = env_val in ("1", "true", "yes", "on")
@@ -164,7 +165,7 @@ class InputSanitizer:
             "security_flags": security_flags,
             "is_safe": is_safe,
             "original_length": original_length,
-            "sanitized_length": len(sanitized_input)
+            "sanitized_length": len(sanitized_input),
         }
 
     # Removed semantic rewriting; injection patterns are flagged, not rewritten
@@ -194,10 +195,10 @@ class InputSanitizer:
             Normalized text
         """
         # Remove control characters except common whitespace
-        text = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', text)
+        text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
         # Normalize whitespace
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\s+", " ", text)
 
         # Strip leading/trailing whitespace
         text = text.strip()
@@ -220,16 +221,29 @@ class InputSanitizer:
 
         # Look for CWE-related keywords for other personas
         cwe_keywords = [
-            'cwe', 'weakness', 'vulnerability', 'security', 'exploit',
-            'injection', 'xss', 'csrf', 'buffer', 'overflow', 'authentication',
-            'authorization', 'cryptographic', 'input', 'validation', 'sql'
+            "cwe",
+            "weakness",
+            "vulnerability",
+            "security",
+            "exploit",
+            "injection",
+            "xss",
+            "csrf",
+            "buffer",
+            "overflow",
+            "authentication",
+            "authorization",
+            "cryptographic",
+            "input",
+            "validation",
+            "sql",
         ]
 
         query_lower = query.lower()
         cwe_keyword_count = sum(1 for keyword in cwe_keywords if keyword in query_lower)
 
         # Check for direct CWE ID references
-        cwe_id_pattern = re.compile(r'cwe[-\s]*\d+', re.IGNORECASE)
+        cwe_id_pattern = re.compile(r"cwe[-\s]*\d+", re.IGNORECASE)
         has_cwe_id = bool(cwe_id_pattern.search(query))
 
         # Consider query valid if it has CWE keywords or direct CWE ID reference
@@ -237,7 +251,9 @@ class InputSanitizer:
 
     # Removed persona-specific CVE Creator validation; single policy for all personas
 
-    def generate_fallback_message(self, security_flags: List[str], user_persona: str = "Developer") -> str:
+    def generate_fallback_message(
+        self, security_flags: List[str], user_persona: str = "Developer"
+    ) -> str:
         """
         Generate appropriate fallback message for unsafe or invalid input.
 
@@ -255,7 +271,7 @@ class InputSanitizer:
             "Bug Bounty Hunter": "I can only assist with legitimate CWE-related security research.",
             "Product Manager": "I can only help with CWE-related product security planning.",
             "CWE Analyzer": "I can only assist with CVE-to-CWE mapping analysis and vulnerability assessment.",
-            "CVE Creator": "I can only help create CVE descriptions from vulnerability information. Please provide your existing vulnerability research, patches, or security advisories."
+            "CVE Creator": "I can only help create CVE descriptions from vulnerability information. Please provide your existing vulnerability research, patches, or security advisories.",
         }
 
         base_message = persona_messages.get(user_persona, persona_messages["Developer"])
@@ -297,7 +313,7 @@ class SecurityValidator:
                 "is_safe": False,
                 "security_issues": ["empty_or_invalid_response"],
                 "confidence_score": 0.0,
-                "validated_response": "I apologize, but I couldn't generate a proper response. Please try rephrasing your question."
+                "validated_response": "I apologize, but I couldn't generate a proper response. Please try rephrasing your question.",
             }
 
         security_issues = []
@@ -306,11 +322,11 @@ class SecurityValidator:
         # Check for harmful content patterns (refined to reduce false positives)
         harmful_patterns = [
             # Explicit how-to guidance for offensive actions
-            r'(?:hack|exploit|attack).*(?:tutorial|guide|step[- ]?by[- ]?step|how\s+to)',
-            r'here\'s how to.*(?:break|bypass|crack)',
-            r'use this.*(?:maliciously|illegally)',
-            r'steal.*(?:data|information|credentials)',
-            r'actual\s+(?:malware|virus)\s+code'
+            r"(?:hack|exploit|attack).*(?:tutorial|guide|step[- ]?by[- ]?step|how\s+to)",
+            r"here\'s how to.*(?:break|bypass|crack)",
+            r"use this.*(?:maliciously|illegally)",
+            r"steal.*(?:data|information|credentials)",
+            r"actual\s+(?:malware|virus)\s+code",
         ]
 
         harmful_detected = False
@@ -320,18 +336,20 @@ class SecurityValidator:
                 security_issues.append("harmful_content_detected")
                 harmful_detected = True
                 confidence_score -= 0.3
-                logger.debug(f"Harmful pattern matched: {pattern} -> '{m.group(0)[:80]}'")
+                logger.debug(
+                    f"Harmful pattern matched: {pattern} -> '{m.group(0)[:80]}'"
+                )
                 break
 
         # Check for leaked system information
         # Restrictive system leak patterns (avoid false positives on benign "Instructions:" headings)
         system_leak_patterns = [
-            r'system\s+prompt',
-            r'internal\s+error',
-            r'traceback',
-            r'api\s+key\s*[:=]',
-            r'(?:my|the)\s+secret\s*[:=]',
-            r'(?:my|the)\s+password\s*[:=]'
+            r"system\s+prompt",
+            r"internal\s+error",
+            r"traceback",
+            r"api\s+key\s*[:=]",
+            r"(?:my|the)\s+secret\s*[:=]",
+            r"(?:my|the)\s+password\s*[:=]",
         ]
 
         system_leak_detected = False
@@ -341,15 +359,17 @@ class SecurityValidator:
                 security_issues.append("sensitive_information")
                 system_leak_detected = True
                 confidence_score -= 0.2
-                logger.debug(f"System leak pattern matched: {pattern} -> '{m.group(0)[:80]}'")
+                logger.debug(
+                    f"System leak pattern matched: {pattern} -> '{m.group(0)[:80]}'"
+                )
                 break
 
         # Check for potential sensitive information patterns (flag only; do not mask)
         sensitive_patterns = [
-            r'\b(?:sk-[a-zA-Z0-9]{48})\b',  # API key pattern
-            r'\b(?:4[0-9]{12}(?:[0-9]{3})?)\b',  # Credit card pattern
-            r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b',  # IP address pattern
-            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'  # Email pattern
+            r"\b(?:sk-[a-zA-Z0-9]{48})\b",  # API key pattern
+            r"\b(?:4[0-9]{12}(?:[0-9]{3})?)\b",  # Credit card pattern
+            r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b",  # IP address pattern
+            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",  # Email pattern
         ]
         masked_sensitive_found = any(re.search(p, response) for p in sensitive_patterns)
         if masked_sensitive_found:
@@ -388,8 +408,11 @@ class SecurityValidator:
             event_type: Type of security event
             details: Event details for logging
         """
-        logger.warning(f"Security Event: {event_type}", extra={
-            "event_type": event_type,
-            "details": details,
-            "timestamp": None  # Will be added by logging framework
-        })
+        logger.warning(
+            f"Security Event: {event_type}",
+            extra={
+                "event_type": event_type,
+                "details": details,
+                "timestamp": None,  # Will be added by logging framework
+            },
+        )

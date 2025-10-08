@@ -9,10 +9,11 @@ Defaults BASE_URL to CHAINLIT_BASE_URL env or http://localhost:8000
 Saves images under docs/stories/R1/screenshots/current/
 """
 
-from pathlib import Path
 import os
 import sys
 import time
+from pathlib import Path
+
 from playwright.sync_api import sync_playwright
 
 
@@ -59,7 +60,7 @@ def main() -> int:
         input_selectors = [
             '[data-testid="message-input"]',
             '[placeholder*="message"], [placeholder*="question"], [placeholder*="query"]',
-            'textarea',
+            "textarea",
             'input[type="text"]',
         ]
         for sel in input_selectors:
@@ -85,4 +86,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

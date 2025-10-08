@@ -67,10 +67,18 @@ line-length = 88
 target-version = ['py310']
 
 [tool.ruff]
-select = ["E", "F", "I", "N", "W"]
-ignore = []
 line-length = 88
 target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["E501", "E722", "F841", "W293", "F821", "E402", "F401", "W291", "N999", "N814", "N817"]
+"apps/chatbot/tests/**/*.py" = ["E501", "E722", "F841", "W293", "F821", "E402", "F401", "W291", "N999", "N814", "N817"]
+"apps/cwe_ingestion/tests/**/*.py" = ["F841"]
+"tests/scripts/**/*.py" = ["E402", "W291", "F401", "N999", "N814", "N817", "F821"]
 
 
 
@@ -93,7 +101,51 @@ base_url = "http://localhost:8000"
 
 [tool.mypy]
 python_version = "3.10"
+# Strict type checking flags
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+# Display options
+show_error_context = true
+show_column_numbers = true
+show_error_codes = true
+# Module handling
 ignore_missing_imports = true
+explicit_package_bases = true
+namespace_packages = true
+# Check only first-party code
+files = [
+  "apps/chatbot/src",
+  "shared",
+  "apps/cwe_ingestion/cwe_ingestion",
+]
+exclude = [
+  "^build/.*",
+  "^dist/.*",
+  "^apps/.*/build/.*",
+  "^apps/cwe_ingestion/build/lib/.*",
+  "^scripts/.*",
+  "^apps/cwe_ingestion/scripts/.*",
+]
+
+# Per-module overrides for gradual typing
+[[tool.mypy.overrides]]
+module = "apps.chatbot.src.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "apps.cwe_ingestion.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false

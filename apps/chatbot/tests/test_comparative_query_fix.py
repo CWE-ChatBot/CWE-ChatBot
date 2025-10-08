@@ -4,8 +4,8 @@ Test script to verify the comparative query fix.
 Tests that "how does cwe 81 compare to cwe 90" extracts both CWEs.
 """
 
-import sys
 import os
+import sys
 
 # Add current directory to path for local imports
 sys.path.insert(0, os.getcwd())
@@ -24,7 +24,7 @@ def test_cwe_extraction():
         "what is the difference between CWE-79 and CWE-89?",
         "compare CWE-22 with CWE-23",
         "CWE-787 vs CWE-125",
-        "CWE-193 analysis"  # Single CWE for baseline
+        "CWE-193 analysis",  # Single CWE for baseline
     ]
 
     for query in test_queries:
@@ -46,7 +46,7 @@ def test_query_processor():
 
     try:
         result = processor.preprocess_query(comparative_query)
-        extracted_cwes = result.get('cwe_ids', set())
+        extracted_cwes = result.get("cwe_ids", set())
 
         print(f"Query: '{comparative_query}'")
         print(f"Extracted CWEs: {extracted_cwes}")

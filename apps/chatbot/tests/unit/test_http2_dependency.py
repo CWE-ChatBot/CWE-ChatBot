@@ -5,8 +5,8 @@ Test HTTP/2 dependency is correctly installed for PDF worker communication.
 Story 4.3 - Verifies httpx[http2] extra is installed to prevent h2 import errors.
 """
 
+
 import pytest
-import sys
 
 
 def test_httpx_http2_installed():
@@ -21,8 +21,7 @@ def test_httpx_http2_installed():
         import h2
     except ImportError:
         pytest.fail(
-            "h2 package is not installed. "
-            "Install with: pip install httpx[http2]"
+            "h2 package is not installed. " "Install with: pip install httpx[http2]"
         )
 
 
@@ -75,7 +74,6 @@ def test_requirements_has_http2_extra():
 
     This is a documentation test to catch requirement regressions.
     """
-    import os
     from pathlib import Path
 
     # Find requirements.txt

@@ -8,16 +8,17 @@ import os
 import sys
 
 # Add cwe_ingestion to path
-sys.path.insert(0, '/home/chris/work/CyberSecAI/cwe_chatbot_bmad/apps/cwe_ingestion')
+sys.path.insert(0, "/home/chris/work/CyberSecAI/cwe_chatbot_bmad/apps/cwe_ingestion")
 
-from cwe_ingestion.pg_chunk_store import PostgresChunkStore
 from cwe_ingestion.embedder import GeminiEmbedder
+from cwe_ingestion.pg_chunk_store import PostgresChunkStore
+
 
 def test_query_hybrid():
     """Test query_hybrid with SQL injection query."""
 
     # Get API key from environment
-    api_key = os.getenv('GEMINI_API_KEY')
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         print("❌ GEMINI_API_KEY not set")
         return False
@@ -27,7 +28,9 @@ def test_query_hybrid():
     db_url = "postgresql://postgres:postgres@localhost:5432/cwe"
 
     try:
-        store = PostgresChunkStore(dims=3072, database_url=db_url, skip_schema_init=True)
+        store = PostgresChunkStore(
+            dims=3072, database_url=db_url, skip_schema_init=True
+        )
         embedder = GeminiEmbedder(api_key=api_key)
     except Exception as e:
         print(f"❌ Failed to initialize: {e}")
@@ -55,7 +58,7 @@ def test_query_hybrid():
             limit_chunks=5,
             w_vec=0.65,
             w_fts=0.25,
-            w_alias=0.10
+            w_alias=0.10,
         )
 
         print(f"\n✅ Retrieved {len(results)} chunks:")
@@ -65,21 +68,25 @@ def test_query_hybrid():
             return False
 
         for i, r in enumerate(results[:5], 1):
-            cwe_id = r['metadata']['cwe_id']
-            section = r['metadata']['section']
-            hybrid_score = r['scores']['hybrid']
-            vec_score = r['scores']['vec']
-            fts_score = r['scores']['fts']
-            alias_score = r['scores']['alias']
+            cwe_id = r["metadata"]["cwe_id"]
+            section = r["metadata"]["section"]
+            hybrid_score = r["scores"]["hybrid"]
+            vec_score = r["scores"]["vec"]
+            fts_score = r["scores"]["fts"]
+            alias_score = r["scores"]["alias"]
 
             print(f"\n  {i}. {cwe_id}: {section}")
-            print(f"     Hybrid: {hybrid_score:.4f} (vec: {vec_score:.4f}, fts: {fts_score:.4f}, alias: {alias_score:.4f})")
+            print(
+                f"     Hybrid: {hybrid_score:.4f} (vec: {vec_score:.4f}, fts: {fts_score:.4f}, alias: {alias_score:.4f})"
+            )
             print(f"     Text: {r['document'][:100]}...")
 
         # Check if CWE-89 is in results
-        cwe_ids = [r['metadata']['cwe_id'] for r in results]
-        if 'CWE-89' in cwe_ids:
-            print(f"\n✅ SUCCESS: CWE-89 found in results at position {cwe_ids.index('CWE-89') + 1}")
+        cwe_ids = [r["metadata"]["cwe_id"] for r in results]
+        if "CWE-89" in cwe_ids:
+            print(
+                f"\n✅ SUCCESS: CWE-89 found in results at position {cwe_ids.index('CWE-89') + 1}"
+            )
             return True
         else:
             print(f"\n⚠️  WARNING: CWE-89 not in top {len(results)} results")
@@ -89,8 +96,10 @@ def test_query_hybrid():
     except Exception as e:
         print(f"❌ query_hybrid failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
+
 
 if __name__ == "__main__":
     success = test_query_hybrid()

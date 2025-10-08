@@ -4,6 +4,7 @@ Helper script for creating Google Cloud SQL connection URLs and testing IAM auth
 """
 import os
 import sys
+
 import click
 
 
@@ -14,11 +15,13 @@ def cli():
 
 
 @cli.command()
-@click.option('--project-id', '-p', required=True, help='GCP project ID')
-@click.option('--region', '-r', required=True, help='Cloud SQL region (e.g., us-central1)')
-@click.option('--instance', '-i', required=True, help='Cloud SQL instance name')
-@click.option('--database', '-d', default='cwe', help='Database name (default: cwe)')
-@click.option('--username', '-u', required=True, help='IAM database username')
+@click.option("--project-id", "-p", required=True, help="GCP project ID")
+@click.option(
+    "--region", "-r", required=True, help="Cloud SQL region (e.g., us-central1)"
+)
+@click.option("--instance", "-i", required=True, help="Cloud SQL instance name")
+@click.option("--database", "-d", default="cwe", help="Database name (default: cwe)")
+@click.option("--username", "-u", required=True, help="IAM database username")
 def create_url(project_id, region, instance, database, username):
     """Create a Google Cloud SQL connection URL for IAM authentication."""
     from multi_db_pipeline import create_google_cloud_sql_url
@@ -28,29 +31,37 @@ def create_url(project_id, region, instance, database, username):
         region=region,
         instance_name=instance,
         database_name=database,
-        username=username
+        username=username,
     )
 
-    click.echo(f"Google Cloud SQL Connection URL:")
+    click.echo("Google Cloud SQL Connection URL:")
     click.echo(f"  {url}")
     click.echo()
-    click.echo(f"To use this URL, set environment variable:")
+    click.echo("To use this URL, set environment variable:")
     click.echo(f"  export PROD_DATABASE_URL='{url}'")
     click.echo()
-    click.echo(f"Ensure you have IAM authentication configured:")
-    click.echo(f"  gcloud auth application-default login")
-    click.echo(f"  # OR set service account credentials")
-    click.echo(f"  export GOOGLE_APPLICATION_CREDENTIALS='/path/to/service-account.json'")
+    click.echo("Ensure you have IAM authentication configured:")
+    click.echo("  gcloud auth application-default login")
+    click.echo("  # OR set service account credentials")
+    click.echo(
+        "  export GOOGLE_APPLICATION_CREDENTIALS='/path/to/service-account.json'"
+    )
 
 
 @cli.command()
-@click.option('--database-url', help='Database URL to test (uses PROD_DATABASE_URL if not provided)')
+@click.option(
+    "--database-url",
+    help="Database URL to test (uses PROD_DATABASE_URL if not provided)",
+)
 def test_iam_auth(database_url):
     """Test Google Cloud SQL IAM authentication."""
     if not database_url:
-        database_url = os.environ.get('PROD_DATABASE_URL')
+        database_url = os.environ.get("PROD_DATABASE_URL")
         if not database_url:
-            click.echo("❌ No database URL provided. Set PROD_DATABASE_URL or use --database-url", err=True)
+            click.echo(
+                "❌ No database URL provided. Set PROD_DATABASE_URL or use --database-url",
+                err=True,
+            )
             sys.exit(1)
 
     click.echo(f"🔍 Testing IAM authentication for: {_mask_url(database_url)}")
@@ -78,9 +89,13 @@ def test_iam_auth(database_url):
         click.echo(f"❌ IAM authentication failed: {e}")
         click.echo()
         click.echo("💡 Troubleshooting tips:")
-        click.echo("  1. Ensure you're authenticated: gcloud auth application-default login")
+        click.echo(
+            "  1. Ensure you're authenticated: gcloud auth application-default login"
+        )
         click.echo("  2. Check service account has Cloud SQL Client role")
-        click.echo("  3. Verify database URL format: postgresql://username@project:region:instance/dbname")
+        click.echo(
+            "  3. Verify database URL format: postgresql://username@project:region:instance/dbname"
+        )
         click.echo("  4. Ensure Cloud SQL instance allows IAM authentication")
         return False
 
@@ -95,10 +110,16 @@ def check_auth():
     try:
         # Check gcloud auth
         result = subprocess.run(
-            ['gcloud', 'auth', 'list', '--filter=status:ACTIVE', '--format=value(account)'],
+            [
+                "gcloud",
+                "auth",
+                "list",
+                "--filter=status:ACTIVE",
+                "--format=value(account)",
+            ],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
 
         if result.stdout.strip():
@@ -112,7 +133,7 @@ def check_auth():
         click.echo("❌ gcloud not found - install Google Cloud SDK")
 
     # Check service account credentials
-    creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if creds_path:
         if os.path.exists(creds_path):
             click.echo(f"✅ Service account credentials: {creds_path}")
@@ -123,7 +144,9 @@ def check_auth():
 
     # Check for Cloud SQL proxy
     try:
-        result = subprocess.run(['cloud_sql_proxy', '--version'], capture_output=True, text=True)
+        result = subprocess.run(
+            ["cloud_sql_proxy", "--version"], capture_output=True, text=True
+        )
         if result.returncode == 0:
             click.echo("✅ Cloud SQL proxy available")
         else:
@@ -151,5 +174,5 @@ def _mask_url(url: str) -> str:
     return url
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cli()

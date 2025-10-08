@@ -6,9 +6,9 @@ Story 4.3 - Verifies that unexpected exceptions show user-friendly errors,
 not raw error text that could be misinterpreted as PDF content.
 """
 
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
-import asyncio
 
 
 class TestFileProcessorErrorHandling:
@@ -29,14 +29,14 @@ class TestFileProcessorErrorHandling:
         # Create a mock message with file element that will trigger an exception
         mock_message = Mock()
         mock_element = Mock()
-        mock_element.type = 'file'
-        mock_element.name = 'test.pdf'
+        mock_element.type = "file"
+        mock_element.name = "test.pdf"
 
         # Make _get_file_content raise an unexpected exception
         with patch.object(
             processor,
-            '_get_file_content',
-            side_effect=RuntimeError("Unexpected error: h2 package not installed")
+            "_get_file_content",
+            side_effect=RuntimeError("Unexpected error: h2 package not installed"),
         ):
             mock_message.elements = [mock_element]
 
@@ -68,8 +68,8 @@ class TestFileProcessorErrorHandling:
 
         mock_message = Mock()
         mock_element = Mock()
-        mock_element.type = 'file'
-        mock_element.name = 'document.pdf'
+        mock_element.type = "file"
+        mock_element.name = "document.pdf"
 
         # Simulate the exact error that occurred in production
         error_message = (
@@ -78,9 +78,7 @@ class TestFileProcessorErrorHandling:
         )
 
         with patch.object(
-            processor,
-            '_get_file_content',
-            side_effect=RuntimeError(error_message)
+            processor, "_get_file_content", side_effect=RuntimeError(error_message)
         ):
             mock_message.elements = [mock_element]
             result = await processor.process_attachments(mock_message)
@@ -107,15 +105,15 @@ class TestFileProcessorErrorHandling:
 
         mock_message = Mock()
         mock_element = Mock()
-        mock_element.type = 'file'
-        mock_element.name = 'large.pdf'
-        mock_element.content = b'fake pdf content'
+        mock_element.type = "file"
+        mock_element.name = "large.pdf"
+        mock_element.content = b"fake pdf content"
 
         # Simulate file too large error
         with patch.object(
             processor,
-            '_get_file_content',
-            return_value=b'x' * (11 * 1024 * 1024)  # 11MB
+            "_get_file_content",
+            return_value=b"x" * (11 * 1024 * 1024),  # 11MB
         ):
             mock_message.elements = [mock_element]
             result = await processor.process_attachments(mock_message)
@@ -134,20 +132,16 @@ class TestFileProcessorErrorHandling:
 
         mock_message = Mock()
         mock_element = Mock()
-        mock_element.type = 'file'
-        mock_element.name = 'secure.pdf'
+        mock_element.type = "file"
+        mock_element.name = "secure.pdf"
 
         # Mock file content
         with patch.object(
-            processor,
-            '_get_file_content',
-            return_value=b'%PDF-1.4 fake pdf'
+            processor, "_get_file_content", return_value=b"%PDF-1.4 fake pdf"
         ):
             # Mock PDF worker call to raise auth error
             with patch.object(
-                processor,
-                'call_pdf_worker',
-                side_effect=ValueError("auth_failed")
+                processor, "call_pdf_worker", side_effect=ValueError("auth_failed")
             ):
                 mock_message.elements = [mock_element]
                 result = await processor.process_attachments(mock_message)
@@ -169,24 +163,24 @@ class TestFileProcessorErrorHandling:
 
         # Known error codes that can be raised
         error_codes = [
-            'too_large',
-            'too_many_pages',
-            'timeout',
-            'invalid_content_type',
-            'pdf_magic_missing',
-            'encrypted_pdf_unsupported',
-            'image_only_pdf_unsupported',
-            'binary_text_rejected',
-            'text_encoding_failed',
-            'decoding_failed',
-            'text_line_too_long',
-            'line_too_long',
-            'pdf_too_many_pages',
-            'pdf_corrupted',
-            'pdf_sanitization_failed',
-            'pdf_worker_not_configured',
-            'auth_failed',
-            'pdf_processing_failed',
+            "too_large",
+            "too_many_pages",
+            "timeout",
+            "invalid_content_type",
+            "pdf_magic_missing",
+            "encrypted_pdf_unsupported",
+            "image_only_pdf_unsupported",
+            "binary_text_rejected",
+            "text_encoding_failed",
+            "decoding_failed",
+            "text_line_too_long",
+            "line_too_long",
+            "pdf_too_many_pages",
+            "pdf_corrupted",
+            "pdf_sanitization_failed",
+            "pdf_worker_not_configured",
+            "auth_failed",
+            "pdf_processing_failed",
         ]
 
         for error_code in error_codes:

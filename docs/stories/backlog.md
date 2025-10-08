@@ -1,3 +1,6 @@
+Ruff black pypi pre commit hook
+
+
 Buttons for the initial prompts
 Readme content appearing periodically
 Config buttons short/long calibrate

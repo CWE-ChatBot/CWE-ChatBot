@@ -1,10 +1,9 @@
-import pytest
-import asyncio
-from typing import Dict, List
-import re
 import os
-import psycopg
 import sys
+from typing import Dict, List
+
+import psycopg
+import pytest
 from dotenv import load_dotenv
 
 # Add the apps path to the python path
@@ -32,6 +31,7 @@ INPUT_SAMPLES = [
     "The Advanced Schedule Posts WordPress plugin through 2.1.8 does not sanitise and escape a parameter before outputting it back in the page, leading to a Reflected Cross-Site Scripting which could be used against high privilege users such as admins.",
 ]
 
+
 @pytest.fixture(scope="module")
 def conversation_manager():
     # This fixture will be slow as it initializes the ConversationManager
@@ -40,16 +40,23 @@ def conversation_manager():
         raise ValueError("GEMINI_API_KEY must be set for integration tests")
     return ConversationManager(DB_URL, api_key)
 
+
 @pytest.fixture
 def mock_chainlit_session(mocker):
     session = {}
     mocker.patch("src.conversation.cl.user_session.get", side_effect=session.get)
-    mocker.patch("src.conversation.cl.user_session.set", side_effect=lambda k, v: session.update({k: v}))
+    mocker.patch(
+        "src.conversation.cl.user_session.set",
+        side_effect=lambda k, v: session.update({k: v}),
+    )
     mocker.patch("src.conversation.cl.Step", autospec=True)
     mocker.patch("src.conversation.cl.Message", autospec=True)
 
+
 @pytest.mark.asyncio
-async def test_cwe_analyzer_end_to_end(conversation_manager: ConversationManager, mock_chainlit_session):
+async def test_cwe_analyzer_end_to_end(
+    conversation_manager: ConversationManager, mock_chainlit_session
+):
     for i, input_text in enumerate(INPUT_SAMPLES):
         print(f"Testing input {i+1}/{len(INPUT_SAMPLES)}")
 
@@ -60,7 +67,7 @@ async def test_cwe_analyzer_end_to_end(conversation_manager: ConversationManager
         response = await conversation_manager.process_user_message_streaming(
             session_id="test_session",
             message_content=input_text,
-            message_id="test_message"
+            message_id="test_message",
         )
 
         # Print actual response for debugging
@@ -86,50 +93,64 @@ async def test_cwe_analyzer_end_to_end(conversation_manager: ConversationManager
             cwe_id = row["cwe_id"]
 
             # Validate policy
-            assert cwe_id in db_policies, f"CWE ID {cwe_id} not found in policy database"
-            assert row["policy"] == db_policies[cwe_id], f"Incorrect policy for {cwe_id} in input {i+1}. Expected {db_policies[cwe_id]}, got {row['policy']}"
+            assert (
+                cwe_id in db_policies
+            ), f"CWE ID {cwe_id} not found in policy database"
+            assert (
+                row["policy"] == db_policies[cwe_id]
+            ), f"Incorrect policy for {cwe_id} in input {i+1}. Expected {db_policies[cwe_id]}, got {row['policy']}"
 
             # Validate name and abstraction level
-            assert cwe_id in db_catalog_data, f"CWE ID {cwe_id} not found in catalog database"
+            assert (
+                cwe_id in db_catalog_data
+            ), f"CWE ID {cwe_id} not found in catalog database"
             db_name, db_abstraction = db_catalog_data[cwe_id]
 
             if row.get("name"):
-                assert row["name"] == db_name, f"Incorrect name for {cwe_id} in input {i+1}. Expected '{db_name}', got '{row['name']}'"
+                assert (
+                    row["name"] == db_name
+                ), f"Incorrect name for {cwe_id} in input {i+1}. Expected '{db_name}', got '{row['name']}'"
 
             if row.get("abstraction"):
-                assert row["abstraction"] == db_abstraction, f"Incorrect abstraction for {cwe_id} in input {i+1}. Expected '{db_abstraction}', got '{row['abstraction']}'"
+                assert (
+                    row["abstraction"] == db_abstraction
+                ), f"Incorrect abstraction for {cwe_id} in input {i+1}. Expected '{db_abstraction}', got '{row['abstraction']}'"
+
 
 def extract_table_from_response(response: str) -> str:
     # Extract markdown table starting with CWE ID header
-    lines = response.split('\n')
+    lines = response.split("\n")
     table_lines = []
     in_table = False
 
     for line in lines:
         # Look for table header with CWE ID
-        if '| CWE ID |' in line or '|CWE ID|' in line:
+        if "| CWE ID |" in line or "|CWE ID|" in line:
             in_table = True
             table_lines.append(line)
-        elif in_table and line.strip().startswith('|') and '|' in line.strip()[1:]:
+        elif in_table and line.strip().startswith("|") and "|" in line.strip()[1:]:
             table_lines.append(line)
-        elif in_table and not line.strip().startswith('|'):
+        elif in_table and not line.strip().startswith("|"):
             # End of table
             break
 
-    return '\n'.join(table_lines) if table_lines else ""
+    return "\n".join(table_lines) if table_lines else ""
+
 
 def parse_cwe_table(table_str: str) -> List[Dict[str, str]]:
     rows = []
-    lines = table_str.strip().split('\n')
+    lines = table_str.strip().split("\n")
     if len(lines) < 3:
         return rows
 
-    header = [h.strip() for h in lines[0].split('|') if h.strip()]
+    header = [h.strip() for h in lines[0].split("|") if h.strip()]
     print(f"Table header columns: {header}")  # Debug output
 
     for line in lines[2:]:
-        cols = [c.strip() for c in line.split('|') if c.strip()]
-        if len(cols) >= 5:  # Must have at least CWE ID, Name, Confidence, Abstraction, Policy
+        cols = [c.strip() for c in line.split("|") if c.strip()]
+        if (
+            len(cols) >= 5
+        ):  # Must have at least CWE ID, Name, Confidence, Abstraction, Policy
             row_data = dict(zip(header, cols))
             print(f"Row data: {row_data}")  # Debug output
 
@@ -140,13 +161,16 @@ def parse_cwe_table(table_str: str) -> List[Dict[str, str]]:
                     policy_col = col_name
                     break
 
-            rows.append({
-                "cwe_id": row_data.get("CWE ID"),
-                "name": row_data.get("Name"),
-                "abstraction": row_data.get("Abstraction"),
-                "policy": row_data.get(policy_col) if policy_col else None,
-            })
+            rows.append(
+                {
+                    "cwe_id": row_data.get("CWE ID"),
+                    "name": row_data.get("Name"),
+                    "abstraction": row_data.get("Abstraction"),
+                    "policy": row_data.get(policy_col) if policy_col else None,
+                }
+            )
     return rows
+
 
 def get_policies_from_db(cwe_ids: List[str]) -> Dict[str, str]:
     policies = {}
@@ -166,6 +190,7 @@ def get_policies_from_db(cwe_ids: List[str]) -> Dict[str, str]:
         conn.close()
 
     return policies
+
 
 def get_catalog_data_from_db(cwe_ids: List[str]) -> Dict[str, tuple]:
     catalog_data = {}

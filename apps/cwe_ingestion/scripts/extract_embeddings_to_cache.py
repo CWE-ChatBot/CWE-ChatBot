@@ -5,20 +5,21 @@ This script reads embeddings from a populated database and creates cache files
 for future reuse, avoiding expensive re-generation of Gemini embeddings.
 """
 import logging
-import os
 import sys
-from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import numpy as np
 
 try:
-    from .pg_chunk_store import PostgresChunkStore
     from .embedding_cache import EmbeddingCache
+    from .pg_chunk_store import PostgresChunkStore
 except ImportError:
-    from pg_chunk_store import PostgresChunkStore
     from embedding_cache import EmbeddingCache
+    from pg_chunk_store import PostgresChunkStore
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -26,7 +27,7 @@ def extract_embeddings_to_cache(
     database_url: str,
     cache_dir: str = "cwe_embeddings_cache_shared",
     embedder_type: str = "gemini",
-    model_name: str = "text-embedding-004"
+    model_name: str = "text-embedding-004",
 ) -> bool:
     """
     Extract embeddings from database and populate the EmbeddingCache.
@@ -52,7 +53,7 @@ def extract_embeddings_to_cache(
         stats = chunk_store.get_collection_stats()
         logger.info(f"Database contains {stats['count']:,} chunks")
 
-        if stats['count'] == 0:
+        if stats["count"] == 0:
             logger.warning("No chunks found in database")
             return False
 
@@ -71,7 +72,9 @@ def extract_embeddings_to_cache(
         logger.info(f"Grouped into {len(grouped_chunks):,} cache entries")
 
         # Save to cache
-        saved_count = save_chunks_to_cache(cache, grouped_chunks, embedder_type, model_name)
+        saved_count = save_chunks_to_cache(
+            cache, grouped_chunks, embedder_type, model_name
+        )
 
         # Verify cache
         cache_stats = cache.get_cache_stats()
@@ -91,7 +94,8 @@ def extract_all_chunks(chunk_store: PostgresChunkStore) -> List[Dict[str, Any]]:
     try:
         with chunk_store.conn.cursor() as cur:
             # Query all chunks with their embeddings
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT
                     cwe_id,
                     section,
@@ -102,31 +106,44 @@ def extract_all_chunks(chunk_store: PostgresChunkStore) -> List[Dict[str, Any]]:
                     embedding
                 FROM cwe_chunks
                 ORDER BY cwe_id, section_rank
-            """)
+            """
+            )
 
             chunks = []
             for row in cur.fetchall():
-                cwe_id, section, section_rank, name, alt_terms, full_text, embedding_vector = row
+                (
+                    cwe_id,
+                    section,
+                    section_rank,
+                    name,
+                    alt_terms,
+                    full_text,
+                    embedding_vector,
+                ) = row
 
                 # Convert embedding vector to numpy array
                 # PostgreSQL returns vectors as string format: '[1.0,2.0,3.0]'
                 if isinstance(embedding_vector, str):
                     # Remove brackets and split by comma
-                    vector_str = embedding_vector.strip('[]')
-                    embedding = np.array([float(x) for x in vector_str.split(',')], dtype=np.float32)
+                    vector_str = embedding_vector.strip("[]")
+                    embedding = np.array(
+                        [float(x) for x in vector_str.split(",")], dtype=np.float32
+                    )
                 else:
                     # Already parsed (shouldn't happen with psycopg but handle gracefully)
                     embedding = np.array(embedding_vector, dtype=np.float32)
 
-                chunks.append({
-                    "cwe_id": cwe_id,
-                    "section": section,
-                    "section_rank": section_rank,
-                    "name": name,
-                    "alternate_terms_text": alt_terms or "",
-                    "full_text": full_text,
-                    "embedding": embedding
-                })
+                chunks.append(
+                    {
+                        "cwe_id": cwe_id,
+                        "section": section,
+                        "section_rank": section_rank,
+                        "name": name,
+                        "alternate_terms_text": alt_terms or "",
+                        "full_text": full_text,
+                        "embedding": embedding,
+                    }
+                )
 
             return chunks
 
@@ -157,7 +174,7 @@ def group_chunks_for_cache(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, 
             "name": chunk["name"],
             "alternate_terms_text": chunk["alternate_terms_text"],
             "full_text": chunk["full_text"],
-            "embedding": chunk["embedding"]
+            "embedding": chunk["embedding"],
         }
 
     return grouped
@@ -167,7 +184,7 @@ def save_chunks_to_cache(
     cache: EmbeddingCache,
     grouped_chunks: Dict[str, Dict[str, Any]],
     embedder_type: str,
-    model_name: str
+    model_name: str,
 ) -> int:
     """Save grouped chunks to the embedding cache."""
     saved_count = 0
@@ -196,26 +213,22 @@ def main():
     """Main script entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Extract embeddings from database to cache")
-    parser.add_argument(
-        "--database-url",
-        required=True,
-        help="PostgreSQL database URL"
+    parser = argparse.ArgumentParser(
+        description="Extract embeddings from database to cache"
     )
+    parser.add_argument("--database-url", required=True, help="PostgreSQL database URL")
     parser.add_argument(
         "--cache-dir",
         default="cwe_embeddings_cache_shared",
-        help="Cache directory (default: cwe_embeddings_cache_shared)"
+        help="Cache directory (default: cwe_embeddings_cache_shared)",
     )
     parser.add_argument(
-        "--embedder-type",
-        default="gemini",
-        help="Embedder type (default: gemini)"
+        "--embedder-type", default="gemini", help="Embedder type (default: gemini)"
     )
     parser.add_argument(
         "--model-name",
         default="gemini-embedding-001",
-        help="Model name (default: gemini-embedding-001)"
+        help="Model name (default: gemini-embedding-001)",
     )
 
     args = parser.parse_args()
@@ -229,7 +242,7 @@ def main():
         database_url=args.database_url,
         cache_dir=args.cache_dir,
         embedder_type=args.embedder_type,
-        model_name=args.model_name
+        model_name=args.model_name,
     )
 
     if success:

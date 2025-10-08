@@ -4,7 +4,7 @@ including flexible formats: "CWE-79", "cwe_123", "CWE 80", "cwe 33".
 """
 
 import pytest
-from playwright.sync_api import sync_playwright, expect
+from playwright.sync_api import expect, sync_playwright
 
 
 @pytest.mark.e2e
@@ -52,13 +52,15 @@ def test_exact_cwe_id_priority(chainlit_server):
                 page.wait_for_timeout(5000)
 
                 # Prefer visible text lookup to accommodate SPA rendering
-                expect(page.locator(f"text={expected}").first).to_be_visible(timeout=25000)
+                expect(page.locator(f"text={expected}").first).to_be_visible(
+                    timeout=25000
+                )
 
         finally:
             try:
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_exact_cwe_id_priority.webm')
+                    video.save_as("test-results/videos/test_exact_cwe_id_priority.webm")
             except Exception:
                 pass
             page.close()

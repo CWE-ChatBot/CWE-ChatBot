@@ -5,12 +5,14 @@ Retrieves secrets from Google Cloud Secret Manager at runtime.
 Falls back to environment variables for local development.
 """
 import os
-from typing import Optional
 from functools import lru_cache
+from typing import Optional
 
 
 @lru_cache(maxsize=128)
-def get_secret(secret_id: str, project_id: Optional[str] = None, version: str = "latest") -> Optional[str]:
+def get_secret(
+    secret_id: str, project_id: Optional[str] = None, version: str = "latest"
+) -> Optional[str]:
     """
     Get secret from GCP Secret Manager or environment variable fallback.
 
@@ -35,13 +37,16 @@ def get_secret(secret_id: str, project_id: Optional[str] = None, version: str = 
     if in_gcp and project_id:
         try:
             from google.cloud import secretmanager
+
             client = secretmanager.SecretManagerServiceClient()
             name = f"projects/{project_id}/secrets/{secret_id}/versions/{version}"
             response = client.access_secret_version(request={"name": name})
-            return response.payload.data.decode("UTF-8").strip()
+            return str(response.payload.data.decode("UTF-8").strip())
         except Exception as e:
             # Log but don't fail - fall through to env var
-            print(f"Warning: Failed to get secret '{secret_id}' from Secret Manager: {e}")
+            print(
+                f"Warning: Failed to get secret '{secret_id}' from Secret Manager: {e}"
+            )
 
     # Fallback to environment variable
     # Convert secret-id-format to SECRET_ID_FORMAT

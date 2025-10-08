@@ -3,9 +3,10 @@ End-to-end smoke tests using Playwright browser automation.
 Tests basic user workflows: role selection, messaging, and response handling.
 """
 
-import pytest
-from playwright.sync_api import sync_playwright, expect
 import os
+
+import pytest
+from playwright.sync_api import expect, sync_playwright
 
 
 @pytest.mark.e2e
@@ -38,7 +39,9 @@ def test_basic_smoke_flow(chainlit_server):
                 page.wait_for_timeout(1000)  # Brief wait for role selection
 
             # Approach 2: Look for any action buttons (role selection)
-            action_buttons = page.locator("button[data-testid*='action'], .action-button")
+            action_buttons = page.locator(
+                "button[data-testid*='action'], .action-button"
+            )
             if action_buttons.count() > 0:
                 action_buttons.first.click()
                 page.wait_for_timeout(1000)
@@ -50,7 +53,7 @@ def test_basic_smoke_flow(chainlit_server):
                 "textarea[data-testid='chat-input']",
                 ".message-input textarea",
                 "textarea",
-                "input[type='text']"
+                "input[type='text']",
             ]
 
             input_element = None
@@ -96,10 +99,10 @@ def test_basic_smoke_flow(chainlit_server):
             page.close()
             # Persist video manually
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_basic_smoke_flow.webm')
+                    video.save_as("test-results/videos/test_basic_smoke_flow.webm")
             except Exception:
                 pass
             context.close()
@@ -144,10 +147,12 @@ def test_role_selection_interface(chainlit_server):
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_role_selection_interface.webm')
+                    video.save_as(
+                        "test-results/videos/test_role_selection_interface.webm"
+                    )
             except Exception:
                 pass
             context.close()
@@ -166,8 +171,11 @@ def test_application_loads_without_errors(chainlit_server):
 
         # Collect console errors
         console_errors = []
-        page.on("console", lambda msg:
-            console_errors.append(msg.text) if msg.type == "error" else None
+        page.on(
+            "console",
+            lambda msg: console_errors.append(msg.text)
+            if msg.type == "error"
+            else None,
         )
 
         # Collect page errors
@@ -183,24 +191,37 @@ def test_application_loads_without_errors(chainlit_server):
 
             # Check for critical errors (filter out common non-critical ones)
             critical_errors = [
-                error for error in console_errors
-                if not any(ignore in error.lower() for ignore in [
-                    "favicon", "analytics", "tracking", "advertisement",
-                    "404", "failed to load resource", "websocket"
-                ])
+                error
+                for error in console_errors
+                if not any(
+                    ignore in error.lower()
+                    for ignore in [
+                        "favicon",
+                        "analytics",
+                        "tracking",
+                        "advertisement",
+                        "404",
+                        "failed to load resource",
+                        "websocket",
+                    ]
+                )
             ]
 
             # Assert no critical errors occurred
             assert len(page_errors) == 0, f"Page errors occurred: {page_errors}"
-            assert len(critical_errors) == 0, f"Console errors occurred: {critical_errors}"
+            assert (
+                len(critical_errors) == 0
+            ), f"Console errors occurred: {critical_errors}"
 
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_application_loads_without_errors.webm')
+                    video.save_as(
+                        "test-results/videos/test_application_loads_without_errors.webm"
+                    )
             except Exception:
                 pass
             context.close()
@@ -221,8 +242,8 @@ def test_responsive_ui_basic(chainlit_server):
             # Test different viewport sizes
             viewports = [
                 {"width": 1920, "height": 1080},  # Desktop
-                {"width": 768, "height": 1024},   # Tablet
-                {"width": 375, "height": 667}     # Mobile
+                {"width": 768, "height": 1024},  # Tablet
+                {"width": 375, "height": 667},  # Mobile
             ]
 
             for viewport in viewports:
@@ -242,16 +263,17 @@ def test_responsive_ui_basic(chainlit_server):
                 viewport_width = viewport["width"]
 
                 # Allow small tolerance for scrollbars
-                assert scroll_width <= viewport_width + 20, \
-                    f"Horizontal scroll at {viewport_width}px: {scroll_width}px content width"
+                assert (
+                    scroll_width <= viewport_width + 20
+                ), f"Horizontal scroll at {viewport_width}px: {scroll_width}px content width"
 
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_responsive_ui_basic.webm')
+                    video.save_as("test-results/videos/test_responsive_ui_basic.webm")
             except Exception:
                 pass
             context.close()
@@ -293,7 +315,7 @@ def test_message_flow_complete(chainlit_server, sample_user_inputs):
                 # Test a few different message types
                 test_messages = [
                     sample_user_inputs.get("cwe_direct", "What is CWE-79?"),
-                    sample_user_inputs.get("general_security", "How do I prevent XSS?")
+                    sample_user_inputs.get("general_security", "How do I prevent XSS?"),
                 ]
 
                 for message in test_messages[:2]:  # Limit to 2 messages for speed
@@ -308,7 +330,9 @@ def test_message_flow_complete(chainlit_server, sample_user_inputs):
                     # Verify some response appeared
                     # Look for new content that wasn't there before
                     page_content = page.content()
-                    assert len(page_content) > 1000, "Page should have substantial content"
+                    assert (
+                        len(page_content) > 1000
+                    ), "Page should have substantial content"
 
             else:
                 # Fallback: just verify the page remains functional

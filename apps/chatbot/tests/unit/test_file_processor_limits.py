@@ -1,4 +1,5 @@
 import asyncio
+
 from src.file_processor import FileProcessor
 
 
@@ -7,7 +8,7 @@ class DummyFile:
         self.name = name
         self.content = content
         self.mime = mime
-        self.type = 'file'
+        self.type = "file"
 
 
 class DummyMessage:

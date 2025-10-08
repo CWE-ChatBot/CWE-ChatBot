@@ -2,11 +2,13 @@
 """
 Text post-processing utilities for chatbot responses.
 """
-from typing import Dict
 import re
+from typing import Dict, Match
 
 
-def harmonize_cwe_names_in_table(content: str, id_to_name: Dict[str, str], id_to_policy: Dict[str, str]) -> str:
+def harmonize_cwe_names_in_table(
+    content: str, id_to_name: Dict[str, str], id_to_policy: Dict[str, str]
+) -> str:
     """
     Replace CWE Name and Policy cells in Markdown tables with canonical values from DB.
     """
@@ -17,12 +19,12 @@ def harmonize_cwe_names_in_table(content: str, id_to_name: Dict[str, str], id_to
         lines = content.splitlines()
         out = []
         for line in lines:
-            if not line.strip().startswith('|'):
+            if not line.strip().startswith("|"):
                 out.append(line)
                 continue
 
-            cols = [c.strip() for c in line.strip().split('|')]
-            
+            cols = [c.strip() for c in line.strip().split("|")]
+
             cwe_id_str = cols[1]
             m = re.match(r"CWE[-_\s]?(\d{1,5})", cwe_id_str, re.IGNORECASE)
             if not m:
@@ -44,10 +46,10 @@ def harmonize_cwe_names_in_table(content: str, id_to_name: Dict[str, str], id_to
         content1 = "\n".join(out)
 
         # Pass 2: Generic cell pattern: CWE-XXXX then a separator (| or tab) then name
-        def repl(m: re.Match) -> str:
-            full_id = m.group(1).upper().replace(' ', '').replace('_', '-')
-            if not full_id.startswith('CWE-'):
-                full_id = 'CWE-' + m.group(2)
+        def repl(m: Match[str]) -> str:
+            full_id = m.group(1).upper().replace(" ", "").replace("_", "-")
+            if not full_id.startswith("CWE-"):
+                full_id = "CWE-" + m.group(2)
             canonical = id_to_name.get(full_id.upper())
             if not canonical:
                 return m.group(0)
@@ -55,8 +57,10 @@ def harmonize_cwe_names_in_table(content: str, id_to_name: Dict[str, str], id_to
             # do not re-append the old name.
             return f"{full_id}{m.group(3)} {canonical}"
 
-        generic_re = re.compile(r"\b(CWE[-_\s]?(\d{1,5}))([\s\|\t]+)([^|\t\r\n]+)", re.IGNORECASE)
-        content2 = generic_re.sub(repl, content1)
+        generic_re = re.compile(
+            r"\b(CWE[-_\s]?(\d{1,5}))([\s\|\t]+)([^|\t\r\n]+)", re.IGNORECASE
+        )
+        content2: str = generic_re.sub(repl, content1)
         return content2
     except Exception:
         return content

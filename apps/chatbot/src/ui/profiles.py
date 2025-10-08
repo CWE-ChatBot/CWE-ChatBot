@@ -5,7 +5,7 @@ Handles user persona selection and profile creation.
 """
 
 from typing import List
-import chainlit as cl
+
 from chainlit import ChatProfile
 
 from src.user_context import UserPersona
@@ -35,6 +35,6 @@ def _get_persona_description(persona: str) -> str:
         "Bug Bounty Hunter": "Security researcher identifying and reporting vulnerabilities for bug bounty programs",
         "Product Manager": "Product manager tracking security trends and implementing proactive weakness identification strategies",
         "CWE Analyzer": "Direct CWE analysis specialist for mapping vulnerabilities to specific weakness categories",
-        "CVE Creator": "CVE description creator for structured vulnerability documentation and reporting"
+        "CVE Creator": "CVE description creator for structured vulnerability documentation and reporting",
     }
     return descriptions.get(persona, f"Cybersecurity professional with {persona} role")

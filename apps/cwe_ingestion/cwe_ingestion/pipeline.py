@@ -6,24 +6,24 @@ import logging
 import shutil
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 try:
     # Relative imports (when used as module)
     from .downloader import CWEDownloader
     from .embedder import CWEEmbedder, GeminiEmbedder
-    from .parser import CWEParser
-    from .pg_vector_store import PostgresVectorStore
-    from .pg_chunk_store import PostgresChunkStore
     from .models import entry_to_sections
+    from .parser import CWEParser
+    from .pg_chunk_store import PostgresChunkStore
+    from .pg_vector_store import PostgresVectorStore
 except ImportError:
     # Absolute imports (when run directly)
     from downloader import CWEDownloader
     from embedder import CWEEmbedder, GeminiEmbedder
-    from parser import CWEParser
-    from pg_vector_store import PostgresVectorStore
-    from pg_chunk_store import PostgresChunkStore
     from models import entry_to_sections
+    from parser import CWEParser
+    from pg_chunk_store import PostgresChunkStore
+    from pg_vector_store import PostgresVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +35,9 @@ class CWEIngestionPipeline:
         self,
         target_cwes: Optional[List[str]] = None,  # None -> ingest all
         source_url: str = "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip",
-        embedder_type: str = "local",             # "local" | "gemini"
+        embedder_type: str = "local",  # "local" | "gemini"
         embedding_model: str = "all-MiniLM-L6-v2",
-        use_chunked: bool = True,                 # True -> use PostgresChunkStore
+        use_chunked: bool = True,  # True -> use PostgresChunkStore
     ):
         self.target_cwes = target_cwes
         self.source_url = source_url
@@ -53,7 +53,9 @@ class CWEIngestionPipeline:
         else:
             self.embedder = CWEEmbedder(model_name=embedding_model)
             self.embedding_dim = self.embedder.get_embedding_dimension()
-            logger.info(f"Initialized local embedder '{embedding_model}' ({self.embedding_dim}-D).")
+            logger.info(
+                f"Initialized local embedder '{embedding_model}' ({self.embedding_dim}-D)."
+            )
 
         # Core components
         self.use_chunked = bool(use_chunked)
@@ -63,7 +65,9 @@ class CWEIngestionPipeline:
             self.vector_store = PostgresChunkStore(dims=self.embedding_dim)
             logger.info("Using PostgresChunkStore (chunked).")
         else:
-            self.vector_store = PostgresVectorStore(table="cwe_embeddings", dims=self.embedding_dim)
+            self.vector_store = PostgresVectorStore(
+                table="cwe_embeddings", dims=self.embedding_dim
+            )
             logger.info("Using PostgresVectorStore (single-row).")
 
     def run(self) -> bool:
@@ -103,7 +107,9 @@ class CWEIngestionPipeline:
         for entry in cwe_entries:
             aliases = []
             if getattr(entry, "AlternateTerms", None):
-                aliases = [t.Term for t in entry.AlternateTerms if getattr(t, "Term", None)]
+                aliases = [
+                    t.Term for t in entry.AlternateTerms if getattr(t, "Term", None)
+                ]
             alias_line = "; ".join(sorted(set(a for a in aliases if a)))
             aliases_by_id[entry.ID] = alias_line
 
@@ -141,18 +147,30 @@ class CWEIngestionPipeline:
 
             alias_line = ""
             if getattr(entry, "AlternateTerms", None):
-                alias_line = "; ".join(sorted({t.Term for t in entry.AlternateTerms if getattr(t, "Term", None)}))
+                alias_line = "; ".join(
+                    sorted(
+                        {
+                            t.Term
+                            for t in entry.AlternateTerms
+                            if getattr(t, "Term", None)
+                        }
+                    )
+                )
 
             for s, emb in zip(sections, embs):
-                chunk_payloads.append({
-                    "cwe_id": f"CWE-{entry.ID}",
-                    "section": s["section"],
-                    "section_rank": s["section_rank"],
-                    "name": entry.Name,
-                    "full_text": s["text"],
-                    "alternate_terms_text": s["text"] if s["section"] == "Aliases" else alias_line,
-                    "embedding": emb,
-                })
+                chunk_payloads.append(
+                    {
+                        "cwe_id": f"CWE-{entry.ID}",
+                        "section": s["section"],
+                        "section_rank": s["section_rank"],
+                        "name": entry.Name,
+                        "full_text": s["text"],
+                        "alternate_terms_text": s["text"]
+                        if s["section"] == "Aliases"
+                        else alias_line,
+                        "embedding": emb,
+                    }
+                )
 
         if not chunk_payloads:
             logger.warning("No chunk payloads to store.")

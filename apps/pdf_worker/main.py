@@ -14,33 +14,35 @@ import io
 import json
 import logging
 import os
-from typing import Any, Dict, Tuple
+from typing import Tuple
 
 # Optional imports - will fail gracefully if not available
 try:
     import pikepdf
+
     HAS_PIKEPDF = True
 except ImportError:
     HAS_PIKEPDF = False
 
 try:
     from pdfminer.high_level import extract_text
+
     HAS_PDFMINER = True
 except ImportError:
     HAS_PDFMINER = False
 
 try:
-    from google.cloud import modelarmor_v1
-    from google.api_core.retry import Retry
     from google.api_core.client_options import ClientOptions
+    from google.api_core.retry import Retry
+    from google.cloud import modelarmor_v1
+
     HAS_MODEL_ARMOR = True
 except ImportError:
     HAS_MODEL_ARMOR = False
 
 # Configure logging (metadata only, no content)
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -50,10 +52,10 @@ MAX_PAGES = 50
 MAX_OUTPUT_CHARS = 1_000_000
 
 # Model Armor configuration
-MODEL_ARMOR_ENABLED = os.getenv('MODEL_ARMOR_ENABLED', 'false').lower() == 'true'
-MODEL_ARMOR_LOCATION = os.getenv('MODEL_ARMOR_LOCATION', 'us-central1')
-MODEL_ARMOR_TEMPLATE_ID = os.getenv('MODEL_ARMOR_TEMPLATE_ID', 'llm-guardrails-default')
-GOOGLE_CLOUD_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
+MODEL_ARMOR_ENABLED = os.getenv("MODEL_ARMOR_ENABLED", "false").lower() == "true"
+MODEL_ARMOR_LOCATION = os.getenv("MODEL_ARMOR_LOCATION", "us-central1")
+MODEL_ARMOR_TEMPLATE_ID = os.getenv("MODEL_ARMOR_TEMPLATE_ID", "llm-guardrails-default")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 
 
 def sanitize_pdf(pdf_data: bytes) -> bytes:
@@ -95,29 +97,29 @@ def sanitize_pdf(pdf_data: bytes) -> bytes:
         raise ValueError("encrypted_pdf")
 
     # Remove auto-execute actions
-    if '/OpenAction' in pdf.Root:
-        del pdf.Root['/OpenAction']
+    if "/OpenAction" in pdf.Root:
+        del pdf.Root["/OpenAction"]
 
-    if '/AA' in pdf.Root:
-        del pdf.Root['/AA']
+    if "/AA" in pdf.Root:
+        del pdf.Root["/AA"]
 
     # Remove JavaScript
-    if '/Names' in pdf.Root:
-        names = pdf.Root['/Names']
-        if '/JavaScript' in names:
-            del names['/JavaScript']
+    if "/Names" in pdf.Root:
+        names = pdf.Root["/Names"]
+        if "/JavaScript" in names:
+            del names["/JavaScript"]
 
     # Remove XFA forms
-    if '/AcroForm' in pdf.Root:
-        acro_form = pdf.Root['/AcroForm']
-        if '/XFA' in acro_form:
-            del acro_form['/XFA']
+    if "/AcroForm" in pdf.Root:
+        acro_form = pdf.Root["/AcroForm"]
+        if "/XFA" in acro_form:
+            del acro_form["/XFA"]
 
     # Remove embedded files
-    if '/Names' in pdf.Root:
-        names = pdf.Root['/Names']
-        if '/EmbeddedFiles' in names:
-            del names['/EmbeddedFiles']
+    if "/Names" in pdf.Root:
+        names = pdf.Root["/Names"]
+        if "/EmbeddedFiles" in names:
+            del names["/EmbeddedFiles"]
 
     # Save to bytes
     output = io.BytesIO()
@@ -210,7 +212,10 @@ def sanitize_text_with_model_armor(text: str) -> Tuple[bool, str]:
 
         # Check result
         sanitization_result = response.sanitization_result
-        if sanitization_result.filter_match_state == modelarmor_v1.FilterMatchState.NO_MATCH_FOUND:
+        if (
+            sanitization_result.filter_match_state
+            == modelarmor_v1.FilterMatchState.NO_MATCH_FOUND
+        ):
             logger.info(f"Model Armor: PDF text ALLOWED ({len(text)} chars)")
             return True, text
 
@@ -267,79 +272,54 @@ def pdf_worker(request):
     """
     # Security headers
     headers = {
-        'Content-Type': 'application/json',
-        'X-Content-Type-Options': 'nosniff',
-        'Referrer-Policy': 'no-referrer',
-        'X-Frame-Options': 'DENY',
+        "Content-Type": "application/json",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "X-Frame-Options": "DENY",
     }
 
     # Only accept POST
-    if request.method != 'POST':
-        return (
-            json.dumps({'error': 'method_not_allowed'}),
-            405,
-            headers
-        )
+    if request.method != "POST":
+        return (json.dumps({"error": "method_not_allowed"}), 405, headers)
 
     # Enforce content type (defense-in-depth)
-    if request.headers.get('Content-Type', '').split(';', 1)[0].lower() != 'application/pdf':
-        return (json.dumps({'error': 'unsupported_media_type'}), 415, headers)
+    if (
+        request.headers.get("Content-Type", "").split(";", 1)[0].lower()
+        != "application/pdf"
+    ):
+        return (json.dumps({"error": "unsupported_media_type"}), 415, headers)
 
     # Check library availability
     if not HAS_PIKEPDF or not HAS_PDFMINER:
         logger.error("Required libraries not available")
-        return (
-            json.dumps({'error': 'server_misconfigured'}),
-            500,
-            headers
-        )
+        return (json.dumps({"error": "server_misconfigured"}), 500, headers)
 
     # Get request body
     try:
         pdf_data = request.get_data()
     except Exception as e:
         logger.error(f"Failed to get request data: {e}")
-        return (
-            json.dumps({'error': 'invalid_request'}),
-            400,
-            headers
-        )
+        return (json.dumps({"error": "invalid_request"}), 400, headers)
 
     # Validate size
     if len(pdf_data) > MAX_BYTES:
         logger.warning(f"PDF too large: {len(pdf_data)} bytes")
-        return (
-            json.dumps({'error': 'pdf_too_large'}),
-            413,
-            headers
-        )
+        return (json.dumps({"error": "pdf_too_large"}), 413, headers)
 
     # Validate PDF magic bytes
-    if not pdf_data.startswith(b'%PDF-'):
+    if not pdf_data.startswith(b"%PDF-"):
         logger.warning("PDF magic bytes missing")
-        return (
-            json.dumps({'error': 'pdf_magic_missing'}),
-            422,
-            headers
-        )
+        return (json.dumps({"error": "pdf_magic_missing"}), 422, headers)
 
     # Count pages
     try:
         page_count = count_pdf_pages(pdf_data)
         if page_count > MAX_PAGES:
             logger.warning(f"PDF has too many pages: {page_count}")
-            return (
-                json.dumps({'error': 'pdf_too_many_pages'}),
-                422,
-                headers
-            )
+            return (json.dumps({"error": "pdf_too_many_pages"}), 422, headers)
     except Exception as e:
         logger.error(f"Failed to count pages: {e}")
-        return (
-            json.dumps({'error': 'pdf_corrupted'}),
-            422,
-            headers
-        )
+        return (json.dumps({"error": "pdf_corrupted"}), 422, headers)
 
     # Sanitize PDF
     try:
@@ -349,17 +329,9 @@ def pdf_worker(request):
         # Provide clearer signal for encrypted PDFs
         if isinstance(e, ValueError) and str(e) == "encrypted_pdf":
             logger.warning("Encrypted/password-protected PDF rejected")
-            return (
-                json.dumps({'error': 'pdf_encrypted'}),
-                422,
-                headers
-            )
+            return (json.dumps({"error": "pdf_encrypted"}), 422, headers)
         logger.error(f"PDF sanitization failed: {e}")
-        return (
-            json.dumps({'error': 'pdf_sanitization_failed'}),
-            422,
-            headers
-        )
+        return (json.dumps({"error": "pdf_sanitization_failed"}), 422, headers)
 
     # Extract text
     try:
@@ -367,42 +339,34 @@ def pdf_worker(request):
         logger.info(f"Text extracted: {len(text)} characters, {page_count} pages")
     except Exception as e:
         logger.error(f"Text extraction failed: {e}")
-        return (
-            json.dumps({'error': 'pdf_processing_failed'}),
-            500,
-            headers
-        )
+        return (json.dumps({"error": "pdf_processing_failed"}), 500, headers)
 
     # Sanitize extracted text with Model Armor (prevent malicious content injection)
     is_safe, sanitized_text = sanitize_text_with_model_armor(text)
     if not is_safe:
         logger.warning(f"Model Armor blocked PDF text: {sanitized_text}")
         return (
-            json.dumps({'error': 'pdf_content_blocked', 'message': sanitized_text}),
+            json.dumps({"error": "pdf_content_blocked", "message": sanitized_text}),
             422,
-            headers
+            headers,
         )
 
     # Return success response
     response = {
-        'text': sanitized_text,
-        'pages': page_count,
-        'sanitized': True,
-        'model_armor_checked': MODEL_ARMOR_ENABLED,
-        'limits': {
-            'max_bytes': MAX_BYTES,
-            'max_pages': MAX_PAGES,
-            'max_output_chars': MAX_OUTPUT_CHARS
+        "text": sanitized_text,
+        "pages": page_count,
+        "sanitized": True,
+        "model_armor_checked": MODEL_ARMOR_ENABLED,
+        "limits": {
+            "max_bytes": MAX_BYTES,
+            "max_pages": MAX_PAGES,
+            "max_output_chars": MAX_OUTPUT_CHARS,
         },
-        'metadata': {
-            'original_size': len(pdf_data),
-            'sanitized_size': len(sanitized_data),
-            'text_length': len(sanitized_text)
-        }
+        "metadata": {
+            "original_size": len(pdf_data),
+            "sanitized_size": len(sanitized_data),
+            "text_length": len(sanitized_text),
+        },
     }
 
-    return (
-        json.dumps(response),
-        200,
-        headers
-    )
+    return (json.dumps(response), 200, headers)

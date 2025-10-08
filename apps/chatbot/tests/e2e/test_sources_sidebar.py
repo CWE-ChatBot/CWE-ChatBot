@@ -3,9 +3,10 @@ E2E test: verify source cards appear for a standard RAG query.
 Skips gracefully if sources are not rendered in this environment.
 """
 
+import os
+
 import pytest
 from playwright.sync_api import sync_playwright
-import os
 
 
 @pytest.mark.e2e
@@ -24,7 +25,10 @@ def test_sources_sidebar_renders(chainlit_server):
             input_candidates = ["textarea", "input[type='text']"]
             msg_input = None
             for sel in input_candidates:
-                if page.locator(sel).count() > 0 and page.locator(sel).first.is_visible():
+                if (
+                    page.locator(sel).count() > 0
+                    and page.locator(sel).first.is_visible()
+                ):
                     msg_input = page.locator(sel).first
                     break
             assert msg_input is not None, "Message input not found"
@@ -43,10 +47,12 @@ def test_sources_sidebar_renders(chainlit_server):
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_sources_sidebar_renders.webm')
+                    video.save_as(
+                        "test-results/videos/test_sources_sidebar_renders.webm"
+                    )
             except Exception:
                 pass
             context.close()

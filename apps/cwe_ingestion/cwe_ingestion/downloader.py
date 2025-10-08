@@ -21,7 +21,7 @@ class CWEDownloader:
         self,
         source_url: str = "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip",
         timeout: int = 30,
-        verify_ssl: bool = True
+        verify_ssl: bool = True,
     ):
         self.source_url = source_url
         self.schema_url = "https://cwe.mitre.org/data/xsd/cwe_schema_latest.xsd"
@@ -34,7 +34,7 @@ class CWEDownloader:
             total=3,
             backoff_factor=1,
             status_forcelist=[429, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS"]
+            allowed_methods=["HEAD", "GET", "OPTIONS"],
         )
         self.session.mount("https://", HTTPAdapter(max_retries=retries))
         self.session.mount("http://", HTTPAdapter(max_retries=retries))
@@ -64,12 +64,12 @@ class CWEDownloader:
                 self.source_url,
                 timeout=self.timeout,
                 verify=self.verify_ssl,
-                stream=True
+                stream=True,
             )
             response.raise_for_status()
 
             # Write file in chunks to handle large files
-            with open(output_path, 'wb') as f:
+            with open(output_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
@@ -96,16 +96,20 @@ class CWEDownloader:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
 
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 # Security: Zipbomb defense - check file count
                 if len(zip_ref.namelist()) > 10_000:
-                    raise ValueError(f"ZIP contains too many files ({len(zip_ref.namelist())}), possible zipbomb")
+                    raise ValueError(
+                        f"ZIP contains too many files ({len(zip_ref.namelist())}), possible zipbomb"
+                    )
 
                 # Security: Check individual file sizes and paths
                 for info in zip_ref.infolist():
                     # Check file size (200MB limit per file)
                     if info.file_size > 200 * 1024 * 1024:
-                        raise ValueError(f"ZIP contains oversized entry: {info.filename} ({info.file_size} bytes)")
+                        raise ValueError(
+                            f"ZIP contains oversized entry: {info.filename} ({info.file_size} bytes)"
+                        )
 
                     # Security: Path traversal defense
                     p = Path(info.filename)
@@ -113,7 +117,7 @@ class CWEDownloader:
                         raise ValueError(f"Unsafe path in ZIP entry: {info.filename}")
 
                 # Find XML file in ZIP
-                xml_files = [f for f in zip_ref.namelist() if f.endswith('.xml')]
+                xml_files = [f for f in zip_ref.namelist() if f.endswith(".xml")]
 
                 if not xml_files:
                     raise ValueError("No XML file found in ZIP archive")

@@ -3,9 +3,10 @@ Integration tests for Chainlit server functionality.
 Tests real server startup, basic endpoints, and graceful shutdown.
 """
 
+import time
+
 import pytest
 import requests
-import time
 
 
 @pytest.mark.integration
@@ -21,7 +22,10 @@ def test_server_startup_and_health(chainlit_server):
 
     # Test basic connectivity
     response = requests.get(f"{server_info['url']}/health", timeout=5)
-    assert response.status_code in [200, 404]  # 404 is OK if health endpoint doesn't exist
+    assert response.status_code in [
+        200,
+        404,
+    ]  # 404 is OK if health endpoint doesn't exist
 
 
 @pytest.mark.integration
@@ -79,8 +83,13 @@ def test_sample_fixtures(sample_user_inputs, sample_roles):
     """Test that sample data fixtures provide expected data structures."""
     # Test user inputs fixture
     assert isinstance(sample_user_inputs, dict)
-    expected_keys = ["cwe_direct", "cwe_comparison", "general_security",
-                    "prompt_injection", "xss_prevention"]
+    expected_keys = [
+        "cwe_direct",
+        "cwe_comparison",
+        "general_security",
+        "prompt_injection",
+        "xss_prevention",
+    ]
     for key in expected_keys:
         assert key in sample_user_inputs
         assert isinstance(sample_user_inputs[key], str)

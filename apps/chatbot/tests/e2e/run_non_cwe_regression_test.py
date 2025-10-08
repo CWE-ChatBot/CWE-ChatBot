@@ -11,8 +11,6 @@ Usage:
 """
 
 import os
-import time
-from typing import Dict, List
 
 # Test queries that should retrieve chunks (no explicit CWE IDs)
 NON_CWE_TEST_QUERIES = [
@@ -20,32 +18,32 @@ NON_CWE_TEST_QUERIES = [
         "persona": "PSIRT Member",
         "query": "Show me SQL injection prevention techniques",
         "expected_cwe": "CWE-89",
-        "min_chunks": 5
+        "min_chunks": 5,
     },
     {
         "persona": "Academic Researcher",
         "query": "Buffer overflow vulnerabilities",
         "expected_cwe": "CWE-120",
-        "min_chunks": 5
+        "min_chunks": 5,
     },
     {
         "persona": "Developer",
         "query": "XSS mitigation strategies",
         "expected_cwe": "CWE-79",
-        "min_chunks": 5
+        "min_chunks": 5,
     },
     {
         "persona": "Bug Bounty Hunter",
         "query": "Path traversal attack vectors",
         "expected_cwe": "CWE-22",
-        "min_chunks": 5
+        "min_chunks": 5,
     },
     {
         "persona": "Product Manager",
         "query": "Authentication bypass weaknesses",
         "expected_cwe": "CWE-287",
-        "min_chunks": 5
-    }
+        "min_chunks": 5,
+    },
 ]
 
 
@@ -64,7 +62,9 @@ def main():
     3. Generate test report
     """
 
-    app_url = os.getenv("CHAINLIT_APP_URL", "https://cwe-chatbot-bmgj6wj65a-uc.a.run.app")
+    app_url = os.getenv(
+        "CHAINLIT_APP_URL", "https://cwe-chatbot-bmgj6wj65a-uc.a.run.app"
+    )
 
     print("=" * 70)
     print("NON-CWE QUERY REGRESSION TEST")
@@ -75,7 +75,9 @@ def main():
 
     for i, test_case in enumerate(NON_CWE_TEST_QUERIES, 1):
         print(f"{i}. {test_case['persona']}: '{test_case['query']}'")
-        print(f"   Expected: {test_case['expected_cwe']}, Min chunks: {test_case['min_chunks']}")
+        print(
+            f"   Expected: {test_case['expected_cwe']}, Min chunks: {test_case['min_chunks']}"
+        )
 
     print()
     print("=" * 70)

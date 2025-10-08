@@ -1,6 +1,6 @@
-import pytest
 from unittest.mock import patch
 
+import pytest
 
 PERSONAS = [
     "PSIRT Member",
@@ -61,7 +61,11 @@ class DummyQH:
         return [
             {
                 "document": "CWE-79 details ...",
-                "metadata": {"cwe_id": "CWE-79", "name": "XSS", "section": "Description"},
+                "metadata": {
+                    "cwe_id": "CWE-79",
+                    "name": "XSS",
+                    "section": "Description",
+                },
                 "scores": {"hybrid": 0.5},
             }
         ]
@@ -78,7 +82,9 @@ class DummyRG:
         # Simple echo to allow validation step to proceed
         return f"ok: {user_persona}: {query[:10]} ({len(retrieved_chunks)} chunks)"
 
-    async def generate_response_streaming(self, query, retrieved_chunks, user_persona, *, user_evidence=None):
+    async def generate_response_streaming(
+        self, query, retrieved_chunks, user_persona, *, user_evidence=None
+    ):
         # Simulate streaming; record shape if needed
         yield f"ok: {user_persona}: {query[:10]}"
 
@@ -95,7 +101,8 @@ async def test_evidence_pseudo_chunk_injected_for_every_persona(monkeypatch, per
     monkeypatch.setattr(cl, "Step", DummyStep, raising=True)
 
     # Patch heavy dependencies by stubbing their modules before import
-    import sys, types
+    import sys
+    import types
 
     qh_mod = types.ModuleType("src.query_handler")
     setattr(qh_mod, "CWEQueryHandler", DummyQH)
@@ -110,16 +117,19 @@ async def test_evidence_pseudo_chunk_injected_for_every_persona(monkeypatch, per
     from src.user_context import UserContext
 
     # Mock database connections to prevent real connections
-    with patch('src.conversation.CWEQueryHandler', return_value=DummyQH()):
-        with patch('src.response_generator.ResponseGenerator', return_value=DummyRG()):
-            with patch('src.utils.session.get_user_context') as mock_get_user_context:
+    with patch("src.conversation.CWEQueryHandler", return_value=DummyQH()):
+        with patch("src.response_generator.ResponseGenerator", return_value=DummyRG()):
+            with patch("src.utils.session.get_user_context") as mock_get_user_context:
                 # Set up the user context mock to return a controllable context
                 test_context = UserContext()
                 test_context.persona = persona
                 mock_get_user_context.return_value = test_context
 
                 # Create manager (uses DummyQH/DummyRG)
-                cm = ConversationManager(database_url="postgresql://user:pass@host/db", gemini_api_key="dummy")
+                cm = ConversationManager(
+                    database_url="postgresql://user:pass@host/db",
+                    gemini_api_key="dummy",
+                )
 
                 # Seed a session context and persona
                 session_id = "sess-test"
@@ -127,24 +137,44 @@ async def test_evidence_pseudo_chunk_injected_for_every_persona(monkeypatch, per
                 ctx.persona = persona
 
                 # Provide uploaded evidence via session
-                cl_session.set("uploaded_file_context", "Evidence: reflected XSS in search param")
+                cl_session.set(
+                    "uploaded_file_context", "Evidence: reflected XSS in search param"
+                )
 
                 # Spy on streaming to capture retrieval and evidence passing
                 calls = {}
 
-                async def spy_generate_response_streaming(query, retrieved_chunks, user_persona, *, user_evidence=None):
+                async def spy_generate_response_streaming(
+                    query, retrieved_chunks, user_persona, *, user_evidence=None
+                ):
                     calls["retrieved_chunks"] = list(retrieved_chunks)
                     calls["user_evidence"] = user_evidence
-                    async for t in DummyRG().generate_response_streaming(query, retrieved_chunks, user_persona, user_evidence=user_evidence):
+                    async for t in DummyRG().generate_response_streaming(
+                        query,
+                        retrieved_chunks,
+                        user_persona,
+                        user_evidence=user_evidence,
+                    ):
                         yield t
 
-                monkeypatch.setattr(cm.response_generator, "generate_response_streaming", spy_generate_response_streaming, raising=True)
+                monkeypatch.setattr(
+                    cm.response_generator,
+                    "generate_response_streaming",
+                    spy_generate_response_streaming,
+                    raising=True,
+                )
 
                 # Execute streaming path (wrapper around core)
-                result = await cm.process_user_message_streaming(session_id, "Explain the risk of XSS", "msg-1")
+                result = await cm.process_user_message_streaming(
+                    session_id, "Explain the risk of XSS", "msg-1"
+                )
 
                 # Ensure response returned and our spy captured retrieval and evidence
                 assert "response" in result
                 retrieved = calls.get("retrieved_chunks")
-                assert retrieved is not None, "streaming should have been called with retrieval"
-                assert calls.get("user_evidence"), "Expected user evidence to be passed via user_evidence for all personas"
+                assert (
+                    retrieved is not None
+                ), "streaming should have been called with retrieval"
+                assert calls.get(
+                    "user_evidence"
+                ), "Expected user evidence to be passed via user_evidence for all personas"

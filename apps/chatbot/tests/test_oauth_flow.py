@@ -12,7 +12,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Load environment
 from src.config.env_loader import load_env_auto
+
 load_env_auto()
+
 
 def test_authentication_enforcement():
     """Test that authentication enforcement is properly implemented"""
@@ -38,11 +40,12 @@ def test_authentication_enforcement():
     else:
         print("⚠️  No user whitelist configured (all authenticated users allowed)")
 
-    print(f"\n🌐 App ready to test at: http://localhost:8081")
+    print("\n🌐 App ready to test at: http://localhost:8081")
     print("📝 Expected behavior with placeholder credentials:")
     print("   - App will show: 'You must set environment variable for OAuth provider'")
     print("   - This confirms OAuth detection is working")
     print("   - Authentication enforcement logic is active")
+
 
 if __name__ == "__main__":
     test_authentication_enforcement()

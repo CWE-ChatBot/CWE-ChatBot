@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Test direct psycopg connection from Cloud Run environment."""
 import os
+
 import psycopg
+
 
 def test_connection():
     """Test database connection with current environment variables."""
@@ -12,7 +14,7 @@ def test_connection():
     password = os.getenv("DB_PASSWORD", "").strip()
     sslmode = os.getenv("DB_SSLMODE", "require")
 
-    print(f"Testing connection...")
+    print("Testing connection...")
     print(f"  host={host}:{port}")
     print(f"  dbname={dbname}")
     print(f"  user={user}")
@@ -33,7 +35,9 @@ def test_connection():
         print("\n✅ CONNECTION SUCCESSFUL!")
 
         cur = conn.cursor()
-        cur.execute("SELECT current_user, inet_client_addr(), inet_server_addr(), version()")
+        cur.execute(
+            "SELECT current_user, inet_client_addr(), inet_server_addr(), version()"
+        )
         row = cur.fetchone()
         print(f"\n  current_user: {row[0]}")
         print(f"  client_addr: {row[1]}")
@@ -44,10 +48,11 @@ def test_connection():
         return True
 
     except Exception as e:
-        print(f"\n❌ CONNECTION FAILED!")
+        print("\n❌ CONNECTION FAILED!")
         print(f"  Error type: {type(e).__name__}")
         print(f"  Error message: {e}")
         return False
+
 
 if __name__ == "__main__":
     success = test_connection()

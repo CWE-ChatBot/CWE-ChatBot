@@ -13,18 +13,18 @@ Screenshots will be written under docs/stories/R1/screenshots/current/
 """
 
 import asyncio
-import os
+import sys
 from pathlib import Path
+from pathlib import Path as _P
+
 import pytest
 from playwright.async_api import Page
 
-import sys
-from pathlib import Path as _P
 _THIS_DIR = _P(__file__).resolve().parent
 if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 
-from utils.chainlit_helpers import ChainlitTestHelper, setup_test_environment
+from utils.chainlit_helpers import setup_test_environment
 from utils.screenshot_helpers import ScreenshotHelper
 
 
@@ -68,7 +68,9 @@ async def test_capture_r1_screenshots(page: Page, chainlit_base_url: str):
     await shots.capture_screenshot(page, "settings_panel", full_page=True)
 
     # Submit a representative query and wait for streamed response
-    await helper.submit_message("Explain CWE-79 for a developer", wait_for_response=True)
+    await helper.submit_message(
+        "Explain CWE-79 for a developer", wait_for_response=True
+    )
 
     # Allow a short time for sources/side elements to appear
     await asyncio.sleep(2)

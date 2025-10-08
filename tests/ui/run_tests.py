@@ -4,10 +4,9 @@ Test runner script for Playwright UI tests.
 Provides convenient commands for running different test scenarios.
 """
 
-import os
-import sys
-import subprocess
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 
 # Add current directory to path for local imports
@@ -18,7 +17,7 @@ def run_command(command: list, description: str = "") -> int:
     """Run a command and return the exit code."""
     if description:
         print(f"\n=== {description} ===")
-    
+
     print(f"Running: {' '.join(command)}")
     result = subprocess.run(command, cwd=Path(__file__).parent.parent.parent)
     return result.returncode
@@ -27,43 +26,47 @@ def run_command(command: list, description: str = "") -> int:
 def install_system_dependencies():
     """Install system dependencies for Playwright browsers."""
     print("Installing Playwright system dependencies...")
-    return run_command([
-        "sudo", "playwright", "install-deps"
-    ], "Installing system dependencies")
+    return run_command(
+        ["sudo", "playwright", "install-deps"], "Installing system dependencies"
+    )
 
 
 def run_basic_tests(headless: bool = False, browser: str = "chromium"):
     """Run basic navigation and smoke tests."""
     cmd = [
-        "poetry", "run", "pytest", 
+        "poetry",
+        "run",
+        "pytest",
         "tests/ui/test_basic_navigation.py",
         "-v",
-        f"--browser={browser}"
+        f"--browser={browser}",
     ]
-    
+
     if headless:
         cmd.append("--headless")
     else:
         cmd.append("--headed")
-    
+
     return run_command(cmd, f"Running basic tests in {browser}")
 
 
 def run_all_ui_tests(headless: bool = False, browser: str = "chromium"):
     """Run all UI tests."""
     cmd = [
-        "poetry", "run", "pytest",
+        "poetry",
+        "run",
+        "pytest",
         "tests/ui/",
-        "-v", 
+        "-v",
         f"--browser={browser}",
-        "--tb=short"
+        "--tb=short",
     ]
-    
+
     if headless:
         cmd.append("--headless")
     else:
         cmd.append("--headed")
-    
+
     return run_command(cmd, f"Running all UI tests in {browser}")
 
 
@@ -71,145 +74,161 @@ def run_cross_browser_tests(headless: bool = True):
     """Run tests across multiple browsers."""
     browsers = ["chromium", "firefox", "webkit"]
     results = {}
-    
+
     for browser in browsers:
         print(f"\n{'='*50}")
         print(f"Testing with {browser.upper()}")
         print(f"{'='*50}")
-        
+
         result = run_basic_tests(headless=headless, browser=browser)
         results[browser] = result
-    
+
     # Summary
     print(f"\n{'='*50}")
     print("Cross-browser test summary:")
     print(f"{'='*50}")
-    
+
     for browser, result in results.items():
         status = "PASSED" if result == 0 else "FAILED"
         print(f"{browser:10}: {status}")
-    
+
     return all(result == 0 for result in results.values())
 
 
 def run_role_based_tests(headless: bool = False, browser: str = "chromium"):
     """Run role-based UI testing framework."""
     cmd = [
-        "poetry", "run", "pytest", 
+        "poetry",
+        "run",
+        "pytest",
         "tests/ui/test_role_selection.py",
         "-v",
-        f"--browser={browser}"
+        f"--browser={browser}",
     ]
-    
+
     if headless:
         cmd.append("--headless")
     else:
         cmd.append("--headed")
-    
+
     return run_command(cmd, f"Running role-based tests in {browser}")
 
 
 def run_progressive_disclosure_tests(headless: bool = False, browser: str = "chromium"):
     """Run progressive disclosure testing."""
     cmd = [
-        "poetry", "run", "pytest", 
+        "poetry",
+        "run",
+        "pytest",
         "tests/ui/test_progressive_disclosure.py",
         "-v",
-        f"--browser={browser}"
+        f"--browser={browser}",
     ]
-    
+
     if headless:
         cmd.append("--headless")
     else:
         cmd.append("--headed")
-    
+
     return run_command(cmd, f"Running progressive disclosure tests in {browser}")
 
 
 def run_security_tests(headless: bool = False, browser: str = "chromium"):
     """Run security feature UI validation tests."""
     cmd = [
-        "poetry", "run", "pytest", 
+        "poetry",
+        "run",
+        "pytest",
         "tests/ui/test_security_features.py",
         "-v",
-        f"--browser={browser}"
+        f"--browser={browser}",
     ]
-    
+
     if headless:
         cmd.append("--headless")
     else:
         cmd.append("--headed")
-    
+
     return run_command(cmd, f"Running security validation tests in {browser}")
 
 
 def run_cross_browser_full_tests(headless: bool = True):
     """Run comprehensive cross-browser compatibility tests."""
     cmd = [
-        "poetry", "run", "pytest",
+        "poetry",
+        "run",
+        "pytest",
         "tests/ui/test_cross_browser.py",
-        "-v", 
-        "--tb=short"
+        "-v",
+        "--tb=short",
     ]
-    
+
     if headless:
         cmd.append("--headless")
     else:
         cmd.append("--headed")
-    
+
     return run_command(cmd, "Running comprehensive cross-browser tests")
 
 
 def run_performance_tests(browser: str = "chromium"):
     """Run performance and load testing."""
     cmd = [
-        "poetry", "run", "pytest",
+        "poetry",
+        "run",
+        "pytest",
         "tests/ui/test_cross_browser.py::TestPerformanceAcrossBrowsers",
         "-v",
         f"--browser={browser}",
-        "--headless"  # Always headless for consistent performance
+        "--headless",  # Always headless for consistent performance
     ]
-    
+
     return run_command(cmd, f"Running performance tests in {browser}")
 
 
 def run_regression_suite(headless: bool = False):
     """Run complete regression test suite."""
     print("Running comprehensive regression test suite...")
-    
+
     test_suites = [
         ("Basic Navigation", lambda: run_basic_tests(headless, "chromium")),
         ("Role-Based Testing", lambda: run_role_based_tests(headless, "chromium")),
-        ("Progressive Disclosure", lambda: run_progressive_disclosure_tests(headless, "chromium")),
+        (
+            "Progressive Disclosure",
+            lambda: run_progressive_disclosure_tests(headless, "chromium"),
+        ),
         ("Security Validation", lambda: run_security_tests(headless, "chromium")),
-        ("Cross-Browser Compatibility", lambda: run_cross_browser_full_tests(True)),  # Always headless for CI
-        ("Performance Testing", lambda: run_performance_tests("chromium"))
+        (
+            "Cross-Browser Compatibility",
+            lambda: run_cross_browser_full_tests(True),
+        ),  # Always headless for CI
+        ("Performance Testing", lambda: run_performance_tests("chromium")),
     ]
-    
+
     results = {}
-    
+
     for suite_name, test_function in test_suites:
         print(f"\n{'='*60}")
         print(f"Running {suite_name}")
         print(f"{'='*60}")
-        
+
         result = test_function()
         results[suite_name] = result
-    
+
     # Summary report
     print(f"\n{'='*60}")
     print("REGRESSION SUITE SUMMARY")
     print(f"{'='*60}")
-    
+
     total_suites = len(results)
     passed_suites = sum(1 for result in results.values() if result == 0)
-    
+
     for suite_name, result in results.items():
         status = "✓ PASSED" if result == 0 else "❌ FAILED"
         print(f"{suite_name:25}: {status}")
-    
+
     print(f"\nOverall: {passed_suites}/{total_suites} test suites passed")
-    
+
     if passed_suites == total_suites:
         print("🎉 All regression tests PASSED!")
         return 0
@@ -222,23 +241,27 @@ def run_interactive_test():
     """Run tests in interactive mode for debugging."""
     print("Starting interactive test mode...")
     print("Browser will open and stay open for manual testing")
-    
+
     cmd = [
-        "poetry", "run", "pytest",
+        "poetry",
+        "run",
+        "pytest",
         "tests/ui/test_basic_navigation.py::TestBasicNavigation::test_chainlit_interface_elements_present",
-        "-v", "-s",
+        "-v",
+        "-s",
         "--headed",
-        "--browser=chromium"
+        "--browser=chromium",
     ]
-    
+
     return run_command(cmd, "Running interactive test")
 
 
 def create_test_environment_file(env: str = "local"):
     """Create test environment configuration file."""
     try:
-        # Import the local config module 
+        # Import the local config module
         import playwright.config as config_module
+
         output_file = f".env.test.{env}"
         config_module.PlaywrightConfig.create_env_file(env, output_file)
         print(f"Test environment file created: {output_file}")
@@ -246,7 +269,7 @@ def create_test_environment_file(env: str = "local"):
     except ImportError as e:
         print(f"Could not import playwright config: {e}")
         print("Creating basic environment file...")
-        
+
         # Create a basic env file manually
         output_file = f".env.test.{env}"
         env_content = f"""# Playwright test environment configuration for {env}
@@ -258,7 +281,7 @@ PLAYWRIGHT_VIDEO=retain-on-failure
 PLAYWRIGHT_TRACE={'false' if env == 'ci' else 'true'}
 PLAYWRIGHT_TIMEOUT=30000
 """
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             f.write(env_content)
         print(f"Basic environment file created: {output_file}")
         return 0
@@ -267,7 +290,7 @@ PLAYWRIGHT_TIMEOUT=30000
 def check_prerequisites():
     """Check that prerequisites are installed."""
     print("Checking prerequisites...")
-    
+
     # Check Poetry
     try:
         result = subprocess.run(["poetry", "--version"], capture_output=True, text=True)
@@ -279,10 +302,12 @@ def check_prerequisites():
     except FileNotFoundError:
         print("✗ Poetry not found")
         return False
-    
-    # Check Playwright installation  
+
+    # Check Playwright installation
     try:
-        result = subprocess.run(["poetry", "run", "playwright", "--version"], capture_output=True, text=True)
+        result = subprocess.run(
+            ["poetry", "run", "playwright", "--version"], capture_output=True, text=True
+        )
         if result.returncode == 0:
             print(f"✓ Playwright: {result.stdout.strip()}")
         else:
@@ -291,40 +316,68 @@ def check_prerequisites():
     except FileNotFoundError:
         print("✗ Playwright not found")
         return False
-    
+
     # Check browsers
     try:
-        result = subprocess.run(["poetry", "run", "playwright", "install", "--dry-run"], capture_output=True, text=True)
-        if "chromium" in result.stdout or "browsers are already installed" in result.stdout:
+        result = subprocess.run(
+            ["poetry", "run", "playwright", "install", "--dry-run"],
+            capture_output=True,
+            text=True,
+        )
+        if (
+            "chromium" in result.stdout
+            or "browsers are already installed" in result.stdout
+        ):
             print("✓ Playwright browsers available")
         else:
             print("⚠ Playwright browsers may need installation")
     except:
         print("⚠ Could not check browser installation")
-    
+
     return True
 
 
 def main():
     """Main CLI interface."""
     parser = argparse.ArgumentParser(description="Playwright UI test runner")
-    parser.add_argument("command", choices=[
-        "check", "install-deps", "basic", "all", "cross-browser", 
-        "role-based", "progressive", "security", "performance",
-        "regression", "interactive", "config", "help"
-    ], help="Command to run")
-    
-    parser.add_argument("--headless", action="store_true", 
-                       help="Run tests in headless mode")
-    parser.add_argument("--browser", default="chromium", 
-                       choices=["chromium", "firefox", "webkit"],
-                       help="Browser to use for testing")
-    parser.add_argument("--env", default="local", 
-                       choices=["local", "ci", "staging", "production"],
-                       help="Environment configuration to use")
-    
+    parser.add_argument(
+        "command",
+        choices=[
+            "check",
+            "install-deps",
+            "basic",
+            "all",
+            "cross-browser",
+            "role-based",
+            "progressive",
+            "security",
+            "performance",
+            "regression",
+            "interactive",
+            "config",
+            "help",
+        ],
+        help="Command to run",
+    )
+
+    parser.add_argument(
+        "--headless", action="store_true", help="Run tests in headless mode"
+    )
+    parser.add_argument(
+        "--browser",
+        default="chromium",
+        choices=["chromium", "firefox", "webkit"],
+        help="Browser to use for testing",
+    )
+    parser.add_argument(
+        "--env",
+        default="local",
+        choices=["local", "ci", "staging", "production"],
+        help="Environment configuration to use",
+    )
+
     args = parser.parse_args()
-    
+
     if args.command == "help":
         print_help()
         return 0

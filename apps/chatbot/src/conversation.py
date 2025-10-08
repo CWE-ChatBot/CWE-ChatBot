@@ -4,34 +4,30 @@ Conversation Management - Story 2.1
 Manages conversation flow, session state, and message handling for Chainlit integration.
 """
 
-import logging
-from typing import Dict, List, Any, Optional, AsyncGenerator, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 try:
-    from sqlalchemy.engine import Engine
+    from sqlalchemy.engine import Engine  # type: ignore[import-not-found]
 except ImportError:
     Engine = None
 
 if TYPE_CHECKING:
     from src.processing.pipeline import PipelineResult
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import asyncio
+
 import chainlit as cl
 
-import os
-
-from src.user_context import UserContext, UserPersona
+from src.app_config import config
 from src.input_security import InputSanitizer, SecurityValidator
+from src.processing.pipeline import ProcessingPipeline
+from src.processing.query_processor import QueryProcessor
 from src.query_handler import CWEQueryHandler
 from src.response_generator import ResponseGenerator
 from src.security.secure_logging import get_secure_logger
-from src.processing.query_processor import QueryProcessor
-from src.processing.pipeline import ProcessingPipeline
-from src.utils.text_post import harmonize_cwe_names_in_table
+from src.user_context import UserContext, UserPersona
 from src.utils.session import get_user_context
-
-from src.app_config import config
 
 logger = get_secure_logger(__name__)
 
@@ -60,7 +56,9 @@ class ConversationManager:
     - Error handling and graceful degradation
     """
 
-    def __init__(self, database_url: str, gemini_api_key: str, engine: Optional[Any] = None):
+    def __init__(
+        self, database_url: str, gemini_api_key: str, engine: Optional[Any] = None
+    ):
         """
         Initialize conversation manager with required components.
 
@@ -74,15 +72,20 @@ class ConversationManager:
             # no local context manager; state now lives in cl.user_session
             self.input_sanitizer = InputSanitizer()
             self.security_validator = SecurityValidator()
-            self.query_handler = CWEQueryHandler(database_url, gemini_api_key, engine=engine)
+            self.query_handler = CWEQueryHandler(
+                database_url, gemini_api_key, engine=engine
+            )
             self.response_generator = ResponseGenerator(gemini_api_key)
             self.query_processor = QueryProcessor()
 
             # Initialize pipeline with dependencies for end-to-end processing
-            self.processing_pipeline = ProcessingPipeline(self.query_handler, self.response_generator)
+            self.processing_pipeline = ProcessingPipeline(
+                self.query_handler, self.response_generator
+            )
 
             # Initialize analyzer handler for CWE Analyzer persona
             from src.processing.analyzer_handler import AnalyzerModeHandler
+
             self.analyzer_handler = AnalyzerModeHandler(self.processing_pipeline)
 
             # No local message storage; rely on Chainlit's built-in persistence
@@ -109,10 +112,7 @@ class ConversationManager:
         return ctx
 
     async def process_user_message_streaming(
-        self,
-        session_id: str,
-        message_content: str,
-        message_id: str
+        self, session_id: str, message_content: str, message_id: str
     ) -> Dict[str, Any]:
         """
         Simplified orchestration - delegates to specialized handlers.
@@ -146,64 +146,100 @@ class ConversationManager:
 
                 msg = cl.Message(content=off_topic_response)
                 await msg.send()
-                return self._build_response_dict(off_topic_response, session_id, msg, context)
+                return self._build_response_dict(
+                    off_topic_response, session_id, msg, context
+                )
 
             # Security validation
             security_mode = os.getenv("SECURITY_MODE", "FLAG_ONLY").upper()
-            if security_mode == "BLOCK" and processed.get("security_check", {}).get("is_potentially_malicious", False):
+            if security_mode == "BLOCK" and processed.get("security_check", {}).get(
+                "is_potentially_malicious", False
+            ):
                 flags = processed.get("security_check", {}).get("detected_patterns", [])
-                fallback_response = self.input_sanitizer.generate_fallback_message(flags, context.persona)
+                fallback_response = self.input_sanitizer.generate_fallback_message(
+                    flags, context.persona
+                )
 
                 self.security_validator.log_security_event(
                     "unsafe_input_detected",
-                    {"session_id": session_id, "security_flags": flags, "persona": context.persona},
+                    {
+                        "session_id": session_id,
+                        "security_flags": flags,
+                        "persona": context.persona,
+                    },
                 )
 
                 msg = cl.Message(content=fallback_response)
                 await msg.send()
-                return self._build_response_dict(fallback_response, session_id, msg, context, is_safe=False, security_flags=flags)
+                return self._build_response_dict(
+                    fallback_response,
+                    session_id,
+                    msg,
+                    context,
+                    is_safe=False,
+                    security_flags=flags,
+                )
 
-            elif processed.get("security_check", {}).get("is_potentially_malicious", False):
+            elif processed.get("security_check", {}).get(
+                "is_potentially_malicious", False
+            ):
                 # In FLAG_ONLY mode, just log the event
                 flags = processed.get("security_check", {}).get("detected_patterns", [])
                 self.security_validator.log_security_event(
                     "unsafe_input_flagged",
-                    {"session_id": session_id, "security_flags": flags, "persona": context.persona},
+                    {
+                        "session_id": session_id,
+                        "security_flags": flags,
+                        "persona": context.persona,
+                    },
                 )
 
             # Handle /exit command for analyzer modes
-            if hasattr(context, 'analyzer_mode') and context.analyzer_mode and message_content.strip().lower() == '/exit':
+            if (
+                hasattr(context, "analyzer_mode")
+                and context.analyzer_mode
+                and message_content.strip().lower() == "/exit"
+            ):
                 context.analyzer_mode = None
                 from src.utils.session import set_user_context
+
                 set_user_context(context)
 
                 exit_response = "✅ **Exited analyzer mode.** You can now ask general CWE questions or start a new analysis."
                 msg = cl.Message(content=exit_response)
                 await msg.send()
-                return self._build_response_dict(exit_response, session_id, msg, context)
+                return self._build_response_dict(
+                    exit_response, session_id, msg, context
+                )
 
             # Set file evidence if present
             file_ctx = cl.user_session.get("uploaded_file_context")
             if file_ctx and isinstance(file_ctx, str) and file_ctx.strip():
-                context.set_evidence(file_ctx[:config.max_file_evidence_length])
+                context.set_evidence(file_ctx[: config.max_file_evidence_length])
 
             sanitized_q = processed.get("sanitized_query", message_content)
 
             # Delegate to appropriate handler
             if context.persona == "CWE Analyzer":
-                pipeline_result = await self.analyzer_handler.process(sanitized_q, context)
+                pipeline_result = await self.analyzer_handler.process(
+                    sanitized_q, context
+                )
             elif context.persona == "CVE Creator":
                 # Keep existing CVE Creator logic - could be extracted to separate handler in future
                 pipeline_result = await self._handle_cve_creator(sanitized_q, context)
             else:
                 # Standard personas use pipeline directly
-                pipeline_result = await self.processing_pipeline.process_user_request(sanitized_q, context)
+                pipeline_result = await self.processing_pipeline.process_user_request(
+                    sanitized_q, context
+                )
 
             # Handle mode switches (no streaming needed)
             if pipeline_result.metadata.get("mode_switch"):
                 msg = cl.Message(content=pipeline_result.final_response_text)
                 await msg.send()
-                return self._build_response_dict_from_pipeline(pipeline_result, session_id, msg, context)
+                return self._build_response_dict_from_pipeline(
+                    pipeline_result, session_id, msg, context
+                )
 
             # Stream the final response
             msg = cl.Message(content="")
@@ -219,15 +255,21 @@ class ConversationManager:
                 await msg.update()
 
             # Update context and return
-            context.add_conversation_entry(sanitized_q, pipeline_result.final_response_text, pipeline_result.retrieved_cwes)
+            context.add_conversation_entry(
+                sanitized_q,
+                pipeline_result.final_response_text,
+                pipeline_result.retrieved_cwes,
+            )
             context.clear_evidence()
 
-            return self._build_response_dict_from_pipeline(pipeline_result, session_id, msg, context)
+            return self._build_response_dict_from_pipeline(
+                pipeline_result, session_id, msg, context
+            )
 
         except Exception as e:
             return await self._handle_processing_error(session_id, e)
 
-    async def _handle_cve_creator(self, query: str, context) -> 'PipelineResult':
+    async def _handle_cve_creator(self, query: str, context: Any) -> "PipelineResult":
         """Handle CVE Creator persona logic."""
 
         # Set evidence and create structured CVE description
@@ -236,17 +278,21 @@ class ConversationManager:
 
         # Use pipeline but with empty chunks for direct creation
         try:
-            result = await self.processing_pipeline.process_user_request(enhanced_query, context)
+            result = await self.processing_pipeline.process_user_request(
+                enhanced_query, context
+            )
             result.metadata["persona"] = "CVE Creator"
             return result
         except Exception as e:
             logger.log_exception("CVE Creator processing failed", e)
             return PipelineResult(
                 final_response_text="I encountered an error creating the CVE description. Please try again.",
-                is_low_confidence=True
+                is_low_confidence=True,
             )
 
-    def _build_response_dict(self, response_text: str, session_id: str, msg, context, **kwargs) -> Dict[str, Any]:
+    def _build_response_dict(
+        self, response_text: str, session_id: str, msg: Any, context: Any, **kwargs: Any
+    ) -> Dict[str, Any]:
         """Build standardized response dictionary."""
         return {
             "response": response_text,
@@ -257,10 +303,17 @@ class ConversationManager:
             "recommendations": kwargs.get("recommendations", []),
             "persona": context.persona,
             "message": msg,
-            **{k: v for k, v in kwargs.items() if k not in ["is_safe", "retrieved_cwes", "chunk_count", "recommendations"]}
+            **{
+                k: v
+                for k, v in kwargs.items()
+                if k
+                not in ["is_safe", "retrieved_cwes", "chunk_count", "recommendations"]
+            },
         }
 
-    def _build_response_dict_from_pipeline(self, result, session_id: str, msg, context) -> Dict[str, Any]:
+    def _build_response_dict_from_pipeline(
+        self, result: "PipelineResult", session_id: str, msg: Any, context: Any
+    ) -> Dict[str, Any]:
         """Build response dictionary from PipelineResult."""
         return {
             "response": result.final_response_text,
@@ -300,9 +353,10 @@ class ConversationManager:
         context.analyzer_mode = None  # Clear any active analyzer modes
 
         context.update_activity()
-        logger.info(f"Persona updated from {old_persona} to {new_persona} for session {session_id}. Cleared analysis context.")
+        logger.info(
+            f"Persona updated from {old_persona} to {new_persona} for session {session_id}. Cleared analysis context."
+        )
         return True
-
 
     def get_session_context(self, session_id: str) -> Optional[UserContext]:
         """
@@ -314,7 +368,11 @@ class ConversationManager:
         Returns:
             UserContext if found, None otherwise
         """
-        return cl.user_session.get("user_context")
+        ctx = cl.user_session.get("user_context")
+        try:
+            return ctx if isinstance(ctx, UserContext) else None
+        except Exception:
+            return None
 
     def record_feedback(self, session_id: str, message_id: str, rating: int) -> bool:
         """
@@ -345,7 +403,6 @@ class ConversationManager:
         logger.info(f"Recorded feedback for session {session_id}: {rating}")
         return True
 
-
     def get_system_health(self) -> Dict[str, Any]:
         """
         Get system health information.
@@ -355,14 +412,10 @@ class ConversationManager:
         """
         health: Dict[str, Any] = self.query_handler.health_check()
         # Per-user data now lives in cl.user_session; global counts are not available here
-        health.update({
-            "active_sessions": -1,
-            "persona_distribution": {}
-        })
+        health.update({"active_sessions": -1, "persona_distribution": {}})
         return health
 
-
-    def _summarize_attachment(self, text: str, *, limit: int = None) -> str:
+    def _summarize_attachment(self, text: str, *, limit: Optional[int] = None) -> str:
         """Create a brief, safe attachment summary for retrieval/context."""
         if not text:
             return ""
@@ -375,7 +428,9 @@ class ConversationManager:
 
     # Removed actions helper; using slash-command hints instead.
 
-    async def _handle_processing_error(self, session_id: str, error: Exception) -> Dict[str, Any]:
+    async def _handle_processing_error(
+        self, session_id: str, error: Exception
+    ) -> Dict[str, Any]:
         """Handle processing errors with consistent response pattern."""
         logger.log_exception("Error processing message", error)
         error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
@@ -388,6 +443,5 @@ class ConversationManager:
             "session_id": session_id,
             "is_safe": True,
             "error": str(error),
-            "message": msg
+            "message": msg,
         }
-

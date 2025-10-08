@@ -3,7 +3,6 @@
 Test script to verify OAuth configuration helpers in app_config.py
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -12,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import config (which will automatically load environment)
 from src.app_config import config
+
 
 def test_oauth_config_helpers():
     print("🔍 Testing OAuth Configuration Helpers")
@@ -22,11 +22,21 @@ def test_oauth_config_helpers():
     print("-" * 40)
     print(f"enable_oauth: {config.enable_oauth}")
     print(f"chainlit_url: {config.chainlit_url}")
-    print(f"chainlit_auth_secret: {'SET' if config.chainlit_auth_secret else 'NOT SET'}")
-    print(f"oauth_google_client_id: {'SET' if config.oauth_google_client_id else 'NOT SET'}")
-    print(f"oauth_google_client_secret: {'SET' if config.oauth_google_client_secret else 'NOT SET'}")
-    print(f"oauth_github_client_id: {'SET' if config.oauth_github_client_id else 'NOT SET'}")
-    print(f"oauth_github_client_secret: {'SET' if config.oauth_github_client_secret else 'NOT SET'}")
+    print(
+        f"chainlit_auth_secret: {'SET' if config.chainlit_auth_secret else 'NOT SET'}"
+    )
+    print(
+        f"oauth_google_client_id: {'SET' if config.oauth_google_client_id else 'NOT SET'}"
+    )
+    print(
+        f"oauth_google_client_secret: {'SET' if config.oauth_google_client_secret else 'NOT SET'}"
+    )
+    print(
+        f"oauth_github_client_id: {'SET' if config.oauth_github_client_id else 'NOT SET'}"
+    )
+    print(
+        f"oauth_github_client_secret: {'SET' if config.oauth_github_client_secret else 'NOT SET'}"
+    )
     print(f"allowed_users_raw: {config.allowed_users_raw}")
 
     # Test 2: Check provider configuration helpers
@@ -41,14 +51,12 @@ def test_oauth_config_helpers():
     print("\n👥 User Whitelist Helpers:")
     print("-" * 40)
     allowed_users = config.get_allowed_users()
-    print(f"Allowed users: {allowed_users if allowed_users else 'None (all authenticated users allowed)'}")
+    print(
+        f"Allowed users: {allowed_users if allowed_users else 'None (all authenticated users allowed)'}"
+    )
 
     # Test whitelist matching
-    test_emails = [
-        "test@example.com",
-        "user@company.com",
-        "admin@otherdomain.com"
-    ]
+    test_emails = ["test@example.com", "user@company.com", "admin@otherdomain.com"]
 
     print("\n🔍 Whitelist Matching Tests:")
     print("-" * 40)
@@ -88,8 +96,14 @@ def test_oauth_config_helpers():
         if config.github_oauth_configured:
             providers.append("GitHub")
         print(f"✅ Configured providers: {', '.join(providers)}")
-    elif config.enable_oauth and config.oauth_providers_configured and not config.chainlit_auth_secret:
-        print("⚠️  OAuth enabled and providers configured, but CHAINLIT_AUTH_SECRET is missing")
+    elif (
+        config.enable_oauth
+        and config.oauth_providers_configured
+        and not config.chainlit_auth_secret
+    ):
+        print(
+            "⚠️  OAuth enabled and providers configured, but CHAINLIT_AUTH_SECRET is missing"
+        )
         print("   Set CHAINLIT_AUTH_SECRET=$(chainlit create-secret)")
     elif config.enable_oauth and not config.oauth_providers_configured:
         print("⚠️  OAuth enabled but no providers configured")
@@ -98,6 +112,7 @@ def test_oauth_config_helpers():
         print("ℹ️  OAuth is disabled (enable_oauth=false)")
 
     return config.oauth_ready
+
 
 if __name__ == "__main__":
     result = test_oauth_config_helpers()

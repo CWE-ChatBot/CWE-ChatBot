@@ -8,9 +8,9 @@ import sys
 
 # Set the DATABASE_URL for testing
 os.environ.setdefault(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/cwe"
+    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/cwe"
 )
+
 
 def test_postgres_connection():
     """Test basic PostgreSQL connection."""
@@ -21,7 +21,7 @@ def test_postgres_connection():
         store = PostgresVectorStore(dims=3072)
 
         stats = store.get_collection_stats()
-        print(f"✅ PostgreSQL connection successful!")
+        print("✅ PostgreSQL connection successful!")
         print(f"📊 Database stats: {stats}")
 
         return True
@@ -30,8 +30,11 @@ def test_postgres_connection():
         print(f"❌ PostgreSQL connection failed: {e}")
         print("\n💡 Make sure your database is running:")
         print("   docker compose up -d")
-        print("   export DATABASE_URL='postgresql://postgres:postgres@localhost:5432/cwe'")
+        print(
+            "   export DATABASE_URL='postgresql://postgres:postgres@localhost:5432/cwe'"
+        )
         return False
+
 
 def test_pgvector_extension():
     """Test pgvector extension functionality."""
@@ -52,7 +55,7 @@ def test_pgvector_extension():
             "status": "Draft",
             "full_text": "This is a test CWE entry for database validation.",
             "alternate_terms_text": "test; validation",
-            "embedding": dummy_embedding
+            "embedding": dummy_embedding,
         }
 
         # Store test document
@@ -72,6 +75,7 @@ def test_pgvector_extension():
         print(f"❌ pgvector test failed: {e}")
         return False
 
+
 def test_hybrid_retrieval():
     """Test hybrid retrieval functionality."""
     try:
@@ -88,7 +92,7 @@ def test_hybrid_retrieval():
             query_text="test weakness",
             query_embedding=dummy_embedding,
             k_vec=10,
-            limit=5
+            limit=5,
         )
 
         print(f"✅ Hybrid retrieval successful! Found {len(results)} results.")
@@ -98,6 +102,7 @@ def test_hybrid_retrieval():
     except Exception as e:
         print(f"❌ Hybrid retrieval test failed: {e}")
         return False
+
 
 if __name__ == "__main__":
     print("🧪 PostgreSQL + pgvector Database Test")

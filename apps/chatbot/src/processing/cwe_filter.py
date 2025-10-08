@@ -5,7 +5,7 @@ Filters CWE recommendations to remove prohibited/discouraged CWEs and limit resu
 """
 
 import logging
-from typing import Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +24,12 @@ class CWEFilter:
     - Track filter reasoning for debugging and transparency
     """
 
-    def __init__(self,
-                 prohibited: Set[str] = None,
-                 discouraged: Set[str] = None,
-                 max_recommendations: int = MAX_RECS):
+    def __init__(
+        self,
+        prohibited: Optional[Set[str]] = None,
+        discouraged: Optional[Set[str]] = None,
+        max_recommendations: int = MAX_RECS,
+    ) -> None:
         """
         Initialize CWE filter with prohibited and discouraged CWE sets.
 
@@ -40,10 +42,12 @@ class CWEFilter:
         self.discouraged = discouraged or set()
         self.max_recommendations = max_recommendations
 
-        logger.info(f"CWEFilter initialized: prohibited={len(self.prohibited)}, "
-                   f"discouraged={len(self.discouraged)}, max={max_recommendations}")
+        logger.info(
+            f"CWEFilter initialized: prohibited={len(self.prohibited)}, "
+            f"discouraged={len(self.discouraged)}, max={max_recommendations}"
+        )
 
-    def filter(self, recommendations: List[Dict]) -> Dict[str, List[Dict]]:
+    def filter(self, recommendations: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Filter recommendations based on configured rules.
 
@@ -66,13 +70,13 @@ class CWEFilter:
                 "filtered_out": [],
                 "filter_reasons": {},
                 "original_count": 0,
-                "final_count": 0
+                "final_count": 0,
             }
 
         original_count = len(recommendations)
-        filtered_recommendations = []
-        filtered_out = []
-        filter_reasons = {}
+        filtered_recommendations: List[Dict[str, Any]] = []
+        filtered_out: List[Dict[str, Any]] = []
+        filter_reasons: Dict[str, str] = {}
 
         logger.debug(f"Filtering {original_count} recommendations")
 
@@ -99,32 +103,42 @@ class CWEFilter:
         # Apply hard cap on results
         if len(filtered_recommendations) > self.max_recommendations:
             # Keep top N by confidence score (assuming recommendations are pre-sorted)
-            capped_recommendations = filtered_recommendations[:self.max_recommendations]
-            excess_recommendations = filtered_recommendations[self.max_recommendations:]
+            capped_recommendations = filtered_recommendations[
+                : self.max_recommendations
+            ]
+            excess_recommendations = filtered_recommendations[
+                self.max_recommendations :
+            ]
 
             # Mark excess as filtered for transparency
             for rec in excess_recommendations:
                 cwe_id = rec.get("cwe_id", "").upper()
                 filtered_out.append(rec)
-                filter_reasons[cwe_id] = f"exceeded_max_limit_{self.max_recommendations}"
+                filter_reasons[
+                    cwe_id
+                ] = f"exceeded_max_limit_{self.max_recommendations}"
 
             filtered_recommendations = capped_recommendations
-            logger.debug(f"Applied hard cap: kept {len(capped_recommendations)}, "
-                        f"filtered {len(excess_recommendations)} excess")
+            logger.debug(
+                f"Applied hard cap: kept {len(capped_recommendations)}, "
+                f"filtered {len(excess_recommendations)} excess"
+            )
 
         final_count = len(filtered_recommendations)
 
-        logger.info(f"Filtering complete: {original_count} → {final_count} "
-                   f"(prohibited: {len([r for r in filter_reasons.values() if r == 'prohibited'])}, "
-                   f"discouraged: {len([r for r in filter_reasons.values() if r == 'discouraged'])}, "
-                   f"capped: {len([r for r in filter_reasons.values() if r.startswith('exceeded_max')])})")
+        logger.info(
+            f"Filtering complete: {original_count} → {final_count} "
+            f"(prohibited: {len([r for r in filter_reasons.values() if r == 'prohibited'])}, "
+            f"discouraged: {len([r for r in filter_reasons.values() if r == 'discouraged'])}, "
+            f"capped: {len([r for r in filter_reasons.values() if r.startswith('exceeded_max')])})"
+        )
 
         return {
             "recommendations": filtered_recommendations,
             "filtered_out": filtered_out,
             "filter_reasons": filter_reasons,
             "original_count": original_count,
-            "final_count": final_count
+            "final_count": final_count,
         }
 
     def is_allowed(self, cwe_id: str) -> bool:
@@ -149,7 +163,9 @@ class CWEFilter:
         """
         for cwe_id in cwe_ids:
             self.prohibited.add(cwe_id.upper())
-        logger.info(f"Added {len(cwe_ids)} prohibited CWEs, total: {len(self.prohibited)}")
+        logger.info(
+            f"Added {len(cwe_ids)} prohibited CWEs, total: {len(self.prohibited)}"
+        )
 
     def add_discouraged(self, cwe_ids: List[str]) -> None:
         """
@@ -160,7 +176,9 @@ class CWEFilter:
         """
         for cwe_id in cwe_ids:
             self.discouraged.add(cwe_id.upper())
-        logger.info(f"Added {len(cwe_ids)} discouraged CWEs, total: {len(self.discouraged)}")
+        logger.info(
+            f"Added {len(cwe_ids)} discouraged CWEs, total: {len(self.discouraged)}"
+        )
 
     def get_filter_stats(self) -> Dict[str, int]:
         """
@@ -173,11 +191,13 @@ class CWEFilter:
             "prohibited_count": len(self.prohibited),
             "discouraged_count": len(self.discouraged),
             "max_recommendations": self.max_recommendations,
-            "total_filtered_types": len(self.prohibited) + len(self.discouraged)
+            "total_filtered_types": len(self.prohibited) + len(self.discouraged),
         }
 
 
-def load_filter_config_from_corpus_metadata(corpus_data: List[Dict]) -> tuple[Set[str], Set[str]]:
+def load_filter_config_from_corpus_metadata(
+    corpus_data: List[Dict],
+) -> tuple[Set[str], Set[str]]:
     """
     Load prohibited and discouraged CWE sets from corpus metadata.
 
@@ -199,8 +219,10 @@ def load_filter_config_from_corpus_metadata(corpus_data: List[Dict]) -> tuple[Se
         elif status == "discouraged":
             discouraged.add(cwe_id)
 
-    logger.info(f"Loaded filter config from corpus: {len(prohibited)} prohibited, "
-               f"{len(discouraged)} discouraged")
+    logger.info(
+        f"Loaded filter config from corpus: {len(prohibited)} prohibited, "
+        f"{len(discouraged)} discouraged"
+    )
 
     return prohibited, discouraged
 
@@ -224,9 +246,9 @@ def create_default_filter() -> CWEFilter:
 
     # Common discouraged CWEs (too broad for specific guidance)
     discouraged = {
-        "CWE-699",   # Development Concepts
-        "CWE-700",   # Seven Pernicious Kingdoms
-        "CWE-711",   # OWASP Top Ten 2007 Category A8
+        "CWE-699",  # Development Concepts
+        "CWE-700",  # Seven Pernicious Kingdoms
+        "CWE-711",  # OWASP Top Ten 2007 Category A8
     }
 
     return CWEFilter(prohibited=prohibited, discouraged=discouraged)

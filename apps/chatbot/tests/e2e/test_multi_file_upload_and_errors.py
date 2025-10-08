@@ -9,10 +9,10 @@ Skips assertions gracefully if the UI variant doesn't expose evidence markers.
 
 import os
 import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 from playwright.sync_api import sync_playwright
-import os
 
 
 def _set_files_if_present(page, file_paths):
@@ -30,10 +30,10 @@ def _set_files_if_present(page, file_paths):
 def test_multi_file_upload_and_error_states(chainlit_server):
     url = chainlit_server["url"]
 
-    pdf_dir = Path('apps/chatbot/tests/pdfs').resolve()
+    pdf_dir = Path("apps/chatbot/tests/pdfs").resolve()
     files = [
-        str((pdf_dir / 'INTEL-SA-01273.pdf').resolve()),
-        str((pdf_dir / 'ssa-714170.pdf').resolve()),
+        str((pdf_dir / "INTEL-SA-01273.pdf").resolve()),
+        str((pdf_dir / "ssa-714170.pdf").resolve()),
     ]
 
     with sync_playwright() as p:
@@ -46,14 +46,21 @@ def test_multi_file_upload_and_error_states(chainlit_server):
 
             # Click Attach Files action if present, else try paperclip path
             clicked = False
-            for sel in ["button:has-text('Attach Files (PDF)')", "button:has-text('Attach Files')"]:
+            for sel in [
+                "button:has-text('Attach Files (PDF)')",
+                "button:has-text('Attach Files')",
+            ]:
                 if page.locator(sel).count() > 0:
                     page.locator(sel).first.click()
                     clicked = True
                     break
 
             if not clicked:
-                for sel in ["[aria-label*='Attach']", "[data-testid*='Upload']", "button:has-text('Attach files')"]:
+                for sel in [
+                    "[aria-label*='Attach']",
+                    "[data-testid*='Upload']",
+                    "button:has-text('Attach files')",
+                ]:
                     if page.locator(sel).count() > 0:
                         page.locator(sel).first.click()
                         break
@@ -78,7 +85,11 @@ def test_multi_file_upload_and_error_states(chainlit_server):
                     f.write(b"\0")
 
                 # Try paperclip again to upload oversized
-                for sel in ["[aria-label*='Attach']", "[data-testid*='Upload']", "input[type='file']"]:
+                for sel in [
+                    "[aria-label*='Attach']",
+                    "[data-testid*='Upload']",
+                    "input[type='file']",
+                ]:
                     try:
                         if page.locator(sel).count() > 0:
                             if sel.startswith("input"):
@@ -102,7 +113,11 @@ def test_multi_file_upload_and_error_states(chainlit_server):
                 txt_path = tf.name
 
             try:
-                for sel in ["[aria-label*='Attach']", "[data-testid*='Upload']", "input[type='file']"]:
+                for sel in [
+                    "[aria-label*='Attach']",
+                    "[data-testid*='Upload']",
+                    "input[type='file']",
+                ]:
                     try:
                         if page.locator(sel).count() > 0:
                             if sel.startswith("input"):
@@ -127,10 +142,12 @@ def test_multi_file_upload_and_error_states(chainlit_server):
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_multi_file_upload_and_error_states.webm')
+                    video.save_as(
+                        "test-results/videos/test_multi_file_upload_and_error_states.webm"
+                    )
             except Exception:
                 pass
             context.close()

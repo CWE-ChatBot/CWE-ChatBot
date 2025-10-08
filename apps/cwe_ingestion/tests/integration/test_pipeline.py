@@ -2,13 +2,11 @@
 import os
 import tempfile
 from pathlib import Path
-import pytest
 
 
 def test_complete_pipeline_integration():
     """Test the complete CWE ingestion pipeline with PostgreSQL storage."""
     import sys
-    from pathlib import Path
 
     # Add the cwe_ingestion directory to the path for imports
     cwe_ingestion_path = Path(__file__).parent.parent.parent
@@ -17,11 +15,13 @@ def test_complete_pipeline_integration():
     from pipeline import CWEIngestionPipeline
 
     # Set up test database URL
-    test_db_url = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/cwe")
+    test_db_url = os.environ.get(
+        "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/cwe"
+    )
     os.environ["DATABASE_URL"] = test_db_url
 
     # Create sample CWE XML data for testing
-    sample_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+    sample_xml = """<?xml version="1.0" encoding="UTF-8"?>
     <Weakness_Catalog>
         <Weaknesses>
             <Weakness ID="79" Name="Cross-site Scripting" Abstraction="Base" Status="Stable">
@@ -53,31 +53,31 @@ def test_complete_pipeline_integration():
                 </Description>
             </Weakness>
         </Weaknesses>
-    </Weakness_Catalog>'''
+    </Weakness_Catalog>"""
 
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create test XML file
         xml_file = Path(temp_dir) / "test_cwe.xml"
-        with open(xml_file, 'w') as f:
+        with open(xml_file, "w") as f:
             f.write(sample_xml)
 
         # Initialize pipeline with PostgreSQL (no storage_path needed)
         pipeline = CWEIngestionPipeline(
-            target_cwes=['79', '89'],  # Use simple IDs for compatibility
-            embedder_type='local',
-            use_chunked=True  # Test chunked PostgreSQL storage
+            target_cwes=["79", "89"],  # Use simple IDs for compatibility
+            embedder_type="local",
+            use_chunked=True,  # Test chunked PostgreSQL storage
         )
 
         # Test the complete pipeline with the sample XML file
 
         # 1. Test parser with file
-        cwe_data = pipeline.parser.parse_file(str(xml_file), ['79', '89'])
+        cwe_data = pipeline.parser.parse_file(str(xml_file), ["79", "89"])
         assert len(cwe_data) == 2
 
         # Verify parsed data structure (using Pydantic models)
-        cwe_79 = next((cwe for cwe in cwe_data if cwe.ID == '79'), None)
+        cwe_79 = next((cwe for cwe in cwe_data if cwe.ID == "79"), None)
         assert cwe_79 is not None
-        assert cwe_79.Name == 'Cross-site Scripting'
+        assert cwe_79.Name == "Cross-site Scripting"
 
         # 2. Test embedding generation
         texts_to_embed = [entry.to_searchable_text() for entry in cwe_data]
@@ -104,21 +104,25 @@ def test_complete_pipeline_integration():
             embs = pipeline.embedder.embed_batch(texts)
 
             for s, emb in zip(sections, embs):
-                chunk_payloads.append({
-                    "cwe_id": f"CWE-{entry.ID}",
-                    "section": s["section"],
-                    "section_rank": s["section_rank"],
-                    "name": entry.Name,
-                    "full_text": s["text"],
-                    "alternate_terms_text": "",
-                    "embedding": emb,
-                })
+                chunk_payloads.append(
+                    {
+                        "cwe_id": f"CWE-{entry.ID}",
+                        "section": s["section"],
+                        "section_rank": s["section_rank"],
+                        "name": entry.Name,
+                        "full_text": s["text"],
+                        "alternate_terms_text": "",
+                        "embedding": emb,
+                    }
+                )
 
         stored_count = pipeline.vector_store.store_batch(chunk_payloads)
         assert stored_count == len(chunk_payloads)
 
         # 5. Test querying
-        query_embedding = pipeline.embedder.embed_text("cross site scripting vulnerability")
+        query_embedding = pipeline.embedder.embed_text(
+            "cross site scripting vulnerability"
+        )
         results = pipeline.vector_store.query_similar(query_embedding, n_results=5)
 
         # Should find similar CWEs
@@ -133,20 +137,20 @@ def test_complete_pipeline_integration():
             query_text="cross site scripting",
             query_embedding=query_embedding,
             k_vec=10,
-            limit_chunks=5
+            limit_chunks=5,
         )
         assert len(hybrid_results) >= 1
 
         # 7. Verify vector store stats
         stats = pipeline.vector_store.get_collection_stats()
-        assert stats['count'] >= stored_count
+        assert stats["count"] >= stored_count
 
 
 def test_cli_interface_integration():
     """Test that CLI interface can be imported and has expected commands."""
-    import click.testing
     import sys
-    from pathlib import Path
+
+    import click.testing
 
     # Add the cwe_ingestion directory to the path for imports
     cwe_ingestion_path = Path(__file__).parent.parent.parent
@@ -157,32 +161,37 @@ def test_cli_interface_integration():
     runner = click.testing.CliRunner()
 
     # Test --help command
-    result = runner.invoke(cli, ['--help'])
+    result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0
-    assert 'CWE Data Ingestion Pipeline' in result.output
+    assert "CWE Data Ingestion Pipeline" in result.output
 
     # Test ingest command help
-    result = runner.invoke(cli, ['ingest', '--help'])
+    result = runner.invoke(cli, ["ingest", "--help"])
     assert result.exit_code == 0
-    assert 'Run the complete CWE ingestion pipeline' in result.output
+    assert "Run the complete CWE ingestion pipeline" in result.output
 
     # Test query command help
-    result = runner.invoke(cli, ['query', '--help'])
+    result = runner.invoke(cli, ["query", "--help"])
     assert result.exit_code == 0
-    assert 'Query similar CWEs' in result.output
+    assert "Query similar CWEs" in result.output
 
     # Test multi-database command help
-    result = runner.invoke(cli, ['ingest-multi', '--help'])
+    result = runner.invoke(cli, ["ingest-multi", "--help"])
     assert result.exit_code == 0
-    assert 'multiple databases' in result.output
+    assert "multiple databases" in result.output
 
 
 def test_multi_database_pipeline_integration():
     """Test the multi-database pipeline functionality."""
-    from apps.cwe_ingestion.multi_db_pipeline import MultiDatabaseCWEPipeline, DatabaseTarget
+    from apps.cwe_ingestion.multi_db_pipeline import (
+        DatabaseTarget,
+        MultiDatabaseCWEPipeline,
+    )
 
     # Set up test database URL
-    test_db_url = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/cwe")
+    test_db_url = os.environ.get(
+        "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/cwe"
+    )
     os.environ["DATABASE_URL"] = test_db_url
 
     # Create database targets for testing (both pointing to same DB for testing)
@@ -191,28 +200,28 @@ def test_multi_database_pipeline_integration():
             name="test_local",
             database_url=test_db_url,
             use_chunked=True,
-            description="Test local database"
+            description="Test local database",
         ),
         DatabaseTarget(
             name="test_prod",
             database_url=test_db_url,
             use_chunked=False,  # Test different storage modes
-            description="Test production database"
-        )
+            description="Test production database",
+        ),
     ]
 
     # Initialize multi-database pipeline
     pipeline = MultiDatabaseCWEPipeline(
         database_targets=targets,
-        target_cwes=['79'],  # Single CWE for testing
-        embedder_type='local',
-        embedding_model='all-MiniLM-L6-v2'
+        target_cwes=["79"],  # Single CWE for testing
+        embedder_type="local",
+        embedding_model="all-MiniLM-L6-v2",
     )
 
     # Verify pipeline configuration
     assert len(pipeline.database_targets) == 2
     assert pipeline.embedding_dim == 3072  # Standardized local embedder dimension
-    assert hasattr(pipeline, 'embedder')
+    assert hasattr(pipeline, "embedder")
 
     # Test that both storage modes are configured correctly
     local_target = next(t for t in targets if t.name == "test_local")
@@ -227,27 +236,27 @@ def test_pipeline_error_handling():
     from apps.cwe_ingestion.pipeline import CWEIngestionPipeline
 
     # Set up test database URL
-    test_db_url = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/cwe")
+    test_db_url = os.environ.get(
+        "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/cwe"
+    )
     os.environ["DATABASE_URL"] = test_db_url
 
     # Test pipeline initialization with different configurations
     pipeline = CWEIngestionPipeline(
-        target_cwes=[],  # Empty target CWEs
-        embedder_type='local',
-        use_chunked=True
+        target_cwes=[], embedder_type="local", use_chunked=True  # Empty target CWEs
     )
 
     # Pipeline should handle gracefully even with empty targets
-    assert hasattr(pipeline, 'run')
-    assert hasattr(pipeline, 'embedder')
-    assert hasattr(pipeline, 'vector_store')
+    assert hasattr(pipeline, "run")
+    assert hasattr(pipeline, "embedder")
+    assert hasattr(pipeline, "vector_store")
 
     # Test different storage modes
     chunked_pipeline = CWEIngestionPipeline(use_chunked=True)
     single_pipeline = CWEIngestionPipeline(use_chunked=False)
 
-    assert chunked_pipeline.vector_store.__class__.__name__ == 'PostgresChunkStore'
-    assert single_pipeline.vector_store.__class__.__name__ == 'PostgresVectorStore'
+    assert chunked_pipeline.vector_store.__class__.__name__ == "PostgresChunkStore"
+    assert single_pipeline.vector_store.__class__.__name__ == "PostgresVectorStore"
 
 
 def test_database_environment_configuration():

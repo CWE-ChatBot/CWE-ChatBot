@@ -9,9 +9,9 @@ Usage:
     poetry run pytest apps/chatbot/tests/e2e/test_non_cwe_query_regression.py -v
 """
 
-import pytest
 import time
-from typing import Dict, List
+
+import pytest
 
 # Test queries that should retrieve chunks (no explicit CWE IDs)
 NON_CWE_TEST_QUERIES = [
@@ -19,32 +19,32 @@ NON_CWE_TEST_QUERIES = [
         "persona": "PSIRT Member",
         "query": "Show me SQL injection prevention techniques",
         "expected_cwe": "CWE-89",
-        "min_chunks": 5
+        "min_chunks": 5,
     },
     {
         "persona": "Academic Researcher",
         "query": "Buffer overflow vulnerabilities",
         "expected_cwe": "CWE-120",
-        "min_chunks": 5
+        "min_chunks": 5,
     },
     {
         "persona": "Developer",
         "query": "XSS mitigation strategies",
         "expected_cwe": "CWE-79",
-        "min_chunks": 5
+        "min_chunks": 5,
     },
     {
         "persona": "Bug Bounty Hunter",
         "query": "Path traversal attack vectors",
         "expected_cwe": "CWE-22",
-        "min_chunks": 5
+        "min_chunks": 5,
     },
     {
         "persona": "Product Manager",
         "query": "Authentication bypass weaknesses",
         "expected_cwe": "CWE-287",
-        "min_chunks": 5
-    }
+        "min_chunks": 5,
+    },
 ]
 
 
@@ -55,7 +55,7 @@ async def test_non_cwe_queries_retrieve_chunks(
     mcp__puppeteer__puppeteer_fill,
     mcp__puppeteer__puppeteer_click,
     mcp__puppeteer__puppeteer_evaluate,
-    mcp__puppeteer__puppeteer_screenshot
+    mcp__puppeteer__puppeteer_screenshot,
 ):
     """
     Test that non-CWE queries successfully retrieve chunks via puppeteer.
@@ -66,7 +66,10 @@ async def test_non_cwe_queries_retrieve_chunks(
 
     # Get Cloud Run URL from environment or use default
     import os
-    app_url = os.getenv("CHAINLIT_APP_URL", "https://cwe-chatbot-bmgj6wj65a-uc.a.run.app")
+
+    app_url = os.getenv(
+        "CHAINLIT_APP_URL", "https://cwe-chatbot-bmgj6wj65a-uc.a.run.app"
+    )
 
     print(f"\n🚀 Testing non-CWE queries against: {app_url}")
 
@@ -92,18 +95,15 @@ async def test_non_cwe_queries_retrieve_chunks(
             )
         except Exception:
             # Persona selector might not exist yet, skip
-            print(f"⚠️  Persona selector not found, using default")
+            print("⚠️  Persona selector not found, using default")
 
         # Fill in query
         await mcp__puppeteer__puppeteer_fill(
-            selector='textarea[placeholder*="Ask"]',
-            value=query
+            selector='textarea[placeholder*="Ask"]', value=query
         )
 
         # Submit query
-        await mcp__puppeteer__puppeteer_click(
-            selector='button[type="submit"]'
-        )
+        await mcp__puppeteer__puppeteer_click(selector='button[type="submit"]')
 
         # Wait for response (adjust timeout as needed)
         time.sleep(8)
@@ -111,9 +111,7 @@ async def test_non_cwe_queries_retrieve_chunks(
         # Take screenshot for debugging
         screenshot_name = f"test_non_cwe_{persona.replace(' ', '_').lower()}"
         await mcp__puppeteer__puppeteer_screenshot(
-            name=screenshot_name,
-            width=1200,
-            height=800
+            name=screenshot_name, width=1200, height=800
         )
 
         # Extract response text from page
@@ -137,22 +135,28 @@ async def test_non_cwe_queries_retrieve_chunks(
             error_msg = "No response received from chatbot"
         elif "No relevant CWE information found" in response_text:
             success = False
-            error_msg = "Chatbot returned 'No relevant CWE information found' - regression!"
+            error_msg = (
+                "Chatbot returned 'No relevant CWE information found' - regression!"
+            )
         elif expected_cwe not in response_text:
             # Warning but not failure - expected CWE might not be in top chunks
-            print(f"⚠️  Expected {expected_cwe} not found in response (might be in lower ranks)")
+            print(
+                f"⚠️  Expected {expected_cwe} not found in response (might be in lower ranks)"
+            )
 
-        results.append({
-            "persona": persona,
-            "query": query,
-            "expected_cwe": expected_cwe,
-            "success": success,
-            "error": error_msg,
-            "response_preview": response_text[:200] if response_text else None
-        })
+        results.append(
+            {
+                "persona": persona,
+                "query": query,
+                "expected_cwe": expected_cwe,
+                "success": success,
+                "error": error_msg,
+                "response_preview": response_text[:200] if response_text else None,
+            }
+        )
 
         if success:
-            print(f"✅ PASS - Chunks retrieved successfully")
+            print("✅ PASS - Chunks retrieved successfully")
         else:
             print(f"❌ FAIL - {error_msg}")
 
@@ -167,7 +171,7 @@ async def test_non_cwe_queries_retrieve_chunks(
 
     # Print summary
     print(f"\n{'='*60}")
-    print(f"📊 NON-CWE QUERY REGRESSION TEST SUMMARY")
+    print("📊 NON-CWE QUERY REGRESSION TEST SUMMARY")
     print(f"{'='*60}")
 
     passed = sum(1 for r in results if r["success"])
@@ -177,16 +181,18 @@ async def test_non_cwe_queries_retrieve_chunks(
     print(f"❌ Failed: {failed}/{len(results)}")
 
     if failed > 0:
-        print(f"\n🔍 Failures:")
+        print("\n🔍 Failures:")
         for r in results:
             if not r["success"]:
                 print(f"  • {r['persona']}: {r['query']}")
                 print(f"    Error: {r['error']}")
 
     # Assertion - all tests must pass
-    assert failed == 0, f"{failed} non-CWE queries failed to retrieve chunks - REGRESSION DETECTED!"
+    assert (
+        failed == 0
+    ), f"{failed} non-CWE queries failed to retrieve chunks - REGRESSION DETECTED!"
 
-    print(f"\n🎉 All non-CWE queries successfully retrieved chunks - NO REGRESSION")
+    print("\n🎉 All non-CWE queries successfully retrieved chunks - NO REGRESSION")
 
 
 @pytest.mark.e2e
@@ -194,7 +200,7 @@ async def test_non_cwe_queries_retrieve_chunks(
 async def test_non_cwe_query_logs_verification(
     mcp__puppeteer__puppeteer_navigate,
     mcp__puppeteer__puppeteer_fill,
-    mcp__puppeteer__puppeteer_click
+    mcp__puppeteer__puppeteer_click,
 ):
     """
     Verify that non-CWE queries generate correct log entries.
@@ -205,9 +211,11 @@ async def test_non_cwe_query_logs_verification(
     import os
     import subprocess
 
-    app_url = os.getenv("CHAINLIT_APP_URL", "https://cwe-chatbot-bmgj6wj65a-uc.a.run.app")
+    app_url = os.getenv(
+        "CHAINLIT_APP_URL", "https://cwe-chatbot-bmgj6wj65a-uc.a.run.app"
+    )
 
-    print(f"\n🔍 Verifying logs for non-CWE query...")
+    print("\n🔍 Verifying logs for non-CWE query...")
 
     # Navigate and submit test query
     await mcp__puppeteer__puppeteer_navigate(url=app_url)
@@ -216,13 +224,10 @@ async def test_non_cwe_query_logs_verification(
     test_query = "SQL injection prevention techniques"
 
     await mcp__puppeteer__puppeteer_fill(
-        selector='textarea[placeholder*="Ask"]',
-        value=test_query
+        selector='textarea[placeholder*="Ask"]', value=test_query
     )
 
-    await mcp__puppeteer__puppeteer_click(
-        selector='button[type="submit"]'
-    )
+    await mcp__puppeteer__puppeteer_click(selector='button[type="submit"]')
 
     time.sleep(8)  # Wait for processing
 
@@ -230,14 +235,19 @@ async def test_non_cwe_query_logs_verification(
     try:
         result = subprocess.run(
             [
-                "gcloud", "run", "services", "logs", "read", "cwe-chatbot",
+                "gcloud",
+                "run",
+                "services",
+                "logs",
+                "read",
+                "cwe-chatbot",
                 "--region=us-central1",
                 "--limit=50",
-                "--format=value(textPayload)"
+                "--format=value(textPayload)",
             ],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         logs = result.stdout
@@ -246,10 +256,10 @@ async def test_non_cwe_query_logs_verification(
         assertions = [
             ("hybrid retrieval", "Hybrid retrieval log entry found"),
             ("chunks retrieved", "Chunk retrieval confirmation found"),
-            ("query_hybrid", "query_hybrid method called successfully")
+            ("query_hybrid", "query_hybrid method called successfully"),
         ]
 
-        print(f"\n📋 Log Verification:")
+        print("\n📋 Log Verification:")
         for search_term, description in assertions:
             if search_term.lower() in logs.lower():
                 print(f"  ✅ {description}")
@@ -260,7 +270,7 @@ async def test_non_cwe_query_logs_verification(
         error_indicators = [
             "AttributeError",
             "query_hybrid() missing",
-            "No relevant CWE information found"
+            "No relevant CWE information found",
         ]
 
         errors_found = []
@@ -270,13 +280,15 @@ async def test_non_cwe_query_logs_verification(
 
         assert len(errors_found) == 0, f"Error indicators found in logs: {errors_found}"
 
-        print(f"\n✅ Log verification passed - no error indicators")
+        print("\n✅ Log verification passed - no error indicators")
 
     except subprocess.TimeoutExpired:
-        print(f"⚠️  Log fetch timeout - skipping log verification")
+        print("⚠️  Log fetch timeout - skipping log verification")
     except Exception as e:
         print(f"⚠️  Log verification failed: {e} - skipping")
 
 
 if __name__ == "__main__":
-    print("Run with: poetry run pytest apps/chatbot/tests/e2e/test_non_cwe_query_regression.py -v")
+    print(
+        "Run with: poetry run pytest apps/chatbot/tests/e2e/test_non_cwe_query_regression.py -v"
+    )

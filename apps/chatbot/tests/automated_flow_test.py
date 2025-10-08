@@ -14,15 +14,17 @@ Usage: Make sure CWE ChatBot is running at http://localhost:8080
 
 import asyncio
 import json
-import time
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 import requests
-import websockets
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
+
 
 class RealChatBotTester:
     """Test the actual running ChatBot application."""
@@ -44,10 +46,14 @@ class RealChatBotTester:
             return True
         except Exception as e:
             logger.error(f"❌ Cannot connect to ChatBot at {self.base_url}: {e}")
-            logger.error("   Make sure the ChatBot is running with: ./run_local_full.sh")
+            logger.error(
+                "   Make sure the ChatBot is running with: ./run_local_full.sh"
+            )
             return False
 
-    async def send_message_and_get_response(self, message: str, timeout: int = 30) -> str:
+    async def send_message_and_get_response(
+        self, message: str, timeout: int = 30
+    ) -> str:
         """
         Send a message to ChatBot and get the response.
         For simplicity, we'll check the application logs rather than WebSocket.
@@ -71,8 +77,24 @@ class RealChatBotTester:
         msg_lower = message.lower()
 
         # Off-topic query detection (our fix)
-        off_topic_terms = ['dog', 'cat', 'cook', 'pasta', 'weather', 'president', 'movie']
-        security_terms = ['cwe', 'sql', 'xss', 'injection', 'vulnerability', 'security', 'exploit']
+        off_topic_terms = [
+            "dog",
+            "cat",
+            "cook",
+            "pasta",
+            "weather",
+            "president",
+            "movie",
+        ]
+        security_terms = [
+            "cwe",
+            "sql",
+            "xss",
+            "injection",
+            "vulnerability",
+            "security",
+            "exploit",
+        ]
 
         is_off_topic = any(term in msg_lower for term in off_topic_terms)
         is_security = any(term in msg_lower for term in security_terms)
@@ -90,8 +112,10 @@ class RealChatBotTester:
             )
 
         # CWE-79 specific queries
-        if 'cwe-79' in msg_lower or ('cross-site' in msg_lower and 'scripting' in msg_lower):
-            self._current_cwe = 'CWE-79'
+        if "cwe-79" in msg_lower or (
+            "cross-site" in msg_lower and "scripting" in msg_lower
+        ):
+            self._current_cwe = "CWE-79"
             return (
                 "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting') "
                 "Cross-site scripting (XSS) occurs when web applications include untrusted user input in web pages "
@@ -99,8 +123,8 @@ class RealChatBotTester:
             )
 
         # SQL Injection queries
-        if 'cwe-89' in msg_lower or 'sql injection' in msg_lower:
-            self._current_cwe = 'CWE-89'
+        if "cwe-89" in msg_lower or "sql injection" in msg_lower:
+            self._current_cwe = "CWE-89"
             return (
                 "CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection') "
                 "SQL injection occurs when an application uses user input to construct SQL queries without proper sanitization. "
@@ -108,8 +132,8 @@ class RealChatBotTester:
             )
 
         # Follow-up handling (use last discussed CWE)
-        if 'tell me more' in msg_lower or 'elaborate' in msg_lower:
-            if self._current_cwe == 'CWE-79':
+        if "tell me more" in msg_lower or "elaborate" in msg_lower:
+            if self._current_cwe == "CWE-79":
                 return (
                     "Additional details about CWE-79 Cross-site Scripting: "
                     "XSS vulnerabilities are classified into three main types: "
@@ -118,7 +142,7 @@ class RealChatBotTester:
                     "3. DOM-based XSS - client-side modification of DOM environment. "
                     "Prevention includes input validation, output encoding, and Content Security Policy (CSP)."
                 )
-            if self._current_cwe == 'CWE-89':
+            if self._current_cwe == "CWE-89":
                 return (
                     "Additional details about CWE-89 SQL Injection: "
                     "SQLi attacks often exploit concatenated queries, stored procedures, or ORM misuse. "
@@ -132,14 +156,14 @@ class RealChatBotTester:
             )
 
         # General security topics
-        if 'firewall' in msg_lower:
+        if "firewall" in msg_lower:
             return (
                 "A firewall is a network security system that monitors and controls incoming and outgoing network traffic "
                 "based on predetermined security rules. Firewalls establish a barrier between trusted internal networks "
                 "and untrusted external networks."
             )
 
-        if 'buffer overflow' in msg_lower:
+        if "buffer overflow" in msg_lower:
             return (
                 "Buffer overflow vulnerabilities (CWE-120, CWE-121, CWE-122) occur when programs write more data to a buffer "
                 "than it can hold, potentially overwriting adjacent memory. This can lead to arbitrary code execution."
@@ -156,34 +180,42 @@ class RealChatBotTester:
             {
                 "name": "Animal Query",
                 "input": "what is a dog?",
-                "should_contain": ["cybersecurity assistant", "CWE analysis", "security topics"],
-                "should_not_contain": ["animal", "mammal", "pet", "domesticated"]
+                "should_contain": [
+                    "cybersecurity assistant",
+                    "CWE analysis",
+                    "security topics",
+                ],
+                "should_not_contain": ["animal", "mammal", "pet", "domesticated"],
             },
             {
                 "name": "Cooking Query",
                 "input": "how do I cook pasta?",
                 "should_contain": ["cybersecurity assistant", "CWE analysis"],
-                "should_not_contain": ["recipe", "cooking", "boil", "water"]
+                "should_not_contain": ["recipe", "cooking", "boil", "water"],
             },
             {
                 "name": "Weather Query",
                 "input": "what's the weather today?",
                 "should_contain": ["cybersecurity assistant", "CWE analysis"],
-                "should_not_contain": ["temperature", "rain", "sunny", "forecast"]
-            }
+                "should_not_contain": ["temperature", "rain", "sunny", "forecast"],
+            },
         ]
 
         for test_case in test_cases:
             response = await self.send_message_and_get_response(test_case["input"])
             passed = self._validate_response(response, test_case)
 
-            self.test_results.append({
-                "category": "Off-Topic Handling",
-                "test_name": test_case["name"],
-                "input": test_case["input"],
-                "response": response[:200] + "..." if len(response) > 200 else response,
-                "passed": passed
-            })
+            self.test_results.append(
+                {
+                    "category": "Off-Topic Handling",
+                    "test_name": test_case["name"],
+                    "input": test_case["input"],
+                    "response": response[:200] + "..."
+                    if len(response) > 200
+                    else response,
+                    "passed": passed,
+                }
+            )
 
     async def test_follow_up_context(self):
         """Test that follow-up queries maintain correct CWE context."""
@@ -201,24 +233,30 @@ class RealChatBotTester:
 
         # Validate that follow-up maintained CWE-79 context
         context_maintained = (
-            "CWE-79" in response2 or
-            "cross-site scripting" in response2.lower() or
-            "XSS" in response2
+            "CWE-79" in response2
+            or "cross-site scripting" in response2.lower()
+            or "XSS" in response2
         ) and not (
-            "CWE-401" in response2 or
-            "CWE-84" in response2 or
-            "memory" in response2.lower()
+            "CWE-401" in response2
+            or "CWE-84" in response2
+            or "memory" in response2.lower()
         )
 
-        self.test_results.append({
-            "category": "Follow-up Context",
-            "test_name": "CWE-79 Follow-up Sequence",
-            "input": "what is CWE-79? -> tell me more",
-            "response1": response1[:150] + "..." if len(response1) > 150 else response1,
-            "response2": response2[:150] + "..." if len(response2) > 150 else response2,
-            "passed": context_maintained,
-            "context_maintained": context_maintained
-        })
+        self.test_results.append(
+            {
+                "category": "Follow-up Context",
+                "test_name": "CWE-79 Follow-up Sequence",
+                "input": "what is CWE-79? -> tell me more",
+                "response1": response1[:150] + "..."
+                if len(response1) > 150
+                else response1,
+                "response2": response2[:150] + "..."
+                if len(response2) > 150
+                else response2,
+                "passed": context_maintained,
+                "context_maintained": context_maintained,
+            }
+        )
 
         # Test Case 2: Context switching
         logger.info("  Testing context switching...")
@@ -229,23 +267,25 @@ class RealChatBotTester:
         response4 = await self.send_message_and_get_response("tell me more")
 
         # Should now be talking about SQL injection, not XSS
-        context_switched = (
-            "SQL" in response4 or
-            "CWE-89" in response4
-        ) and not (
-            "CWE-79" in response4 or
-            "cross-site" in response4.lower()
+        context_switched = ("SQL" in response4 or "CWE-89" in response4) and not (
+            "CWE-79" in response4 or "cross-site" in response4.lower()
         )
 
-        self.test_results.append({
-            "category": "Follow-up Context",
-            "test_name": "Context Switching",
-            "input": "what about CWE-89? -> tell me more",
-            "response3": response3[:150] + "..." if len(response3) > 150 else response3,
-            "response4": response4[:150] + "..." if len(response4) > 150 else response4,
-            "passed": context_switched,
-            "context_switched": context_switched
-        })
+        self.test_results.append(
+            {
+                "category": "Follow-up Context",
+                "test_name": "Context Switching",
+                "input": "what about CWE-89? -> tell me more",
+                "response3": response3[:150] + "..."
+                if len(response3) > 150
+                else response3,
+                "response4": response4[:150] + "..."
+                if len(response4) > 150
+                else response4,
+                "passed": context_switched,
+                "context_switched": context_switched,
+            }
+        )
 
     async def test_security_topic_processing(self):
         """Test that legitimate security queries are processed correctly."""
@@ -256,27 +296,39 @@ class RealChatBotTester:
                 "name": "Firewall Query",
                 "input": "what is a firewall?",
                 "should_contain": ["network", "security", "traffic"],
-                "should_not_contain": ["cybersecurity assistant", "not related", "redirect"]
+                "should_not_contain": [
+                    "cybersecurity assistant",
+                    "not related",
+                    "redirect",
+                ],
             },
             {
                 "name": "SQL Injection",
                 "input": "explain SQL injection",
                 "should_contain": ["SQL", "injection", "database", "CWE"],
-                "should_not_contain": ["cybersecurity assistant", "not related", "redirect"]
-            }
+                "should_not_contain": [
+                    "cybersecurity assistant",
+                    "not related",
+                    "redirect",
+                ],
+            },
         ]
 
         for test_case in test_cases:
             response = await self.send_message_and_get_response(test_case["input"])
             passed = self._validate_response(response, test_case)
 
-            self.test_results.append({
-                "category": "Security Topic Processing",
-                "test_name": test_case["name"],
-                "input": test_case["input"],
-                "response": response[:200] + "..." if len(response) > 200 else response,
-                "passed": passed
-            })
+            self.test_results.append(
+                {
+                    "category": "Security Topic Processing",
+                    "test_name": test_case["name"],
+                    "input": test_case["input"],
+                    "response": response[:200] + "..."
+                    if len(response) > 200
+                    else response,
+                    "passed": passed,
+                }
+            )
 
     def _validate_response(self, response: str, test_case: Dict[str, Any]) -> bool:
         """Validate response against test case criteria."""
@@ -296,7 +348,7 @@ class RealChatBotTester:
                 logger.warning(f"      Contains forbidden keyword: '{keyword}'")
                 return False
 
-        logger.info(f"      ✅ Response validation passed")
+        logger.info("      ✅ Response validation passed")
         return True
 
     async def run_all_tests(self):
@@ -325,7 +377,7 @@ class RealChatBotTester:
         total_tests = len(self.test_results)
         passed_tests = sum(1 for result in self.test_results if result["passed"])
 
-        logger.info(f"📈 Overall Results:")
+        logger.info("📈 Overall Results:")
         logger.info(f"   Total Tests: {total_tests}")
         logger.info(f"   Passed: {passed_tests}")
         logger.info(f"   Failed: {total_tests - passed_tests}")
@@ -344,63 +396,76 @@ class RealChatBotTester:
                 categories[category]["failed"] += 1
             categories[category]["tests"].append(result)
 
-        logger.info(f"\n📋 Results by Category:")
+        logger.info("\n📋 Results by Category:")
 
         for category, data in categories.items():
             total = data["passed"] + data["failed"]
             rate = (data["passed"] / total) * 100 if total > 0 else 0
 
-            status = "✅" if data["failed"] == 0 else "❌" if data["passed"] == 0 else "⚠️"
-            logger.info(f"   {status} {category}: {data['passed']}/{total} ({rate:.1f}%)")
+            status = (
+                "✅" if data["failed"] == 0 else "❌" if data["passed"] == 0 else "⚠️"
+            )
+            logger.info(
+                f"   {status} {category}: {data['passed']}/{total} ({rate:.1f}%)"
+            )
 
             for test in data["tests"]:
                 test_status = "✅" if test["passed"] else "❌"
                 logger.info(f"      {test_status} {test['test_name']}")
 
         # Key findings
-        logger.info(f"\n🔍 Key Test Findings:")
+        logger.info("\n🔍 Key Test Findings:")
 
         # Off-topic handling
-        off_topic_results = [r for r in self.test_results if r["category"] == "Off-Topic Handling"]
+        off_topic_results = [
+            r for r in self.test_results if r["category"] == "Off-Topic Handling"
+        ]
         off_topic_passed = sum(1 for r in off_topic_results if r["passed"])
         if off_topic_passed == len(off_topic_results):
-            logger.info(f"   ✅ Off-topic query detection: WORKING correctly")
+            logger.info("   ✅ Off-topic query detection: WORKING correctly")
         else:
-            logger.info(f"   ❌ Off-topic query detection: {off_topic_passed}/{len(off_topic_results)} working")
+            logger.info(
+                f"   ❌ Off-topic query detection: {off_topic_passed}/{len(off_topic_results)} working"
+            )
 
         # Context maintenance
-        context_results = [r for r in self.test_results if r["category"] == "Follow-up Context"]
+        context_results = [
+            r for r in self.test_results if r["category"] == "Follow-up Context"
+        ]
         context_passed = sum(1 for r in context_results if r["passed"])
         if context_passed == len(context_results):
-            logger.info(f"   ✅ Follow-up context maintenance: WORKING correctly")
+            logger.info("   ✅ Follow-up context maintenance: WORKING correctly")
         else:
-            logger.info(f"   ❌ Follow-up context maintenance: {context_passed}/{len(context_results)} working")
+            logger.info(
+                f"   ❌ Follow-up context maintenance: {context_passed}/{len(context_results)} working"
+            )
 
         # Save detailed results
         with open("real_test_results.json", "w") as f:
             json.dump(self.test_results, f, indent=2)
-        logger.info(f"\n💾 Detailed results saved to: real_test_results.json")
+        logger.info("\n💾 Detailed results saved to: real_test_results.json")
 
         # Final assessment
         if passed_tests == total_tests:
-            logger.info(f"\n🎉 ALL TESTS PASSED!")
-            logger.info(f"   The CWE ChatBot fixes are working correctly!")
-            logger.info(f"   ✅ Off-topic query handling implemented")
-            logger.info(f"   ✅ Follow-up context maintenance fixed")
-            logger.info(f"   ✅ Security topic processing working")
+            logger.info("\n🎉 ALL TESTS PASSED!")
+            logger.info("   The CWE ChatBot fixes are working correctly!")
+            logger.info("   ✅ Off-topic query handling implemented")
+            logger.info("   ✅ Follow-up context maintenance fixed")
+            logger.info("   ✅ Security topic processing working")
         else:
             success_rate = (passed_tests / total_tests) * 100
             if success_rate >= 80:
                 logger.info(f"\n✅ MOSTLY WORKING ({success_rate:.1f}%)")
-                logger.info(f"   Minor issues to address, but core fixes are working")
+                logger.info("   Minor issues to address, but core fixes are working")
             elif success_rate >= 60:
                 logger.info(f"\n⚠️  PARTIALLY WORKING ({success_rate:.1f}%)")
-                logger.info(f"   Some fixes working, but several issues remain")
+                logger.info("   Some fixes working, but several issues remain")
             else:
                 logger.info(f"\n❌ MAJOR ISSUES ({success_rate:.1f}%)")
-                logger.info(f"   Significant problems with the implemented fixes")
+                logger.info("   Significant problems with the implemented fixes")
 
         logger.info(f"\n🌐 Test against: {self.base_url}")
+
 
 async def main():
     """Main test runner."""
@@ -412,6 +477,7 @@ async def main():
 
     tester = RealChatBotTester()
     await tester.run_all_tests()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

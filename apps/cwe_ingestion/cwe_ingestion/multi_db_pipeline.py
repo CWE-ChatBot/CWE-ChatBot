@@ -7,26 +7,26 @@ import logging
 import shutil
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional
 
 try:
     # Relative imports (when used as module)
     from .downloader import CWEDownloader
     from .embedder import CWEEmbedder, GeminiEmbedder
-    from .parser import CWEParser
-    from .pg_vector_store import PostgresVectorStore
-    from .pg_chunk_store import PostgresChunkStore
-    from .models import entry_to_sections
     from .embedding_cache import EmbeddingCache
+    from .models import entry_to_sections
+    from .parser import CWEParser
+    from .pg_chunk_store import PostgresChunkStore
+    from .pg_vector_store import PostgresVectorStore
 except ImportError:
     # Absolute imports (when run directly)
     from downloader import CWEDownloader
     from embedder import CWEEmbedder, GeminiEmbedder
-    from parser import CWEParser
-    from pg_vector_store import PostgresVectorStore
-    from pg_chunk_store import PostgresChunkStore
-    from models import entry_to_sections
     from embedding_cache import EmbeddingCache
+    from models import entry_to_sections
+    from parser import CWEParser
+    from pg_chunk_store import PostgresChunkStore
+    from pg_vector_store import PostgresVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class DatabaseTarget:
         name: str,
         database_url: str,
         use_chunked: bool = True,
-        description: str = ""
+        description: str = "",
     ):
         self.name = name
         self.database_url = database_url
@@ -76,16 +76,22 @@ class MultiDatabaseCWEPipeline:
         if embedder_type == "gemini":
             self.embedder = GeminiEmbedder()
             self.embedding_dim = 3072
-            logger.info("Initialized Gemini embedder (3072-D) for multi-database ingestion.")
+            logger.info(
+                "Initialized Gemini embedder (3072-D) for multi-database ingestion."
+            )
         else:
             self.embedder = CWEEmbedder(model_name=embedding_model)
             self.embedding_dim = self.embedder.get_embedding_dimension()
-            logger.info(f"Initialized local embedder '{embedding_model}' ({self.embedding_dim}-D) for multi-database ingestion.")
+            logger.info(
+                f"Initialized local embedder '{embedding_model}' ({self.embedding_dim}-D) for multi-database ingestion."
+            )
 
         # Initialize embedding cache
         self.cache = EmbeddingCache(cache_dir)
         self.embedder_type_str = embedder_type
-        self.model_name = "gemini-embedding-001" if embedder_type == "gemini" else embedding_model
+        self.model_name = (
+            "gemini-embedding-001" if embedder_type == "gemini" else embedding_model
+        )
 
         # Core components
         self.downloader = CWEDownloader(source_url=self.source_url)
@@ -110,7 +116,9 @@ class MultiDatabaseCWEPipeline:
                 logger.warning("No CWE entries parsed. Aborting.")
                 return False
 
-            logger.info(f"Parsed {len(cwe_entries)} CWE entries for multi-database ingestion.")
+            logger.info(
+                f"Parsed {len(cwe_entries)} CWE entries for multi-database ingestion."
+            )
 
             # Step 2: Generate embeddings once (cost optimization)
             embedding_data = self._generate_embeddings_once(cwe_entries)
@@ -124,10 +132,14 @@ class MultiDatabaseCWEPipeline:
 
             total_targets = len(self.database_targets)
             if success_count == total_targets:
-                logger.info(f"✅ Successfully ingested data into all {total_targets} database targets.")
+                logger.info(
+                    f"✅ Successfully ingested data into all {total_targets} database targets."
+                )
                 return True
             elif success_count > 0:
-                logger.warning(f"⚠️ Partial success: {success_count}/{total_targets} databases updated.")
+                logger.warning(
+                    f"⚠️ Partial success: {success_count}/{total_targets} databases updated."
+                )
                 return False
             else:
                 logger.error("❌ Failed to ingest data into any database targets.")
@@ -153,8 +165,8 @@ class MultiDatabaseCWEPipeline:
             "metadata": {
                 "total_entries": len(cwe_entries),
                 "embedding_dim": self.embedding_dim,
-                "embedder_type": type(self.embedder).__name__
-            }
+                "embedder_type": type(self.embedder).__name__,
+            },
         }
 
         # Determine what storage modes we need
@@ -183,7 +195,9 @@ class MultiDatabaseCWEPipeline:
         for entry in cwe_entries:
             aliases = []
             if getattr(entry, "AlternateTerms", None):
-                aliases = [t.Term for t in entry.AlternateTerms if getattr(t, "Term", None)]
+                aliases = [
+                    t.Term for t in entry.AlternateTerms if getattr(t, "Term", None)
+                ]
             alias_line = "; ".join(sorted(set(a for a in aliases if a)))
             aliases_by_id[entry.ID] = alias_line
 
@@ -218,7 +232,15 @@ class MultiDatabaseCWEPipeline:
 
             alias_line = ""
             if getattr(entry, "AlternateTerms", None):
-                alias_line = "; ".join(sorted({t.Term for t in entry.AlternateTerms if getattr(t, "Term", None)}))
+                alias_line = "; ".join(
+                    sorted(
+                        {
+                            t.Term
+                            for t in entry.AlternateTerms
+                            if getattr(t, "Term", None)
+                        }
+                    )
+                )
 
             # Process each section with cache-first strategy
             for s in sections:
@@ -229,16 +251,30 @@ class MultiDatabaseCWEPipeline:
                     "section_rank": s["section_rank"],
                     "name": entry.Name,
                     "full_text": s["text"],
-                    "alternate_terms_text": s["text"] if s["section"] == "Aliases" else alias_line,
+                    "alternate_terms_text": s["text"]
+                    if s["section"] == "Aliases"
+                    else alias_line,
                 }
 
                 # Check cache first for this specific section
-                if self.cache.has_embedding(cwe_id, self.embedder_type_str, self.model_name, s["section"], s["section_rank"]):
+                if self.cache.has_embedding(
+                    cwe_id,
+                    self.embedder_type_str,
+                    self.model_name,
+                    s["section"],
+                    s["section_rank"],
+                ):
                     # Load section-specific embedding from cache
                     try:
-                        cached_data = self.cache.load_embedding(cwe_id, self.embedder_type_str, self.model_name, s["section"], s["section_rank"])
-                        if cached_data and 'embedding' in cached_data:
-                            section_data["embedding"] = cached_data['embedding']
+                        cached_data = self.cache.load_embedding(
+                            cwe_id,
+                            self.embedder_type_str,
+                            self.model_name,
+                            s["section"],
+                            s["section_rank"],
+                        )
+                        if cached_data and "embedding" in cached_data:
+                            section_data["embedding"] = cached_data["embedding"]
                             cache_hits += 1
                         else:
                             # Cache lookup failed, generate new embedding
@@ -249,10 +285,14 @@ class MultiDatabaseCWEPipeline:
 
                             # Save to cache immediately
                             cache_data = section_data.copy()
-                            self.cache.save_embedding(cache_data, self.embedder_type_str, self.model_name)
+                            self.cache.save_embedding(
+                                cache_data, self.embedder_type_str, self.model_name
+                            )
 
                     except Exception as e:
-                        logger.warning(f"Cache load failed for {cwe_id}/{s['section']}: {e}, generating new embedding")
+                        logger.warning(
+                            f"Cache load failed for {cwe_id}/{s['section']}: {e}, generating new embedding"
+                        )
                         # Generate new embedding
                         embedding = self.embedder.embed_text(s["text"])
                         section_data["embedding"] = embedding
@@ -261,7 +301,9 @@ class MultiDatabaseCWEPipeline:
 
                         # Save to cache immediately
                         cache_data = section_data.copy()
-                        self.cache.save_embedding(cache_data, self.embedder_type_str, self.model_name)
+                        self.cache.save_embedding(
+                            cache_data, self.embedder_type_str, self.model_name
+                        )
                 else:
                     # Not in cache, generate new embedding
                     embedding = self.embedder.embed_text(s["text"])
@@ -271,12 +313,16 @@ class MultiDatabaseCWEPipeline:
 
                     # Save to cache immediately
                     cache_data = section_data.copy()
-                    self.cache.save_embedding(cache_data, self.embedder_type_str, self.model_name)
+                    self.cache.save_embedding(
+                        cache_data, self.embedder_type_str, self.model_name
+                    )
 
                 chunk_payloads.append(section_data)
 
         logger.info(f"✅ Cache performance: {cache_hits} hits, {cache_misses} misses")
-        logger.info(f"💰 Cost savings: Generated only {new_embeddings_generated} new embeddings")
+        logger.info(
+            f"💰 Cost savings: Generated only {new_embeddings_generated} new embeddings"
+        )
 
         return chunk_payloads
 
@@ -286,13 +332,14 @@ class MultiDatabaseCWEPipeline:
 
         for target in self.database_targets:
             try:
-                logger.info(f"📥 Storing data in {target.name} ({target.description})...")
+                logger.info(
+                    f"📥 Storing data in {target.name} ({target.description})..."
+                )
 
                 # Create appropriate vector store for this target
                 if target.use_chunked:
                     vector_store = PostgresChunkStore(
-                        dims=self.embedding_dim,
-                        database_url=target.database_url
+                        dims=self.embedding_dim, database_url=target.database_url
                     )
                     data_to_store = embedding_data["chunked"]
                     storage_type = "chunked"
@@ -300,13 +347,15 @@ class MultiDatabaseCWEPipeline:
                     vector_store = PostgresVectorStore(
                         table="cwe_embeddings",
                         dims=self.embedding_dim,
-                        database_url=target.database_url
+                        database_url=target.database_url,
                     )
                     data_to_store = embedding_data["single_row"]
                     storage_type = "single-row"
 
                 if not data_to_store:
-                    logger.warning(f"No {storage_type} data available for {target.name}")
+                    logger.warning(
+                        f"No {storage_type} data available for {target.name}"
+                    )
                     continue
 
                 # Store the data
@@ -354,15 +403,19 @@ def create_database_targets_from_env() -> List[DatabaseTarget]:
     # Local database (typically Docker)
     local_url = os.environ.get("LOCAL_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if local_url:
-        targets.append(DatabaseTarget(
-            name="local",
-            database_url=local_url,
-            use_chunked=True,
-            description="Local development database"
-        ))
+        targets.append(
+            DatabaseTarget(
+                name="local",
+                database_url=local_url,
+                use_chunked=True,
+                description="Local development database",
+            )
+        )
 
     # Production database (Google Cloud SQL with IAM)
-    prod_url = os.environ.get("PROD_DATABASE_URL") or os.environ.get("PRODUCTION_DATABASE_URL")
+    prod_url = os.environ.get("PROD_DATABASE_URL") or os.environ.get(
+        "PRODUCTION_DATABASE_URL"
+    )
     if prod_url:
         # Check if this looks like a Google Cloud SQL IAM connection
         if "@" in prod_url and ":" not in prod_url.split("@")[0].split("://")[1]:
@@ -371,12 +424,14 @@ def create_database_targets_from_env() -> List[DatabaseTarget]:
         else:
             description = "Production database"
 
-        targets.append(DatabaseTarget(
-            name="production",
-            database_url=prod_url,
-            use_chunked=True,
-            description=description
-        ))
+        targets.append(
+            DatabaseTarget(
+                name="production",
+                database_url=prod_url,
+                use_chunked=True,
+                description=description,
+            )
+        )
 
     if not targets:
         raise ValueError(
@@ -388,12 +443,9 @@ def create_database_targets_from_env() -> List[DatabaseTarget]:
 
     return targets
 
+
 def create_google_cloud_sql_url(
-    project_id: str,
-    region: str,
-    instance_name: str,
-    database_name: str,
-    username: str
+    project_id: str, region: str, instance_name: str, database_name: str, username: str
 ) -> str:
     """
     Create a Google Cloud SQL connection URL for IAM authentication.

@@ -3,7 +3,6 @@ Integration-style unit test for CVE Creator formatting utility.
 Ensures bracketed segments are converted to bold, while markdown links remain intact.
 """
 
-import pytest
 
 from src.response_generator import ResponseGenerator
 
@@ -23,4 +22,3 @@ def test_format_cve_creator_brackets_to_bold(monkeypatch):
     assert "[execute code]" not in formatted
     # Ensure markdown link preserved
     assert "[details](https://example.com/details)" in formatted
-

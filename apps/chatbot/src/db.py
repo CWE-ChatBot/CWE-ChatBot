@@ -3,14 +3,17 @@
 Direct Private IP connection to Cloud SQL for production Cloud Run deployment.
 Uses psycopg v3 with connection pooling and password authentication.
 """
-import os
 import logging
+import os
 from functools import lru_cache
-from sqlalchemy import create_engine, event
-from sqlalchemy.engine import URL
-from sqlalchemy.pool import QueuePool
+from typing import Any
+
+from sqlalchemy import create_engine  # type: ignore[import-not-found]
+from sqlalchemy.engine import URL  # type: ignore[import-not-found]
+from sqlalchemy.pool import QueuePool  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
+
 
 def _build_url_from_env() -> URL:
     """
@@ -29,13 +32,15 @@ def _build_url_from_env() -> URL:
     """
     host = os.environ["DB_HOST"]
     port = int(os.getenv("DB_PORT", "5432"))
-    db   = os.environ["DB_NAME"]
+    db = os.environ["DB_NAME"]
     user = os.environ["DB_USER"]
-    pwd  = os.environ["DB_PASSWORD"].strip()  # Always strip newline/whitespace
+    pwd = os.environ["DB_PASSWORD"].strip()  # Always strip newline/whitespace
     sslmode = os.getenv("DB_SSLMODE", "require")
 
     # Log sanity checks (no secrets leaked)
-    logger.info(f"DB connect params: host={host}:{port}, db={db}, user={user}, sslmode={sslmode}, pw_len={len(pwd)}, tail={repr(pwd[-2:]) if len(pwd) >= 2 else repr(pwd)}")
+    logger.info(
+        f"DB connect params: host={host}:{port}, db={db}, user={user}, sslmode={sslmode}, pw_len={len(pwd)}, tail={repr(pwd[-2:]) if len(pwd) >= 2 else repr(pwd)}"
+    )
 
     return URL.create(
         drivername="postgresql+psycopg",
@@ -47,7 +52,7 @@ def _build_url_from_env() -> URL:
     )
 
 
-def warm_pool(engine, size: int = 5):
+def warm_pool(engine: Any, size: int = 5) -> None:
     """
     Pre-establish connections to warm up the connection pool.
 
@@ -76,7 +81,7 @@ def warm_pool(engine, size: int = 5):
 
 
 @lru_cache(maxsize=1)
-def engine():
+def engine() -> Any:
     """
     Get a SQLAlchemy engine with connection pooling for Cloud SQL.
 
@@ -105,7 +110,9 @@ def engine():
         future=True,
     )
 
-    logger.info(f"✓ Created connection pool: size={eng.pool.size()}, overflow={eng.pool.overflow()}, sslmode={sslmode}")
+    logger.info(
+        f"✓ Created connection pool: size={eng.pool.size()}, overflow={eng.pool.overflow()}, sslmode={sslmode}"
+    )
 
     # Note: Planner hints (enable_seqscan, hnsw.ef_search, etc.) are now applied
     # via transaction-scoped SET LOCAL in pg_chunk_store.py for better control
@@ -117,7 +124,7 @@ def engine():
     return eng
 
 
-def close():
+def close() -> None:
     """
     Dispose the engine and close all pooled connections.
 

@@ -6,7 +6,10 @@ with fallback chain: score -> hybrid_score -> scores.hybrid -> scores.vec -> 0.0
 """
 
 import pytest
-from src.processing.confidence_calculator import ConfidenceCalculator, create_aggregated_cwe
+from src.processing.confidence_calculator import (
+    ConfidenceCalculator,
+    create_aggregated_cwe,
+)
 
 
 class TestConfidenceCalculatorP0Fix:
@@ -19,7 +22,7 @@ class TestConfidenceCalculatorP0Fix:
                 "score": 0.85,
                 "hybrid_score": 0.70,  # Should be ignored
                 "scores": {"hybrid": 0.60, "vec": 0.50},  # Should be ignored
-                "metadata": {"section": "Description"}
+                "metadata": {"section": "Description"},
             }
         ]
 
@@ -35,7 +38,7 @@ class TestConfidenceCalculatorP0Fix:
                 # No 'score' field
                 "hybrid_score": 0.75,
                 "scores": {"hybrid": 0.60, "vec": 0.50},  # Should be ignored
-                "metadata": {"section": "Description"}
+                "metadata": {"section": "Description"},
             }
         ]
 
@@ -50,7 +53,7 @@ class TestConfidenceCalculatorP0Fix:
             {
                 # No 'score' or 'hybrid_score' fields
                 "scores": {"hybrid": 0.65, "vec": 0.55},
-                "metadata": {"section": "Description"}
+                "metadata": {"section": "Description"},
             }
         ]
 
@@ -65,7 +68,7 @@ class TestConfidenceCalculatorP0Fix:
             {
                 # No direct score fields and no hybrid in scores
                 "scores": {"vec": 0.55},
-                "metadata": {"section": "Description"}
+                "metadata": {"section": "Description"},
             }
         ]
 
@@ -84,8 +87,8 @@ class TestConfidenceCalculatorP0Fix:
             {
                 # Empty scores dict
                 "scores": {},
-                "metadata": {"section": "Consequences"}
-            }
+                "metadata": {"section": "Consequences"},
+            },
         ]
 
         agg = create_aggregated_cwe("CWE-476", "NULL Pointer Dereference", chunks)
@@ -96,26 +99,23 @@ class TestConfidenceCalculatorP0Fix:
     def test_create_aggregated_cwe_handles_mixed_score_formats(self):
         """Test that create_aggregated_cwe handles chunks with different score formats."""
         chunks = [
-            {
-                "score": 0.90,  # Direct score
-                "metadata": {"section": "Description"}
-            },
+            {"score": 0.90, "metadata": {"section": "Description"}},  # Direct score
             {
                 "hybrid_score": 0.80,  # Hybrid score
-                "metadata": {"section": "Consequences"}
+                "metadata": {"section": "Consequences"},
             },
             {
                 "scores": {"hybrid": 0.70},  # Nested hybrid score
-                "metadata": {"section": "Mitigations"}
+                "metadata": {"section": "Mitigations"},
             },
             {
                 "scores": {"vec": 0.60},  # Nested vector score only
-                "metadata": {"section": "Examples"}
+                "metadata": {"section": "Examples"},
             },
             {
                 # No scores at all
                 "metadata": {"section": "References"}
-            }
+            },
         ]
 
         agg = create_aggregated_cwe("CWE-200", "Information Exposure", chunks)
@@ -131,17 +131,13 @@ class TestConfidenceCalculatorP0Fix:
 
         # Create aggregated CWE with mixed score formats
         chunks = [
-            {
-                "scores": {"hybrid": 0.85},
-                "metadata": {"section": "Description"}
-            },
-            {
-                "score": 0.75,
-                "metadata": {"section": "Consequences"}
-            }
+            {"scores": {"hybrid": 0.85}, "metadata": {"section": "Description"}},
+            {"score": 0.75, "metadata": {"section": "Consequences"}},
         ]
 
-        agg = create_aggregated_cwe("CWE-79", "Cross-site Scripting", chunks, exact_match=True)
+        agg = create_aggregated_cwe(
+            "CWE-79", "Cross-site Scripting", chunks, exact_match=True
+        )
 
         # Calculate confidence
         score = calculator.score(agg)
@@ -157,18 +153,9 @@ class TestConfidenceCalculatorP0Fix:
     def test_create_aggregated_cwe_sorts_scores_descending(self):
         """Test that create_aggregated_cwe sorts scores in descending order."""
         chunks = [
-            {
-                "score": 0.60,
-                "metadata": {"section": "Description"}
-            },
-            {
-                "score": 0.90,
-                "metadata": {"section": "Consequences"}
-            },
-            {
-                "score": 0.75,
-                "metadata": {"section": "Mitigations"}
-            }
+            {"score": 0.60, "metadata": {"section": "Description"}},
+            {"score": 0.90, "metadata": {"section": "Consequences"}},
+            {"score": 0.75, "metadata": {"section": "Mitigations"}},
         ]
 
         agg = create_aggregated_cwe("CWE-89", "SQL Injection", chunks)

@@ -9,11 +9,12 @@ These tests are designed to be resilient to minor UI changes by trying
 multiple selectors and tolerating missing AI responses (offline mode).
 """
 
-from pathlib import Path
-import time
-import pytest
-from playwright.sync_api import sync_playwright, expect
 import os
+import time
+from pathlib import Path
+
+import pytest
+from playwright.sync_api import sync_playwright
 
 
 def _try_click(page, selectors: list[str]) -> bool:
@@ -30,10 +31,7 @@ def _try_click(page, selectors: list[str]) -> bool:
 
 def _set_files_if_present(page, file_paths: list[str]) -> bool:
     # Try common file input selectors used by Chainlit uploader and AskFileMessage
-    inputs = [
-        'input[type="file"]',
-        'input[type="file"][multiple]'
-    ]
+    inputs = ['input[type="file"]', 'input[type="file"][multiple]']
     for sel in inputs:
         try:
             if page.locator(sel).count() > 0:
@@ -48,8 +46,8 @@ def _set_files_if_present(page, file_paths: list[str]) -> bool:
 def test_ui_full_paths(chainlit_server):
     url = chainlit_server["url"]
 
-    pdf_dir = Path('apps/chatbot/tests/pdfs').resolve()
-    pdf_path = str((pdf_dir / 'INTEL-SA-01273.pdf').resolve())
+    pdf_dir = Path("apps/chatbot/tests/pdfs").resolve()
+    pdf_path = str((pdf_dir / "INTEL-SA-01273.pdf").resolve())
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -61,23 +59,29 @@ def test_ui_full_paths(chainlit_server):
             page.wait_for_load_state("networkidle", timeout=30000)
 
             # 1) Persona selection via top profiles (try to pick CVE Creator)
-            _try_click(page, [
-                "text=CVE Creator",
-                "button:has-text('CVE Creator')",
-                "[role='button']:has-text('CVE Creator')",
-            ])
+            _try_click(
+                page,
+                [
+                    "text=CVE Creator",
+                    "button:has-text('CVE Creator')",
+                    "[role='button']:has-text('CVE Creator')",
+                ],
+            )
 
             # 2) Open Settings panel (best-effort)
-            _try_click(page, [
-                'button[aria-label*="Settings"]',
-                '[data-testid="settings-button"]',
-                'button:has-text("Settings")',
-                'button[title*="Settings"]',
-            ])
+            _try_click(
+                page,
+                [
+                    'button[aria-label*="Settings"]',
+                    '[data-testid="settings-button"]',
+                    'button:has-text("Settings")',
+                    'button[title*="Settings"]',
+                ],
+            )
             # Give it a moment to render, then close by pressing Escape
             time.sleep(0.5)
             try:
-                page.keyboard.press('Escape')
+                page.keyboard.press("Escape")
             except Exception:
                 pass
 
@@ -91,7 +95,10 @@ def test_ui_full_paths(chainlit_server):
             ]
             msg_input = None
             for sel in input_candidates:
-                if page.locator(sel).count() > 0 and page.locator(sel).first.is_visible():
+                if (
+                    page.locator(sel).count() > 0
+                    and page.locator(sel).first.is_visible()
+                ):
                     msg_input = page.locator(sel).first
                     break
             assert msg_input is not None, "Message input not found"
@@ -104,10 +111,13 @@ def test_ui_full_paths(chainlit_server):
 
             # 4) CVE Creator with PDF upload
             # Try the welcome action button first
-            clicked_attach = _try_click(page, [
-                "button:has-text('Attach Files (PDF)')",
-                "button:has-text('Attach Files')",
-            ])
+            clicked_attach = _try_click(
+                page,
+                [
+                    "button:has-text('Attach Files (PDF)')",
+                    "button:has-text('Attach Files')",
+                ],
+            )
 
             uploaded = False
             if clicked_attach:
@@ -115,12 +125,15 @@ def test_ui_full_paths(chainlit_server):
                 uploaded = _set_files_if_present(page, [pdf_path])
                 # Some UIs require a confirm/continue
                 if uploaded:
-                    _try_click(page, [
-                        "button:has-text('Upload')",
-                        "button:has-text('Confirm')",
-                        "button:has-text('Continue')",
-                        "button:has-text('Done')",
-                    ])
+                    _try_click(
+                        page,
+                        [
+                            "button:has-text('Upload')",
+                            "button:has-text('Confirm')",
+                            "button:has-text('Continue')",
+                            "button:has-text('Done')",
+                        ],
+                    )
                 # Wait for our system confirmation message
                 if uploaded:
                     page.wait_for_timeout(1000)
@@ -131,17 +144,24 @@ def test_ui_full_paths(chainlit_server):
             if not uploaded:
                 # Paperclip path: find file input and set files
                 # Try to reveal uploader by clicking a likely upload button
-                _try_click(page, [
-                    "[aria-label*='Attach']",
-                    "[data-testid*='Upload']",
-                    "button:has-text('Attach files')",
-                ])
+                _try_click(
+                    page,
+                    [
+                        "[aria-label*='Attach']",
+                        "[data-testid*='Upload']",
+                        "button:has-text('Attach files')",
+                    ],
+                )
                 uploaded = _set_files_if_present(page, [pdf_path])
 
             # Send a CVE Creator prompt that should incorporate uploaded content
-            _try_click(page, ["text=CVE Creator", "button:has-text('CVE Creator')"])  # ensure role
+            _try_click(
+                page, ["text=CVE Creator", "button:has-text('CVE Creator')"]
+            )  # ensure role
             msg_input.fill("")
-            msg_input.fill("Create a CVE description for Log4Shell using the uploaded doc")
+            msg_input.fill(
+                "Create a CVE description for Log4Shell using the uploaded doc"
+            )
             msg_input.press("Enter")
 
             # Wait a bit and then verify evidence of upload
@@ -154,20 +174,24 @@ def test_ui_full_paths(chainlit_server):
                 page.locator("text=INTEL-SA-01273.pdf").first,
             ]
             if not any(ev.count() > 0 for ev in evidence):
-                pytest.skip("Upload evidence not found in this UI build; skipping upload verification.")
+                pytest.skip(
+                    "Upload evidence not found in this UI build; skipping upload verification."
+                )
 
             # Optionally, check that no raw square brackets remain in latest assistant message HTML
             # (We can be lenient due to streaming/AI variability)
             content_html = page.content()
-            assert "[Remote Code Execution]" not in content_html, "Raw bracketed segments should be formatted"
+            assert (
+                "[Remote Code Execution]" not in content_html
+            ), "Raw bracketed segments should be formatted"
 
         finally:
             page.close()
             try:
-                os.makedirs('test-results/videos', exist_ok=True)
+                os.makedirs("test-results/videos", exist_ok=True)
                 video = page.video
                 if video:
-                    video.save_as('test-results/videos/test_ui_full_paths.webm')
+                    video.save_as("test-results/videos/test_ui_full_paths.webm")
             except Exception:
                 pass
             context.close()

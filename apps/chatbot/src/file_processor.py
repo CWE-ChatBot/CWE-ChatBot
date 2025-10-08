@@ -12,31 +12,32 @@ Security Features:
 - No content logging
 """
 
+import asyncio
 import logging
 import os
-from typing import Dict, List, Any, Optional
-from pathlib import Path
-import chainlit as cl
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional
+
+import chainlit as cl
 
 # Optional imports for OIDC and HTTP client
 try:
-    import google.auth
-    import google.auth.transport.requests
-    from google.auth import compute_engine
+    import google.auth  # noqa: F401
+
     HAS_GOOGLE_AUTH = True
 except ImportError:
     HAS_GOOGLE_AUTH = False
 
 try:
     import httpx
+
     HAS_HTTPX = True
 except ImportError:
     HAS_HTTPX = False
 
 try:
-    import chardet
+    import chardet  # type: ignore[import-not-found]
+
     HAS_CHARDET = True
 except ImportError:
     HAS_CHARDET = False
@@ -48,9 +49,10 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 # Shared HTTP client for connection pooling (reduces connection churn)
 # Created lazily on first use to avoid initialization issues
-_httpx_client: Optional['httpx.Client'] = None
+_httpx_client: Optional["httpx.Client"] = None
 
-def _get_httpx_client() -> 'httpx.Client':
+
+def _get_httpx_client() -> "httpx.Client":
     """Get or create shared HTTP client with connection pooling and HTTP/2 support."""
     global _httpx_client
     if _httpx_client is None:
@@ -86,7 +88,7 @@ class FileProcessor:
         self.max_output_chars = 1_000_000
 
         # PDF worker configuration
-        self.pdf_worker_url = os.getenv('PDF_WORKER_URL')
+        self.pdf_worker_url = os.getenv("PDF_WORKER_URL")
         self.pdf_worker_timeout = 55  # AC6: Client timeout ≤ 55s
 
         # Text validation thresholds
@@ -108,29 +110,29 @@ class FileProcessor:
             'pdf', 'text', or 'unknown'
         """
         if not content:
-            return 'unknown'
+            return "unknown"
 
         # PDF magic bytes
-        if content.startswith(b'%PDF-'):
-            return 'pdf'
+        if content.startswith(b"%PDF-"):
+            return "pdf"
 
         # Text validation: NUL byte check
-        if b'\x00' in content:
-            return 'unknown'
+        if b"\x00" in content:
+            return "unknown"
 
         # Try UTF-8 decode and check printable ratio
         try:
-            text = content.decode('utf-8', errors='strict')
+            text = content.decode("utf-8", errors="strict")
             # Calculate printable ratio (allow \n, \r, \t)
-            printable = sum(1 for c in text if c.isprintable() or c in '\n\r\t')
+            printable = sum(1 for c in text if c.isprintable() or c in "\n\r\t")
             ratio = printable / len(text) if text else 0
 
             if ratio >= self.min_printable_ratio:
-                return 'text'
+                return "text"
         except UnicodeDecodeError:
             pass
 
-        return 'unknown'
+        return "unknown"
 
     async def get_oidc_token(self, audience: str) -> str:
         """
@@ -152,16 +154,18 @@ class FileProcessor:
 
         def _fetch_token_sync() -> str:
             """Synchronous token fetch for thread pool execution."""
-            import google.oauth2.id_token
             import google.auth.transport.requests as transport_requests
+            import google.oauth2.id_token
 
             try:
                 # Fetch ID token using google.oauth2.id_token.fetch_id_token()
                 # This is the recommended approach for Cloud Run -> Cloud Run/Functions calls
                 auth_req = transport_requests.Request()
                 token = google.oauth2.id_token.fetch_id_token(auth_req, audience)
-                logger.info(f"Successfully fetched OIDC token for audience: {audience[:50]}...")
-                return token
+                logger.info(
+                    f"Successfully fetched OIDC token for audience: {audience[:50]}..."
+                )
+                return str(token)
             except Exception as e:
                 logger.error(f"OIDC token fetch failed: {type(e).__name__}: {e}")
                 logger.error(f"Audience: {audience}")
@@ -175,7 +179,9 @@ class FileProcessor:
             logger.error(f"OIDC token fetch failed: {type(e).__name__}: {e}")
             raise RuntimeError("auth_failed")
 
-    def _call_pdf_worker_sync(self, pdf_bytes: bytes, url: str, token: str) -> Dict[str, Any]:
+    def _call_pdf_worker_sync(
+        self, pdf_bytes: bytes, url: str, token: str
+    ) -> Dict[str, Any]:
         """
         Synchronous PDF worker call for ThreadPoolExecutor.
 
@@ -203,33 +209,36 @@ class FileProcessor:
                     url,
                     content=pdf_bytes,
                     headers={
-                        'Authorization': f'Bearer {token}',
-                        'Content-Type': 'application/pdf'
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/pdf",
                     },
-                    timeout=self.pdf_worker_timeout
+                    timeout=self.pdf_worker_timeout,
                 )
 
                 # Check response status
                 if response.status_code == 200:
-                    return response.json()
+                    return dict(response.json())
                 elif response.status_code == 413:
                     raise ValueError("too_large")
                 elif response.status_code == 422:
                     # Parse error code from response
                     try:
                         error_data = response.json()
-                        error_code = error_data.get('error', 'invalid_content')
-                    except:
-                        error_code = 'invalid_content'
+                        error_code = error_data.get("error", "invalid_content")
+                    except Exception:
+                        error_code = "invalid_content"
                     raise ValueError(error_code)
                 elif response.status_code in (401, 403):
                     raise ValueError("auth_failed")
                 elif response.status_code >= 500:
                     # Retry on 5xx if first attempt
                     if attempt < max_attempts - 1:
-                        logger.warning(f"PDF worker returned {response.status_code}, retrying...")
+                        logger.warning(
+                            f"PDF worker returned {response.status_code}, retrying..."
+                        )
                         import time
-                        time.sleep(0.5 * (2 ** attempt))  # Jittered backoff
+
+                        time.sleep(0.5 * (2**attempt))  # Jittered backoff
                         continue
                     raise ValueError("pdf_processing_failed")
                 else:
@@ -273,11 +282,7 @@ class FileProcessor:
         # Run blocking HTTP call in thread pool to avoid blocking event loop
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _executor,
-            self._call_pdf_worker_sync,
-            pdf_bytes,
-            self.pdf_worker_url,
-            token
+            _executor, self._call_pdf_worker_sync, pdf_bytes, self.pdf_worker_url, token
         )
 
     async def process_text_file(self, content: bytes) -> str:
@@ -301,40 +306,42 @@ class FileProcessor:
             ValueError: With error code if validation fails
         """
         # Reject NUL bytes (AC3)
-        if b'\x00' in content:
+        if b"\x00" in content:
             raise ValueError("binary_text_rejected")
 
         # UTF-8 decode with strict errors (AC3)
         try:
-            text = content.decode('utf-8', errors='strict')
+            text = content.decode("utf-8", errors="strict")
         except UnicodeDecodeError:
             # Fallback: try chardet detection once (AC3)
             if HAS_CHARDET:
                 detected = chardet.detect(content)
-                if detected['confidence'] < 0.8:
+                if detected["confidence"] < 0.8:
                     raise ValueError("decoding_failed")
                 try:
-                    text = content.decode(detected['encoding'], errors='strict')
-                except:
+                    text = content.decode(detected["encoding"], errors="strict")
+                except Exception:
                     raise ValueError("decoding_failed")
             else:
                 raise ValueError("decoding_failed")
 
         # Check printable ratio (AC3)
-        printable = sum(1 for c in text if c.isprintable() or c in '\n\r\t')
+        printable = sum(1 for c in text if c.isprintable() or c in "\n\r\t")
         ratio = printable / len(text) if text else 0
         if ratio < self.min_printable_ratio:
             raise ValueError("binary_text_rejected")
 
         # Reject pathologically long lines (AC3)
-        lines = text.split('\n')
+        lines = text.split("\n")
         if any(len(line) > self.max_line_length for line in lines):
             raise ValueError("line_too_long")
 
         # Truncate to max chars (AC4)
         if len(text) > self.max_output_chars:
-            text = text[:self.max_output_chars]
-            logger.info(f"Text truncated from {len(text)} to {self.max_output_chars} chars")
+            text = text[: self.max_output_chars]
+            logger.info(
+                f"Text truncated from {len(text)} to {self.max_output_chars} chars"
+            )
             return text + "\n\n[Content truncated at 1,000,000 characters]"
 
         return text
@@ -342,30 +349,30 @@ class FileProcessor:
     def get_friendly_error(self, error_code: str) -> str:
         """Map error codes to user-friendly messages (AC7)."""
         messages = {
-            'too_large': 'File exceeds 10MB limit. Please upload a smaller file.',
-            'too_many_pages': 'PDF exceeds 50 pages. Please split into smaller documents.',
-            'timeout': 'File processing timed out. Try a smaller file.',
-            'invalid_content_type': 'Unsupported file type. Please upload PDF or text files.',
-            'pdf_magic_missing': 'File does not appear to be a valid PDF.',
-            'encrypted_pdf_unsupported': 'Encrypted PDFs are not supported. Please remove password protection.',
-            'image_only_pdf_unsupported': 'Image-only PDFs require OCR which is not supported.',
-            'binary_text_rejected': 'File contains binary data and cannot be processed as text.',
-            'text_encoding_failed': 'Text encoding could not be determined.',
-            'decoding_failed': 'Text encoding could not be determined.',  # Alias for text_encoding_failed
-            'text_line_too_long': 'File contains excessively long lines.',
-            'line_too_long': 'File contains excessively long lines.',  # Alias for text_line_too_long
-            'pdf_too_many_pages': 'PDF exceeds 50 pages. Please split into smaller documents.',
-            'pdf_corrupted': 'PDF file appears to be corrupted or invalid.',
-            'pdf_sanitization_failed': 'PDF security sanitization failed.',
-            'auth_failed': 'PDF processing service authentication failed.',
-            'worker_unavailable': 'PDF processing service is temporarily unavailable. Please try again.',
-            'worker_timeout': 'PDF processing service timed out. Try a smaller file.',
-            'pdf_worker_not_configured': 'PDF processing is not configured.',
-            'pdf_processing_failed': 'PDF processing failed. Please try again.',
-            'processing_failed': 'File processing failed. Please try again.',
-            'unknown_content_type': 'File type could not be determined.',
+            "too_large": "File exceeds 10MB limit. Please upload a smaller file.",
+            "too_many_pages": "PDF exceeds 50 pages. Please split into smaller documents.",
+            "timeout": "File processing timed out. Try a smaller file.",
+            "invalid_content_type": "Unsupported file type. Please upload PDF or text files.",
+            "pdf_magic_missing": "File does not appear to be a valid PDF.",
+            "encrypted_pdf_unsupported": "Encrypted PDFs are not supported. Please remove password protection.",
+            "image_only_pdf_unsupported": "Image-only PDFs require OCR which is not supported.",
+            "binary_text_rejected": "File contains binary data and cannot be processed as text.",
+            "text_encoding_failed": "Text encoding could not be determined.",
+            "decoding_failed": "Text encoding could not be determined.",  # Alias for text_encoding_failed
+            "text_line_too_long": "File contains excessively long lines.",
+            "line_too_long": "File contains excessively long lines.",  # Alias for text_line_too_long
+            "pdf_too_many_pages": "PDF exceeds 50 pages. Please split into smaller documents.",
+            "pdf_corrupted": "PDF file appears to be corrupted or invalid.",
+            "pdf_sanitization_failed": "PDF security sanitization failed.",
+            "auth_failed": "PDF processing service authentication failed.",
+            "worker_unavailable": "PDF processing service is temporarily unavailable. Please try again.",
+            "worker_timeout": "PDF processing service timed out. Try a smaller file.",
+            "pdf_worker_not_configured": "PDF processing is not configured.",
+            "pdf_processing_failed": "PDF processing failed. Please try again.",
+            "processing_failed": "File processing failed. Please try again.",
+            "unknown_content_type": "File type could not be determined.",
         }
-        return messages.get(error_code, f'File processing error: {error_code}')
+        return messages.get(error_code, f"File processing error: {error_code}")
 
     async def process_attachments(self, message: cl.Message) -> Optional[str]:
         """
@@ -380,14 +387,14 @@ class FileProcessor:
         Returns:
             Extracted text content from files, or None if no files/issues
         """
-        if not hasattr(message, 'elements') or not message.elements:
+        if not hasattr(message, "elements") or not message.elements:
             logger.debug("No file attachments found in message")
             return None
 
         extracted_content = []
 
         for element in message.elements:
-            if hasattr(element, 'type') and element.type == 'file':
+            if hasattr(element, "type") and element.type == "file":
                 try:
                     # Get file content
                     file_content = await self._get_file_content(element)
@@ -395,56 +402,79 @@ class FileProcessor:
                     # AC1: Size validation (10MB)
                     if len(file_content) > self.max_file_size_bytes:
                         file_size_mb = len(file_content) / (1024 * 1024)
-                        error_msg = self.get_friendly_error('too_large')
-                        extracted_content.append(f"\n--- File: {element.name} ---\n{error_msg}\n")
-                        logger.warning(f"File too large: {element.name} ({file_size_mb:.1f}MB)")
+                        error_msg = self.get_friendly_error("too_large")
+                        extracted_content.append(
+                            f"\n--- File: {element.name} ---\n{error_msg}\n"
+                        )
+                        logger.warning(
+                            f"File too large: {element.name} ({file_size_mb:.1f}MB)"
+                        )
                         continue
 
                     # AC1: Detect file type via magic bytes (not extension)
                     file_type = self.detect_file_type(file_content)
 
-                    if file_type == 'pdf':
+                    if file_type == "pdf":
                         # AC2: Process PDF via isolated Cloud Functions worker
                         try:
                             result = await self.call_pdf_worker(file_content)
-                            text = result['text']
-                            pages = result['pages']
+                            text = result["text"]
+                            pages = result["pages"]
                             file_info = f"\n--- File: {element.name} ({pages} pages, sanitized) ---\n"
                             extracted_content.append(file_info + text)
-                            logger.info(f"PDF processed: {element.name}, {pages} pages, {len(text)} chars")
+                            logger.info(
+                                f"PDF processed: {element.name}, {pages} pages, {len(text)} chars"
+                            )
                         except ValueError as e:
                             error_msg = self.get_friendly_error(str(e))
-                            extracted_content.append(f"\n--- File: {element.name} ---\n{error_msg}\n")
-                            logger.warning(f"PDF processing failed for {element.name}: {str(e)}")
+                            extracted_content.append(
+                                f"\n--- File: {element.name} ---\n{error_msg}\n"
+                            )
+                            logger.warning(
+                                f"PDF processing failed for {element.name}: {str(e)}"
+                            )
 
-                    elif file_type == 'text':
+                    elif file_type == "text":
                         # AC3: Process text file locally with strict validation
                         try:
                             text = await self.process_text_file(file_content)
                             file_info = f"\n--- File: {element.name} ---\n"
                             extracted_content.append(file_info + text)
-                            logger.info(f"Text processed: {element.name}, {len(text)} chars")
+                            logger.info(
+                                f"Text processed: {element.name}, {len(text)} chars"
+                            )
                         except ValueError as e:
                             error_msg = self.get_friendly_error(str(e))
-                            extracted_content.append(f"\n--- File: {element.name} ---\n{error_msg}\n")
-                            logger.warning(f"Text processing failed for {element.name}: {str(e)}")
+                            extracted_content.append(
+                                f"\n--- File: {element.name} ---\n{error_msg}\n"
+                            )
+                            logger.warning(
+                                f"Text processing failed for {element.name}: {str(e)}"
+                            )
 
                     else:
                         # Unsupported file type
-                        error_msg = self.get_friendly_error('invalid_content_type')
-                        extracted_content.append(f"\n--- File: {element.name} ---\n{error_msg}\n")
+                        error_msg = self.get_friendly_error("invalid_content_type")
+                        extracted_content.append(
+                            f"\n--- File: {element.name} ---\n{error_msg}\n"
+                        )
                         logger.warning(f"Unsupported file type: {element.name}")
 
                 except Exception as e:
                     # Log the full error for debugging
-                    logger.error(f"Unexpected error processing file {element.name}: {type(e).__name__}: {e}")
-                    if os.getenv('LOG_LEVEL') == 'DEBUG':
+                    logger.error(
+                        f"Unexpected error processing file {element.name}: {type(e).__name__}: {e}"
+                    )
+                    if os.getenv("LOG_LEVEL") == "DEBUG":
                         import traceback
+
                         traceback.print_exc()
 
                     # Show user-friendly error instead of raw exception text
                     error_msg = "An unexpected error occurred while processing this file. Please try again or contact support if the issue persists."
-                    extracted_content.append(f"\n--- File: {element.name} ---\n{error_msg}\n")
+                    extracted_content.append(
+                        f"\n--- File: {element.name} ---\n{error_msg}\n"
+                    )
 
         if extracted_content:
             return "\n".join(extracted_content)
@@ -463,16 +493,18 @@ class FileProcessor:
         Raises:
             RuntimeError: If file content cannot be accessed
         """
-        if hasattr(file_element, 'content') and file_element.content is not None:
-            return file_element.content
-        elif hasattr(file_element, 'path') and file_element.path:
+        if hasattr(file_element, "content") and file_element.content is not None:
+            return bytes(file_element.content)
+        elif hasattr(file_element, "path") and file_element.path:
             return await asyncio.to_thread(self._read_file_from_path, file_element.path)
         else:
-            raise RuntimeError(f"Cannot access file content for {getattr(file_element, 'name', 'unknown')}")
+            raise RuntimeError(
+                f"Cannot access file content for {getattr(file_element, 'name', 'unknown')}"
+            )
 
     def _read_file_from_path(self, file_path: str) -> bytes:
         """Helper method to read file content from path (for asyncio.to_thread)."""
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             return f.read()
 
     def analyze_vulnerability_content(self, content: str) -> Dict[str, Any]:
@@ -489,34 +521,46 @@ class FileProcessor:
 
         # Look for vulnerability indicators
         vulnerability_indicators = {
-            'cve_references': self._find_cve_references(content),
-            'vulnerability_types': self._identify_vulnerability_types(content_lower),
-            'product_information': self._extract_product_info(content),
-            'impact_indicators': self._find_impact_indicators(content_lower),
-            'attack_vectors': self._identify_attack_vectors(content_lower),
-            'severity_indicators': self._find_severity_indicators(content_lower)
+            "cve_references": self._find_cve_references(content),
+            "vulnerability_types": self._identify_vulnerability_types(content_lower),
+            "product_information": self._extract_product_info(content),
+            "impact_indicators": self._find_impact_indicators(content_lower),
+            "attack_vectors": self._identify_attack_vectors(content_lower),
+            "severity_indicators": self._find_severity_indicators(content_lower),
         }
 
         return {
-            'content_length': len(content),
-            'has_vulnerability_content': any(vulnerability_indicators.values()),
-            'indicators': vulnerability_indicators,
-            'confidence_score': self._calculate_confidence_score(vulnerability_indicators)
+            "content_length": len(content),
+            "has_vulnerability_content": any(vulnerability_indicators.values()),
+            "indicators": vulnerability_indicators,
+            "confidence_score": self._calculate_confidence_score(
+                vulnerability_indicators
+            ),
         }
 
     def _find_cve_references(self, content: str) -> List[str]:
         """Find CVE references in content."""
         import re
-        cve_pattern = re.compile(r'CVE-\d{4}-\d{4,}', re.IGNORECASE)
+
+        cve_pattern = re.compile(r"CVE-\d{4}-\d{4,}", re.IGNORECASE)
         return list(set(cve_pattern.findall(content)))
 
     def _identify_vulnerability_types(self, content_lower: str) -> List[str]:
         """Identify vulnerability types mentioned."""
         vuln_types = [
-            'sql injection', 'cross-site scripting', 'buffer overflow',
-            'authentication bypass', 'privilege escalation', 'remote code execution',
-            'denial of service', 'information disclosure', 'path traversal',
-            'csrf', 'xxe', 'deserialization', 'race condition'
+            "sql injection",
+            "cross-site scripting",
+            "buffer overflow",
+            "authentication bypass",
+            "privilege escalation",
+            "remote code execution",
+            "denial of service",
+            "information disclosure",
+            "path traversal",
+            "csrf",
+            "xxe",
+            "deserialization",
+            "race condition",
         ]
 
         found_types = []
@@ -531,25 +575,43 @@ class FileProcessor:
         import re
 
         # Look for version patterns
-        version_pattern = re.compile(r'version\s+([0-9]+(?:\.[0-9]+)*(?:-[a-zA-Z0-9]+)*)', re.IGNORECASE)
+        version_pattern = re.compile(
+            r"version\s+([0-9]+(?:\.[0-9]+)*(?:-[a-zA-Z0-9]+)*)", re.IGNORECASE
+        )
         versions = list(set(version_pattern.findall(content)))
 
         # Look for common product/vendor patterns
-        product_indicators = ['product', 'software', 'application', 'system', 'platform']
-        vendor_indicators = ['vendor', 'company', 'developer', 'manufacturer']
+        product_indicators = [
+            "product",
+            "software",
+            "application",
+            "system",
+            "platform",
+        ]
+        vendor_indicators = ["vendor", "company", "developer", "manufacturer"]
 
         return {
-            'versions': versions,
-            'product_mentions': len([word for word in product_indicators if word in content.lower()]),
-            'vendor_mentions': len([word for word in vendor_indicators if word in content.lower()])
+            "versions": versions,
+            "product_mentions": len(
+                [word for word in product_indicators if word in content.lower()]
+            ),
+            "vendor_mentions": len(
+                [word for word in vendor_indicators if word in content.lower()]
+            ),
         }
 
     def _find_impact_indicators(self, content_lower: str) -> List[str]:
         """Find impact-related indicators."""
         impact_terms = [
-            'execute arbitrary code', 'remote code execution', 'privilege escalation',
-            'data disclosure', 'information leak', 'denial of service',
-            'bypass authentication', 'gain access', 'unauthorized'
+            "execute arbitrary code",
+            "remote code execution",
+            "privilege escalation",
+            "data disclosure",
+            "information leak",
+            "denial of service",
+            "bypass authentication",
+            "gain access",
+            "unauthorized",
         ]
 
         return [term for term in impact_terms if term in content_lower]
@@ -557,9 +619,15 @@ class FileProcessor:
     def _identify_attack_vectors(self, content_lower: str) -> List[str]:
         """Identify attack vectors mentioned."""
         attack_vectors = [
-            'crafted request', 'malicious input', 'specially crafted',
-            'malformed request', 'user input', 'file upload',
-            'network request', 'authenticated user', 'remote attacker'
+            "crafted request",
+            "malicious input",
+            "specially crafted",
+            "malformed request",
+            "user input",
+            "file upload",
+            "network request",
+            "authenticated user",
+            "remote attacker",
         ]
 
         return [vector for vector in attack_vectors if vector in content_lower]
@@ -567,10 +635,16 @@ class FileProcessor:
     def _find_severity_indicators(self, content_lower: str) -> Dict[str, bool]:
         """Find severity-related indicators."""
         return {
-            'critical': any(term in content_lower for term in ['critical', 'severe', 'high risk']),
-            'high': any(term in content_lower for term in ['high', 'important', 'significant']),
-            'medium': any(term in content_lower for term in ['medium', 'moderate']),
-            'low': any(term in content_lower for term in ['low', 'minor', 'informational'])
+            "critical": any(
+                term in content_lower for term in ["critical", "severe", "high risk"]
+            ),
+            "high": any(
+                term in content_lower for term in ["high", "important", "significant"]
+            ),
+            "medium": any(term in content_lower for term in ["medium", "moderate"]),
+            "low": any(
+                term in content_lower for term in ["low", "minor", "informational"]
+            ),
         }
 
     def _calculate_confidence_score(self, indicators: Dict[str, Any]) -> int:
@@ -578,24 +652,24 @@ class FileProcessor:
         score = 0
 
         # CVE references add confidence
-        if indicators.get('cve_references'):
+        if indicators.get("cve_references"):
             score += 30
 
         # Vulnerability types add confidence
-        vuln_types = indicators.get('vulnerability_types', [])
+        vuln_types = indicators.get("vulnerability_types", [])
         score += min(len(vuln_types) * 15, 40)
 
         # Product information adds confidence
-        product_info = indicators.get('product_information', {})
-        if product_info.get('versions'):
+        product_info = indicators.get("product_information", {})
+        if product_info.get("versions"):
             score += 20
-        if product_info.get('product_mentions', 0) > 0:
+        if product_info.get("product_mentions", 0) > 0:
             score += 10
 
         # Impact and attack vectors add confidence
-        if indicators.get('impact_indicators'):
+        if indicators.get("impact_indicators"):
             score += 15
-        if indicators.get('attack_vectors'):
+        if indicators.get("attack_vectors"):
             score += 10
 
         return min(score, 100)

@@ -3,19 +3,23 @@ Pytest configuration and fixtures for Playwright UI testing.
 Provides shared fixtures and configuration for UI test suite.
 """
 
-import pytest
-from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 import asyncio
-from typing import AsyncGenerator, Generator
-import sys
 import os
+import sys
+from typing import AsyncGenerator, Generator
+
+import pytest
+from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 # Add the source directory to the Python path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'apps', 'chatbot', 'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "..", "apps", "chatbot", "src")
+)
 
 # Import user personas for testing
 try:
     from user_context import UserPersona
+
     # Create role mapping for backward compatibility
     class UserRole:
         PSIRT = UserPersona.PSIRT_MEMBER.value
@@ -23,6 +27,7 @@ try:
         ACADEMIC = UserPersona.ACADEMIC_RESEARCHER.value
         BUG_BOUNTY = UserPersona.BUG_BOUNTY_HUNTER.value
         PRODUCT_MANAGER = UserPersona.PRODUCT_MANAGER.value
+
 except ImportError:
     # Fallback if user_context isn't available yet
     class UserRole:
@@ -47,14 +52,14 @@ async def browser() -> AsyncGenerator[Browser, None]:
     async with async_playwright() as p:
         # Use chromium by default, but can be configured via environment
         browser_type = os.getenv("PLAYWRIGHT_BROWSER", "chromium")
-        
+
         if browser_type == "firefox":
             browser = await p.firefox.launch(headless=False)
         elif browser_type == "webkit":
             browser = await p.webkit.launch(headless=False)
         else:
             browser = await p.chromium.launch(headless=False)
-            
+
         yield browser
         await browser.close()
 
@@ -76,19 +81,19 @@ async def context(browser: Browser) -> AsyncGenerator[BrowserContext, None]:
 async def page(context: BrowserContext) -> AsyncGenerator[Page, None]:
     """Create a new page for each test."""
     page = await context.new_page()
-    
+
     # Set up console logging for debugging
     def handle_console_msg(msg):
         print(f"Console {msg.type}: {msg.text}")
-    
+
     page.on("console", handle_console_msg)
-    
+
     # Handle page errors
     def handle_page_error(error):
         print(f"Page error: {error}")
-    
+
     page.on("pageerror", handle_page_error)
-    
+
     yield page
     await page.close()
 
@@ -107,5 +112,5 @@ def test_user_roles():
         UserRole.DEVELOPER,
         UserRole.ACADEMIC,
         UserRole.BUG_BOUNTY,
-        UserRole.PRODUCT_MANAGER
+        UserRole.PRODUCT_MANAGER,
     ]

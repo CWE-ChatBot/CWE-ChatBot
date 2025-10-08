@@ -6,7 +6,7 @@ Builds clear explanations for CWE mapping recommendations with snippet citations
 
 import logging
 import re
-from typing import Dict, List
+from typing import Dict, List, Set
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,11 @@ class ExplanationBuilder:
     - Limit snippet length and count to avoid information overload
     """
 
-    def __init__(self, max_snippets: int = MAX_SNIPPETS, max_snippet_length: int = MAX_SNIPPET_LENGTH):
+    def __init__(
+        self,
+        max_snippets: int = MAX_SNIPPETS,
+        max_snippet_length: int = MAX_SNIPPET_LENGTH,
+    ):
         """
         Initialize explanation builder with configuration.
 
@@ -38,8 +42,10 @@ class ExplanationBuilder:
         self.max_snippets = max_snippets
         self.max_snippet_length = max_snippet_length
 
-        logger.info(f"ExplanationBuilder initialized: max_snippets={max_snippets}, "
-                   f"max_snippet_length={max_snippet_length}")
+        logger.info(
+            f"ExplanationBuilder initialized: max_snippets={max_snippets}, "
+            f"max_snippet_length={max_snippet_length}"
+        )
 
     def build(self, query: str, cwe_id: str, chunks: List[Dict]) -> Dict:
         """
@@ -64,7 +70,7 @@ class ExplanationBuilder:
                 "snippets": [],
                 "bullets": ["No detailed information available for this CWE."],
                 "relevance": f"General match for query terms related to {cwe_id}",
-                "section_coverage": {}
+                "section_coverage": {},
             }
 
         logger.debug(f"Building explanation for {cwe_id} with {len(chunks)} chunks")
@@ -86,7 +92,7 @@ class ExplanationBuilder:
             "snippets": selected_snippets,
             "bullets": bullets,
             "relevance": relevance,
-            "section_coverage": section_coverage
+            "section_coverage": section_coverage,
         }
 
     def _extract_snippet_candidates(self, query: str, chunks: List[Dict]) -> List[Dict]:
@@ -123,16 +129,20 @@ class ExplanationBuilder:
             sentences = self._extract_relevant_sentences(clean_content, query_terms)
 
             for sentence in sentences:
-                candidates.append({
-                    "text": sentence,
-                    "section": section,
-                    "score": score,
-                    "term_overlap": term_overlap,
-                    "length": len(sentence)
-                })
+                candidates.append(
+                    {
+                        "text": sentence,
+                        "section": section,
+                        "score": score,
+                        "term_overlap": term_overlap,
+                        "length": len(sentence),
+                    }
+                )
 
         # Sort by relevance (score + term overlap)
-        candidates.sort(key=lambda x: (x["score"] + x["term_overlap"] * 0.1), reverse=True)
+        candidates.sort(
+            key=lambda x: (x["score"] + x["term_overlap"] * 0.1), reverse=True
+        )
         return candidates
 
     def _select_best_snippets(self, candidates: List[Dict]) -> List[Dict]:
@@ -145,8 +155,8 @@ class ExplanationBuilder:
         Returns:
             List of selected snippets with text and section
         """
-        selected = []
-        used_sections = set()
+        selected: List[Dict[str, str]] = []
+        used_sections: Set[str] = set()
 
         for candidate in candidates:
             if len(selected) >= self.max_snippets:
@@ -158,22 +168,21 @@ class ExplanationBuilder:
 
             # Skip if text is too long
             if len(text) > self.max_snippet_length:
-                text = text[:self.max_snippet_length - 3] + "..."
+                text = text[: self.max_snippet_length - 3] + "..."
 
             # Skip very short or duplicate content
             if len(text) < 20 or any(text in s["text"] for s in selected):
                 continue
 
-            selected.append({
-                "text": text,
-                "section": section
-            })
+            selected.append({"text": text, "section": section})
 
             used_sections.add(section)
 
         return selected
 
-    def _generate_bullet_points(self, query: str, cwe_id: str, chunks: List[Dict]) -> List[str]:
+    def _generate_bullet_points(
+        self, query: str, cwe_id: str, chunks: List[Dict]
+    ) -> List[str]:
         """
         Generate bullet points explaining the CWE recommendation.
 
@@ -204,7 +213,7 @@ class ExplanationBuilder:
             "authorization": "involves authorization control issues",
             "crypto": "relates to cryptographic implementations",
             "input": "concerns input validation",
-            "output": "involves output encoding issues"
+            "output": "involves output encoding issues",
         }
 
         for keyword, description in vulnerability_keywords.items():
@@ -242,7 +251,12 @@ class ExplanationBuilder:
         """
         # Analyze match strength
         chunk_count = len(chunks)
-        avg_score = sum(chunk.get("score", chunk.get("hybrid_score", 0.0)) for chunk in chunks) / chunk_count if chunks else 0
+        avg_score = (
+            sum(chunk.get("score", chunk.get("hybrid_score", 0.0)) for chunk in chunks)
+            / chunk_count
+            if chunks
+            else 0
+        )
 
         if avg_score >= 0.8:
             strength = "strong"
@@ -254,9 +268,11 @@ class ExplanationBuilder:
         sections = set(chunk.get("metadata", {}).get("section", "") for chunk in chunks)
         section_coverage = len(sections)
 
-        return (f"This CWE shows {strength} semantic similarity to your query "
-               f"with {chunk_count} matching chunks across {section_coverage} different sections "
-               f"of the weakness description.")
+        return (
+            f"This CWE shows {strength} semantic similarity to your query "
+            f"with {chunk_count} matching chunks across {section_coverage} different sections "
+            f"of the weakness description."
+        )
 
     def _count_section_coverage(self, chunks: List[Dict]) -> Dict[str, int]:
         """
@@ -268,7 +284,7 @@ class ExplanationBuilder:
         Returns:
             Dictionary mapping section names to hit counts
         """
-        coverage = {}
+        coverage: Dict[str, int] = {}
         for chunk in chunks:
             section = chunk.get("metadata", {}).get("section", "Unknown")
             coverage[section] = coverage.get(section, 0) + 1
@@ -285,20 +301,19 @@ class ExplanationBuilder:
             CWE name if found, empty string otherwise
         """
         for chunk in chunks:
-            cwe_name = (
-                chunk.get("metadata", {}).get("name")
-                or chunk.get("metadata", {}).get("cwe_name")
-            )
+            cwe_name = chunk.get("metadata", {}).get("name") or chunk.get(
+                "metadata", {}
+            ).get("cwe_name")
             if cwe_name:
-                return cwe_name
+                return str(cwe_name)
 
         # Try to extract from content
         for chunk in chunks:
             content = chunk.get("content", "")
             # Look for pattern like "CWE-79: Cross-site Scripting"
-            match = re.search(r'CWE-\d+:\s*(.+?)(?:\n|\.|$)', content)
+            match = re.search(r"CWE-\d+:\s*(.+?)(?:\n|\.|$)", content)
             if match:
-                return match.group(1).strip()
+                return str(match.group(1)).strip()
 
         return ""
 
@@ -314,7 +329,7 @@ class ExplanationBuilder:
             List of relevant sentences
         """
         # Split into sentences
-        sentences = re.split(r'[.!?]+', content)
+        sentences = re.split(r"[.!?]+", content)
         scored_sentences = []
 
         for sentence in sentences:
@@ -347,13 +362,15 @@ class ExplanationBuilder:
             return ""
 
         # Remove control characters except common whitespace
-        content = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', content)
+        content = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", content)
 
         # Normalize whitespace
-        content = re.sub(r'\s+', ' ', content)
+        content = re.sub(r"\s+", " ", content)
 
         # Remove potential markdown injection
-        content = content.replace('```', 'ʼʼʼ')  # Replace backticks with similar characters
+        content = content.replace(
+            "```", "ʼʼʼ"
+        )  # Replace backticks with similar characters
 
         # Strip leading/trailing whitespace
         content = content.strip()

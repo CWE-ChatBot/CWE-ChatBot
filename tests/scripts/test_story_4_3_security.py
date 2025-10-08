@@ -12,8 +12,8 @@ Verifies security requirements:
 Run from project root:
     python3 tests/scripts/test_story_4_3_security.py
 """
-import sys
 import os
+import sys
 from pathlib import Path
 
 
@@ -45,10 +45,14 @@ def test_no_disk_writes_in_pdf_worker():
     for pattern, description in forbidden_patterns:
         if pattern.replace("\\", "") in content:
             # Check if it's a false positive
-            lines = [line for line in content.split('\n') if pattern.replace("\\", "") in line]
+            lines = [
+                line
+                for line in content.split("\n")
+                if pattern.replace("\\", "") in line
+            ]
             for line in lines:
                 # Skip comments
-                if line.strip().startswith('#'):
+                if line.strip().startswith("#"):
                     continue
                 # Skip if it's an allowed pattern
                 if any(allowed in line for allowed in allowed_patterns):
@@ -56,7 +60,7 @@ def test_no_disk_writes_in_pdf_worker():
                 violations.append(f"{description}: {line.strip()[:60]}")
 
     if violations:
-        print(f"❌ FAIL: Disk write operations detected")
+        print("❌ FAIL: Disk write operations detected")
         for v in violations:
             print(f"  - {v}")
         return False
@@ -260,13 +264,13 @@ def test_no_command_injection_vulnerabilities():
         for pattern, reason in forbidden_patterns:
             if pattern in content:
                 # Check if it's in a comment
-                lines = [line for line in content.split('\n') if pattern in line]
+                lines = [line for line in content.split("\n") if pattern in line]
                 for line in lines:
-                    if not line.strip().startswith('#'):
+                    if not line.strip().startswith("#"):
                         violations.append(f"{path}: {reason} - {pattern}")
 
     if violations:
-        print(f"❌ FAIL: Command injection vulnerabilities detected")
+        print("❌ FAIL: Command injection vulnerabilities detected")
         for v in violations:
             print(f"  - {v}")
         return False

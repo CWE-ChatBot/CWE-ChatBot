@@ -17,10 +17,13 @@ from pathlib import Path
 # Check if playwright is available
 try:
     from playwright.sync_api import sync_playwright
+
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
-    print("⚠️  Playwright not installed. Install with: poetry add --group dev playwright && poetry run playwright install")
+    print(
+        "⚠️  Playwright not installed. Install with: poetry add --group dev playwright && poetry run playwright install"
+    )
     sys.exit(0)  # Soft exit - this is optional
 
 
@@ -34,9 +37,9 @@ def test_pdf_upload_http2():
 
     Verifies that the h2 package error does NOT appear in the response.
     """
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("E2E Test: PDF Upload with HTTP/2")
-    print("="*60)
+    print("=" * 60)
 
     # Create a minimal test PDF
     test_pdf_path = Path("test_minimal.pdf")
@@ -79,29 +82,37 @@ startxref
         test_pdf_path.write_bytes(test_pdf_content)
 
         with sync_playwright() as p:
-            print(f"[1/4] Launching browser...")
+            print("[1/4] Launching browser...")
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
 
             try:
                 print(f"[2/4] Navigating to {PRODUCTION_URL}...")
-                page.goto(PRODUCTION_URL, wait_until="domcontentloaded", timeout=TIMEOUT_MS)
+                page.goto(
+                    PRODUCTION_URL, wait_until="domcontentloaded", timeout=TIMEOUT_MS
+                )
                 page.wait_for_load_state("networkidle", timeout=TIMEOUT_MS)
                 print("✓ Page loaded")
 
                 # Check if OAuth is required
                 page_text = page.inner_text("body")
                 if "login" in page_text.lower() or "sign in" in page_text.lower():
-                    print("⊘ OAuth authentication required - cannot test PDF upload unattended")
+                    print(
+                        "⊘ OAuth authentication required - cannot test PDF upload unattended"
+                    )
                     print("   To test manually: authenticate and upload a PDF")
-                    print("   Expected: No 'h2 package' errors, user-friendly error messages only")
+                    print(
+                        "   Expected: No 'h2 package' errors, user-friendly error messages only"
+                    )
                     return None  # Skip test
 
                 # Wait for chat interface
-                page.wait_for_selector("textarea, input[type='text']", timeout=TIMEOUT_MS)
+                page.wait_for_selector(
+                    "textarea, input[type='text']", timeout=TIMEOUT_MS
+                )
                 print("✓ Chat interface detected")
 
-                print(f"[3/4] Uploading PDF file...")
+                print("[3/4] Uploading PDF file...")
 
                 # Try to find file input
                 file_input = page.locator("input[type='file']").first
@@ -112,7 +123,7 @@ startxref
                     # Wait a moment for processing
                     time.sleep(3)
 
-                    print(f"[4/4] Checking for error messages...")
+                    print("[4/4] Checking for error messages...")
 
                     # Get page content
                     page_text = page.inner_text("body")
@@ -135,7 +146,10 @@ startxref
 
                     # Check for friendly error message if processing failed
                     if "unexpected error" in page_text.lower():
-                        if "try again" in page_text.lower() or "contact support" in page_text.lower():
+                        if (
+                            "try again" in page_text.lower()
+                            or "contact support" in page_text.lower()
+                        ):
                             print("✓ User-friendly error message detected (acceptable)")
                             print("  Error handling is working correctly")
                             return True
@@ -167,9 +181,9 @@ startxref
 
 def test_production_health():
     """Quick health check - ensure production is accessible."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("E2E Test: Production Health Check")
-    print("="*60)
+    print("=" * 60)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -177,15 +191,17 @@ def test_production_health():
 
         try:
             print(f"[1/2] Connecting to {PRODUCTION_URL}...")
-            response = page.goto(PRODUCTION_URL, wait_until="domcontentloaded", timeout=TIMEOUT_MS)
+            response = page.goto(
+                PRODUCTION_URL, wait_until="domcontentloaded", timeout=TIMEOUT_MS
+            )
 
             if response.status == 200:
-                print(f"✓ HTTP 200 OK")
+                print("✓ HTTP 200 OK")
             else:
                 print(f"⚠️  HTTP {response.status}")
                 return False
 
-            print(f"[2/2] Checking page content...")
+            print("[2/2] Checking page content...")
             page.wait_for_selector("body", timeout=TIMEOUT_MS)
 
             page_text = page.inner_text("body")
@@ -194,7 +210,12 @@ def test_production_health():
             if "cwe" in page_text.lower() or "chatbot" in page_text.lower():
                 print("✓ CWE ChatBot interface detected")
                 return True
-            elif "login" in page_text.lower() or "sign in" in page_text.lower() or "github" in page_text.lower() or "google" in page_text.lower():
+            elif (
+                "login" in page_text.lower()
+                or "sign in" in page_text.lower()
+                or "github" in page_text.lower()
+                or "google" in page_text.lower()
+            ):
                 print("✓ OAuth login page detected (authentication required)")
                 return True
             else:
@@ -218,33 +239,35 @@ if __name__ == "__main__":
 
     # Test 1: Health check
     try:
-        results['health'] = test_production_health()
+        results["health"] = test_production_health()
     except Exception as e:
         print(f"❌ Health check failed: {e}")
-        results['health'] = False
+        results["health"] = False
 
     # Test 2: PDF upload (only if health check passed)
-    if results['health']:
+    if results["health"]:
         try:
-            results['pdf_upload'] = test_pdf_upload_http2()
+            results["pdf_upload"] = test_pdf_upload_http2()
         except Exception as e:
             print(f"❌ PDF upload test failed: {e}")
-            results['pdf_upload'] = False
+            results["pdf_upload"] = False
     else:
         print("⊘ Skipping PDF upload test (health check failed)")
-        results['pdf_upload'] = None
+        results["pdf_upload"] = None
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Test Summary")
-    print("="*60)
+    print("=" * 60)
 
     passed = sum(1 for v in results.values() if v is True)
     failed = sum(1 for v in results.values() if v is False)
     skipped = sum(1 for v in results.values() if v is None)
 
     for test_name, result in results.items():
-        status = "✓ PASS" if result is True else "✗ FAIL" if result is False else "⊘ SKIP"
+        status = (
+            "✓ PASS" if result is True else "✗ FAIL" if result is False else "⊘ SKIP"
+        )
         print(f"{status}: {test_name}")
 
     print(f"\nTotal: {passed} passed, {failed} failed, {skipped} skipped")

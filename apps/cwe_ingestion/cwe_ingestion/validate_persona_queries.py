@@ -7,13 +7,14 @@ useful for CI/CD and development validation.
 """
 
 import json
+
 from test_queries_personas import (
-    ALL_QUERIES,
     ALL_PERSONA_QUERIES,
+    ALL_QUERIES,
+    export_for_cli_testing,
     get_queries_by_persona,
     get_queries_by_type,
     get_queries_with_section_boost,
-    export_for_cli_testing
 )
 
 
@@ -56,13 +57,17 @@ def validate_query_structure():
             else:
                 weight_value = query.optimal_weights[weight_name]
                 if not 0 <= weight_value <= 1:
-                    errors.append(f"{query_id}: Weight '{weight_name}' out of range: {weight_value}")
+                    errors.append(
+                        f"{query_id}: Weight '{weight_name}' out of range: {weight_value}"
+                    )
 
         # Check if weights sum to approximately 1.0
         if all(w in query.optimal_weights for w in required_weights):
             weight_sum = sum(query.optimal_weights[w] for w in required_weights)
             if not 0.95 <= weight_sum <= 1.05:
-                warnings.append(f"{query_id}: Weights don't sum to ~1.0: {weight_sum:.2f}")
+                warnings.append(
+                    f"{query_id}: Weights don't sum to ~1.0: {weight_sum:.2f}"
+                )
 
     return errors, warnings
 
@@ -78,19 +83,23 @@ def validate_persona_coverage():
         "Developer": "developer",
         "Academic Researcher": "academic",
         "Bug Bounty Hunter": "bug_bounty",
-        "Product Manager": "product_manager"
+        "Product Manager": "product_manager",
     }
 
     for persona_name, persona_key in expected_personas.items():
         queries = get_queries_by_persona(persona_key)
 
         if len(queries) < 3:
-            warnings.append(f"{persona_name}: Only {len(queries)} queries (recommend 3+)")
+            warnings.append(
+                f"{persona_name}: Only {len(queries)} queries (recommend 3+)"
+            )
 
         # Check query type diversity
         query_types = set(q.query_type for q in queries)
         if len(query_types) < 2:
-            warnings.append(f"{persona_name}: Limited query type diversity: {query_types}")
+            warnings.append(
+                f"{persona_name}: Limited query type diversity: {query_types}"
+            )
 
     return warnings
 
@@ -111,7 +120,9 @@ def validate_query_diversity():
 
     # Check for reasonable distribution
     if type_counts["semantic"] < total_queries * 0.5:
-        warnings.append(f"Low semantic query ratio: {type_counts['semantic']}/{total_queries}")
+        warnings.append(
+            f"Low semantic query ratio: {type_counts['semantic']}/{total_queries}"
+        )
 
     if type_counts["hybrid"] < 2:
         warnings.append(f"Few hybrid queries: {type_counts['hybrid']} (recommend 3+)")
@@ -122,7 +133,9 @@ def validate_query_diversity():
     # Section boost usage
     section_boost_queries = get_queries_with_section_boost()
     if len(section_boost_queries) < 2:
-        warnings.append(f"Few section boost queries: {len(section_boost_queries)} (recommend 3+)")
+        warnings.append(
+            f"Few section boost queries: {len(section_boost_queries)} (recommend 3+)"
+        )
 
     # CWE coverage diversity
     all_expected_cwes = set()
@@ -130,7 +143,9 @@ def validate_query_diversity():
         all_expected_cwes.update(query.expected_cwes)
 
     if len(all_expected_cwes) < 15:
-        warnings.append(f"Limited CWE coverage: {len(all_expected_cwes)} unique CWEs (recommend 15+)")
+        warnings.append(
+            f"Limited CWE coverage: {len(all_expected_cwes)} unique CWEs (recommend 15+)"
+        )
 
     return warnings
 
@@ -145,13 +160,13 @@ def generate_query_report():
     print(f"Personas: {len(ALL_PERSONA_QUERIES)}")
 
     # Per-persona breakdown
-    print(f"\n👥 Queries by Persona:")
+    print("\n👥 Queries by Persona:")
     for persona_key, queries in ALL_PERSONA_QUERIES.items():
         persona_name = queries[0].persona if queries else persona_key
         print(f"  {persona_name:20s}: {len(queries):2d} queries")
 
     # Query type distribution
-    print(f"\n🔍 Query Type Distribution:")
+    print("\n🔍 Query Type Distribution:")
     for query_type in ["semantic", "keyword", "hybrid", "direct"]:
         count = len(get_queries_by_type(query_type))
         percentage = (count / len(ALL_QUERIES)) * 100
@@ -182,15 +197,19 @@ def generate_query_report():
             cwe_frequency[cwe] = cwe_frequency.get(cwe, 0) + 1
 
     top_cwes = sorted(cwe_frequency.items(), key=lambda x: x[1], reverse=True)[:5]
-    print(f"  Most frequent expected CWEs:")
+    print("  Most frequent expected CWEs:")
     for cwe, freq in top_cwes:
         print(f"    {cwe}: {freq} queries")
 
     # Use case categories
-    print(f"\n📋 Use Case Categories:")
+    print("\n📋 Use Case Categories:")
     use_case_keywords = {
-        "mapping": 0, "remediation": 0, "research": 0,
-        "advisory": 0, "planning": 0, "exploit": 0
+        "mapping": 0,
+        "remediation": 0,
+        "research": 0,
+        "advisory": 0,
+        "planning": 0,
+        "exploit": 0,
     }
 
     for query in ALL_QUERIES:
@@ -208,7 +227,7 @@ def export_queries_json():
     export_data = export_for_cli_testing()
 
     output_file = "persona_queries_export.json"
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         json.dump(export_data, f, indent=2)
 
     print(f"\n💾 Exported {len(export_data)} queries to {output_file}")
@@ -232,37 +251,37 @@ def main():
     warnings.extend(diversity_warnings)
 
     # Report results
-    print(f"\n📋 Validation Results:")
+    print("\n📋 Validation Results:")
     print(f"  Errors: {len(errors)}")
     print(f"  Warnings: {len(warnings)}")
 
     if errors:
-        print(f"\n❌ ERRORS (must fix):")
+        print("\n❌ ERRORS (must fix):")
         for error in errors:
             print(f"  • {error}")
 
     if warnings:
-        print(f"\n⚠️  WARNINGS (should review):")
+        print("\n⚠️  WARNINGS (should review):")
         for warning in warnings:
             print(f"  • {warning}")
 
     if not errors and len(warnings) <= 3:
-        print(f"\n✅ VALIDATION PASSED: Query dataset is well-structured!")
+        print("\n✅ VALIDATION PASSED: Query dataset is well-structured!")
     elif not errors:
-        print(f"\n⚠️  VALIDATION PASSED WITH WARNINGS: Minor issues to address.")
+        print("\n⚠️  VALIDATION PASSED WITH WARNINGS: Minor issues to address.")
     else:
-        print(f"\n❌ VALIDATION FAILED: Critical errors must be fixed.")
+        print("\n❌ VALIDATION FAILED: Critical errors must be fixed.")
 
     # Generate comprehensive report
     generate_query_report()
 
     # Export for external use
-    export_file = export_queries_json()
+    _ = export_queries_json()
 
-    print(f"\n🎯 Ready for testing! Use:")
-    print(f"  poetry run python run_persona_query_tests.py")
-    print(f"  poetry run python run_persona_query_tests.py --persona psirt")
-    print(f"  poetry run python run_persona_query_tests.py --verbose")
+    print("\n🎯 Ready for testing! Use:")
+    print("  poetry run python run_persona_query_tests.py")
+    print("  poetry run python run_persona_query_tests.py --persona psirt")
+    print("  poetry run python run_persona_query_tests.py --verbose")
 
     return len(errors) == 0
 

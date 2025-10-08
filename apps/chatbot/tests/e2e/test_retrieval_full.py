@@ -5,23 +5,27 @@ These tests are environment-gated and will skip if dependencies unavailable.
 """
 
 import os
+
 import pytest
-from playwright.sync_api import sync_playwright, expect
+from playwright.sync_api import sync_playwright
 
 
 @pytest.mark.e2e
 @pytest.mark.slow
 @pytest.mark.requires_secrets
+@pytest.mark.skipif(not os.getenv("GEMINI_API_KEY"), reason="GEMINI_API_KEY not set")
 @pytest.mark.skipif(
-    not os.getenv("GEMINI_API_KEY"),
-    reason="GEMINI_API_KEY not set"
-)
-@pytest.mark.skipif(
-    not all(os.getenv(k) for k in [
-        "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DATABASE",
-        "POSTGRES_USER", "POSTGRES_PASSWORD"
-    ]),
-    reason="PostgreSQL environment variables not set"
+    not all(
+        os.getenv(k)
+        for k in [
+            "POSTGRES_HOST",
+            "POSTGRES_PORT",
+            "POSTGRES_DATABASE",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+        ]
+    ),
+    reason="PostgreSQL environment variables not set",
 )
 def test_cwe_retrieval_with_content(chainlit_server):
     """
@@ -75,19 +79,30 @@ def test_cwe_retrieval_with_content(chainlit_server):
 
             # Should contain mitigation guidance
             mitigation_terms = [
-                "mitigation", "prevent", "sanitiz", "validat", "encod",
-                "filter", "escape", "secure"
+                "mitigation",
+                "prevent",
+                "sanitiz",
+                "validat",
+                "encod",
+                "filter",
+                "escape",
+                "secure",
             ]
             # Should contain XSS-related terms (from CWE data) or at least mitigation language
             xss_terms = [
-                "cross-site scripting", "cross site scripting", "xss", "script injection"
+                "cross-site scripting",
+                "cross site scripting",
+                "xss",
+                "script injection",
             ]
             if not any(term in page_content for term in xss_terms):
                 # Accept CWE mention + mitigation guidance as sufficient signal
-                assert any(term in page_content for term in mitigation_terms), \
-                    "Response should contain XSS-related terminology or mitigation guidance"
-            assert any(term in page_content for term in mitigation_terms), \
-                "Response should contain mitigation guidance"
+                assert any(
+                    term in page_content for term in mitigation_terms
+                ), "Response should contain XSS-related terminology or mitigation guidance"
+            assert any(
+                term in page_content for term in mitigation_terms
+            ), "Response should contain mitigation guidance"
 
         finally:
             page.close()
@@ -98,16 +113,19 @@ def test_cwe_retrieval_with_content(chainlit_server):
 @pytest.mark.e2e
 @pytest.mark.slow
 @pytest.mark.requires_secrets
+@pytest.mark.skipif(not os.getenv("GEMINI_API_KEY"), reason="GEMINI_API_KEY not set")
 @pytest.mark.skipif(
-    not os.getenv("GEMINI_API_KEY"),
-    reason="GEMINI_API_KEY not set"
-)
-@pytest.mark.skipif(
-    not all(os.getenv(k) for k in [
-        "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DATABASE",
-        "POSTGRES_USER", "POSTGRES_PASSWORD"
-    ]),
-    reason="PostgreSQL environment variables not set"
+    not all(
+        os.getenv(k)
+        for k in [
+            "POSTGRES_HOST",
+            "POSTGRES_PORT",
+            "POSTGRES_DATABASE",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+        ]
+    ),
+    reason="PostgreSQL environment variables not set",
 )
 def test_multiple_cwe_comparison(chainlit_server):
     """
@@ -167,15 +185,25 @@ def test_multiple_cwe_comparison(chainlit_server):
                 assert "cwe-79" in page_content, "Response should mention CWE-79 (XSS)"
             if not any(term in page_content for term in sql_terms):
                 # Accept CWE reference as sufficient for SQL mention in comparison context
-                assert "cwe-89" in page_content, "Response should reference CWE-89 (SQL injection)"
+                assert (
+                    "cwe-89" in page_content
+                ), "Response should reference CWE-89 (SQL injection)"
 
             # Should contain comparison language
             comparison_terms = [
-                "differ", "compar", "similar", "unlike", "contrast",
-                "both", "while", "whereas", "however"
+                "differ",
+                "compar",
+                "similar",
+                "unlike",
+                "contrast",
+                "both",
+                "while",
+                "whereas",
+                "however",
             ]
-            assert any(term in page_content for term in comparison_terms), \
-                "Response should contain comparison language"
+            assert any(
+                term in page_content for term in comparison_terms
+            ), "Response should contain comparison language"
 
         finally:
             page.close()
@@ -185,16 +213,19 @@ def test_multiple_cwe_comparison(chainlit_server):
 
 @pytest.mark.e2e
 @pytest.mark.requires_secrets
+@pytest.mark.skipif(not os.getenv("GEMINI_API_KEY"), reason="GEMINI_API_KEY not set")
 @pytest.mark.skipif(
-    not os.getenv("GEMINI_API_KEY"),
-    reason="GEMINI_API_KEY not set"
-)
-@pytest.mark.skipif(
-    not all(os.getenv(k) for k in [
-        "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DATABASE",
-        "POSTGRES_USER", "POSTGRES_PASSWORD"
-    ]),
-    reason="PostgreSQL environment variables not set"
+    not all(
+        os.getenv(k)
+        for k in [
+            "POSTGRES_HOST",
+            "POSTGRES_PORT",
+            "POSTGRES_DATABASE",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+        ]
+    ),
+    reason="PostgreSQL environment variables not set",
 )
 def test_role_specific_responses(chainlit_server, sample_roles):
     """
@@ -242,11 +273,18 @@ def test_role_specific_responses(chainlit_server, sample_roles):
 
                     # Developer responses should be practical and code-focused
                     dev_terms = [
-                        "code", "implement", "parameterized", "prepared statement",
-                        "function", "method", "library", "framework"
+                        "code",
+                        "implement",
+                        "parameterized",
+                        "prepared statement",
+                        "function",
+                        "method",
+                        "library",
+                        "framework",
                     ]
-                    assert any(term in developer_content for term in dev_terms), \
-                        "Developer response should contain implementation guidance"
+                    assert any(
+                        term in developer_content for term in dev_terms
+                    ), "Developer response should contain implementation guidance"
 
             # Test with PSIRT Member role
             psirt_role = page.locator("button:has-text('PSIRT')")
@@ -277,11 +315,19 @@ def test_role_specific_responses(chainlit_server, sample_roles):
 
                     # PSIRT responses should focus on impact and organizational concerns
                     psirt_terms = [
-                        "impact", "risk", "severity", "assessment", "organization",
-                        "business", "advisory", "incident", "response"
+                        "impact",
+                        "risk",
+                        "severity",
+                        "assessment",
+                        "organization",
+                        "business",
+                        "advisory",
+                        "incident",
+                        "response",
                     ]
-                    assert any(term in psirt_content for term in psirt_terms), \
-                        "PSIRT response should contain impact assessment terms"
+                    assert any(
+                        term in psirt_content for term in psirt_terms
+                    ), "PSIRT response should contain impact assessment terms"
 
         finally:
             page.close()
@@ -291,16 +337,19 @@ def test_role_specific_responses(chainlit_server, sample_roles):
 
 @pytest.mark.e2e
 @pytest.mark.requires_secrets
+@pytest.mark.skipif(not os.getenv("GEMINI_API_KEY"), reason="GEMINI_API_KEY not set")
 @pytest.mark.skipif(
-    not os.getenv("GEMINI_API_KEY"),
-    reason="GEMINI_API_KEY not set"
-)
-@pytest.mark.skipif(
-    not all(os.getenv(k) for k in [
-        "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DATABASE",
-        "POSTGRES_USER", "POSTGRES_PASSWORD"
-    ]),
-    reason="PostgreSQL environment variables not set"
+    not all(
+        os.getenv(k)
+        for k in [
+            "POSTGRES_HOST",
+            "POSTGRES_PORT",
+            "POSTGRES_DATABASE",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+        ]
+    ),
+    reason="PostgreSQL environment variables not set",
 )
 def test_general_security_query_retrieval(chainlit_server):
     """
@@ -344,16 +393,23 @@ def test_general_security_query_retrieval(chainlit_server):
 
                 # Should contain references to common web vulnerabilities
                 common_vulns = [
-                    "injection", "xss", "cross-site scripting", "security misconfiguration",
-                    "authentication", "access control", "broken"
+                    "injection",
+                    "xss",
+                    "cross-site scripting",
+                    "security misconfiguration",
+                    "authentication",
+                    "access control",
+                    "broken",
                 ]
                 found_vulns = [term for term in common_vulns if term in page_content]
 
                 # Relaxed: at least one common vuln mentioned and response non-trivial
-                assert len(found_vulns) >= 1, \
-                    f"Response should mention common vulnerabilities, found: {found_vulns}"
-                assert len(page_content) > 800, \
-                    "Response should be substantial for general security query"
+                assert (
+                    len(found_vulns) >= 1
+                ), f"Response should mention common vulnerabilities, found: {found_vulns}"
+                assert (
+                    len(page_content) > 800
+                ), "Response should be substantial for general security query"
 
         finally:
             browser.close()
@@ -361,16 +417,19 @@ def test_general_security_query_retrieval(chainlit_server):
 
 @pytest.mark.e2e
 @pytest.mark.requires_secrets
+@pytest.mark.skipif(not os.getenv("GEMINI_API_KEY"), reason="GEMINI_API_KEY not set")
 @pytest.mark.skipif(
-    not os.getenv("GEMINI_API_KEY"),
-    reason="GEMINI_API_KEY not set"
-)
-@pytest.mark.skipif(
-    not all(os.getenv(k) for k in [
-        "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DATABASE",
-        "POSTGRES_USER", "POSTGRES_PASSWORD"
-    ]),
-    reason="PostgreSQL environment variables not set"
+    not all(
+        os.getenv(k)
+        for k in [
+            "POSTGRES_HOST",
+            "POSTGRES_PORT",
+            "POSTGRES_DATABASE",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+        ]
+    ),
+    reason="PostgreSQL environment variables not set",
 )
 def test_response_quality_and_citations(chainlit_server):
     """
@@ -419,26 +478,44 @@ def test_response_quality_and_citations(chainlit_server):
                 if "cvss" in page_content:
                     # Should include qualifying language if specific scores mentioned
                     qualifiers = [
-                        "depends", "varies", "context", "implementation",
-                        "specific", "example", "typical", "may", "can"
+                        "depends",
+                        "varies",
+                        "context",
+                        "implementation",
+                        "specific",
+                        "example",
+                        "typical",
+                        "may",
+                        "can",
                     ]
                     has_qualifier = any(q in page_content for q in qualifiers)
 
                     # If specific numbers are given, should be qualified
                     import re
-                    cvss_numbers = re.findall(r'\b[0-9]\.[0-9]\b', page_content)
+
+                    cvss_numbers = re.findall(r"\b[0-9]\.[0-9]\b", page_content)
                     if cvss_numbers:
-                        assert has_qualifier, \
-                            "Specific CVSS scores should include qualifying language"
+                        assert (
+                            has_qualifier
+                        ), "Specific CVSS scores should include qualifying language"
 
                 # Should be educational rather than definitive about specifics
                 educational_terms = [
-                    "generally", "typically", "often", "example", "such as",
-                    "may include", "can involve", "depends on"
+                    "generally",
+                    "typically",
+                    "often",
+                    "example",
+                    "such as",
+                    "may include",
+                    "can involve",
+                    "depends on",
                 ]
-                has_educational_tone = any(term in page_content for term in educational_terms)
-                assert has_educational_tone, \
-                    "Response should maintain educational tone to prevent overconfidence"
+                has_educational_tone = any(
+                    term in page_content for term in educational_terms
+                )
+                assert (
+                    has_educational_tone
+                ), "Response should maintain educational tone to prevent overconfidence"
 
         finally:
             browser.close()
