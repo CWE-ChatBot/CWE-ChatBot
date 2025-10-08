@@ -87,6 +87,11 @@ ignore = ["E501"]
 testpaths = ["apps/chatbot/tests", "shared/tests", "tests", "apps/tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "--cov=apps/chatbot/src --cov=shared --cov-report=html --cov-report=term"
+markers = [
+    "security: marks tests as security-related tests",
+    "security_critical: marks tests as critical for deployment gate (must pass before deployment)",
+    "integration: marks tests as requiring real database or external services"
+]
 
 # Playwright-specific test configuration
 [tool.pytest.ini_options.playwright]
