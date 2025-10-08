@@ -52,7 +52,6 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Copy application files with secure permissions
 COPY --chown=appuser:appuser apps/chatbot/main.py ./main.py
-COPY --chown=appuser:appuser apps/chatbot/healthcheck.py .
 COPY --chown=appuser:appuser apps/chatbot/chainlit.md ./chainlit.md
 # Create directories - let Chainlit auto-generate config.toml with correct format
 RUN mkdir -p ./.chainlit ./public
@@ -63,7 +62,6 @@ RUN mkdir -p /app/logs && \
     chmod 755 /app && \
     chmod 750 /app/logs && \
     chmod 644 /app/*.py /app/chainlit.md && \
-    chmod +x /app/healthcheck.py && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user
@@ -72,9 +70,6 @@ USER appuser
 # Expose port
 EXPOSE 8080
 
-# Secure health check using root endpoint (Chainlit)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python /app/healthcheck.py
-
 # Start command for Cloud Run
+# Note: Cloud Run uses TCP startup probe on port 8080, not Docker HEALTHCHECK
 CMD ["python", "-m", "chainlit", "run", "main.py", "--host", "0.0.0.0", "--port", "8080"]
