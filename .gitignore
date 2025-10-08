@@ -137,3 +137,7 @@ apps/chatbot/.chainlit/
 # Test artifacts
 reports/
 test-results/
+
+# Semgrep scan outputs
+semgrep.json
+semgrep.sarif
