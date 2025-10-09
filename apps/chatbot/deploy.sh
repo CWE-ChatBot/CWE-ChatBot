@@ -107,7 +107,7 @@ deploy_service() {
         --timeout=300 \
         --allow-unauthenticated \
         --execution-environment=gen2 \
-        --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,PDF_WORKER_URL=https://pdf-worker-bmgj6wj65a-uc.a.run.app" \
+        --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,ENABLE_OAUTH=true,CHAINLIT_URL=https://cwe.crashedmind.com,PUBLIC_ORIGIN=https://cwe.crashedmind.com,CSP_MODE=compatible,HSTS_MAX_AGE=31536000,PDF_WORKER_URL=https://pdf-worker-bmgj6wj65a-uc.a.run.app" \
         --quiet || {
         print_error "Deployment failed"
         exit 1
@@ -168,8 +168,8 @@ show_next_steps() {
     echo "Next Steps:"
     echo ""
     echo "1. Update OAuth redirect URIs:"
-    echo "   Google: ${SERVICE_URL}/auth/callback/google"
-    echo "   GitHub: ${SERVICE_URL}/auth/callback/github"
+    echo "   Google: ${SERVICE_URL}/auth/oauth/google/callback"
+    echo "   GitHub: ${SERVICE_URL}/auth/oauth/github/callback"
     echo ""
     echo "2. Test the deployment:"
     echo "   curl ${SERVICE_URL}/health"
