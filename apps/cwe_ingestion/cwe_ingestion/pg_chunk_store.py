@@ -233,7 +233,7 @@ class PostgresChunkStore:
             except Exception as e:
                 logger.warning(f"halfvec optimization not available: {e}")
 
-            conn.commit()
+            # Transaction will auto-commit on successful context manager exit
 
     def store_chunks(self, chunks: Sequence[Dict[str, Any]]) -> int:
         """Store multiple chunks in batch."""
@@ -296,7 +296,7 @@ class PostgresChunkStore:
             except Exception:
                 pass
 
-            conn.commit()
+            # Transaction will auto-commit on successful context manager exit
 
         logger.info(f"Successfully stored {len(chunks)} chunks")
         return len(chunks)
@@ -617,8 +617,8 @@ SELECT
             except Exception as e:
                 logger.debug(f"Could not log candidate stats: {e}")
 
-            # Commit transaction
-            conn.commit()
+            # Transaction will auto-commit on successful context manager exit
+            # No manual commit needed - prevents "cursor is closed" errors
 
         except Exception as e:
             # Halfvec transaction automatically rolled back by context manager exit
@@ -709,8 +709,8 @@ LIMIT %s;
                 cur.execute(sql, params)
                 rows = cur.fetchall()
 
-                # Commit transaction
-                conn.commit()
+                # Transaction will auto-commit on successful context manager exit
+                # No manual commit needed - prevents "cursor is closed" errors
 
         # Format results
         results: List[Dict[str, Any]] = []
