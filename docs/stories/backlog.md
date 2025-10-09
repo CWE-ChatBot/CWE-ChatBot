@@ -1,5 +1,17 @@
-/ Ruff black pypi pre commit hook
-run all tests
+run BMAD vuln agent - 6
+
+
+WAF
+
+Feedback (@cl.on_feedback): The feedback handler is great. Triggering a detailed feedback prompt (AskUserMessage) on a thumbs-down is a fantastic way to gather actionable insights.
+
+Settings Panel (@cl.on_settings_update): Proper use of the native settings panel for UI preferences.
+
+
+
+mcp context7
+
+
 
 
 Buttons for the initial prompts
@@ -18,5 +30,11 @@ BMAD codex and gemini - security review
 Define and Detail BYO model 
 Add API ala FastAPI
 
+
+
 ====DONE======================================================
 
+remove apps/chatbot/healthcheck.py
+/ Ruff black pypi pre commit hook
+semgrep
+run all tests: unit, integration, e2e - but do not change the existing running cloudrun. deploy an alternative test one to verify AOK

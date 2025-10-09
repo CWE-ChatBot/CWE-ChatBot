@@ -20,6 +20,13 @@ from src.app_config import config as app_config
 from src.conversation import ConversationManager
 from src.file_processor import FileProcessor
 from src.input_security import InputSanitizer, SecurityValidator
+
+# Story S-12: Import security middleware and CSRF protection
+from src.security import (
+    CSRFManager,
+    SecurityHeadersMiddleware,
+    require_csrf,
+)
 from src.security.secure_logging import get_secure_logger
 
 # Import the new UI modules
@@ -32,6 +39,29 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = get_secure_logger(__name__)
+
+# Story S-12: Add security middleware to Chainlit's Starlette app
+try:
+    from chainlit.server import app as asgi_app
+    from starlette.middleware.cors import CORSMiddleware
+
+    # Add SecurityHeadersMiddleware for CSP, HSTS, XFO, WebSocket origin validation
+    asgi_app.add_middleware(SecurityHeadersMiddleware)
+    logger.info("SecurityHeadersMiddleware added to Chainlit app")
+
+    # Add CORS middleware if PUBLIC_ORIGIN is configured
+    public_origin = os.getenv("PUBLIC_ORIGIN", "").rstrip("/")
+    if public_origin:
+        asgi_app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[public_origin],
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+        )
+        logger.info(f"CORS middleware configured for origin: {public_origin}")
+except Exception as e:
+    logger.warning(f"Could not add security middleware: {e}")
 
 # Global components (initialized on startup)
 conversation_manager: Optional[ConversationManager] = None
@@ -364,6 +394,15 @@ async def start():
             author="System",
         ).send()
         return
+
+    # Story S-12: Generate CSRF token for this session
+    try:
+        csrf_manager = CSRFManager()
+        csrf_token = csrf_manager.generate_token()
+        csrf_manager.set_session_token(csrf_token)
+        logger.debug("CSRF token generated for session")
+    except Exception as e:
+        logger.warning(f"Failed to generate CSRF token: {e}")
 
     # Initialize default settings and expose a Settings panel
     default_settings = UISettings()
@@ -764,11 +803,13 @@ async def main(message: cl.Message):
                     # Initial analysis complete - show "Ask Question" button
                     logger.info("Creating Action buttons for CWE Analyzer (initial)")
                     try:
+                        # Story S-12: Include CSRF token in action payload
+                        csrf_token = CSRFManager.get_session_token()
                         actions = [
                             cl.Action(
                                 name="ask_question",
                                 label="❓ Ask a Question",
-                                payload={"action": "ask"},
+                                payload={"action": "ask", "csrf_token": csrf_token},
                             )
                         ]
                         logger.info(
@@ -806,11 +847,13 @@ async def main(message: cl.Message):
                     # Question mode active - show "Exit Question Mode" button
                     logger.info("Creating Exit button for CWE Analyzer (question mode)")
                     try:
+                        # Story S-12: Include CSRF token in action payload
+                        csrf_token = CSRFManager.get_session_token()
                         actions = [
                             cl.Action(
                                 name="exit_question_mode",
                                 label="🚪 Exit Question Mode",
-                                payload={"action": "exit"},
+                                payload={"action": "exit", "csrf_token": csrf_token},
                             )
                         ]
                         logger.info(
@@ -868,6 +911,15 @@ async def on_ask_action(action: cl.Action):
         ).send()
         return
 
+    # Story S-12: CSRF validation for state-changing action
+    if not require_csrf(action.payload):
+        await cl.Message(
+            content="❌ Invalid request token. Please refresh the page and try again.",
+            author="System",
+        ).send()
+        logger.warning("CSRF validation failed for ask_question action")
+        return
+
     try:
         # Get user context using centralized helper
         context = get_user_context()
@@ -907,6 +959,15 @@ async def on_exit_question_action(action: cl.Action):
             content="🔒 Authentication required. Please authenticate to use actions.",
             author="System",
         ).send()
+        return
+
+    # Story S-12: CSRF validation for state-changing action
+    if not require_csrf(action.payload):
+        await cl.Message(
+            content="❌ Invalid request token. Please refresh the page and try again.",
+            author="System",
+        ).send()
+        logger.warning("CSRF validation failed for exit_question_mode action")
         return
 
     try:

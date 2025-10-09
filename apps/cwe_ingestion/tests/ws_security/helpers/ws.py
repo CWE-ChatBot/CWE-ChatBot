@@ -1,5 +1,6 @@
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 import websockets
 from websockets.exceptions import InvalidStatusCode
 

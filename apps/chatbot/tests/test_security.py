@@ -116,7 +116,9 @@ class TestInputSanitizer:
         result = self.sanitizer.sanitize_input(messy_input)
         # Whitespace is normalized to single spaces
         assert "    " not in result["sanitized_input"]  # Multiple spaces normalized
-        assert "\n\n\n\n" not in result["sanitized_input"]  # Multiple newlines normalized
+        assert (
+            "\n\n\n\n" not in result["sanitized_input"]
+        )  # Multiple newlines normalized
         assert "Multiple spaces and tabs" in result["sanitized_input"]
 
     def test_empty_input_handling(self):
@@ -177,7 +179,9 @@ class TestQueryProcessor:
 
         # Should be flagged as malicious
         assert result["security_check"]["is_potentially_malicious"] is True
-        assert "prompt_injection_detected" in result["security_check"]["detected_patterns"]
+        assert (
+            "prompt_injection_detected" in result["security_check"]["detected_patterns"]
+        )
 
     def test_cwe_extraction_integration(self):
         """Test CWE ID extraction in query processing."""

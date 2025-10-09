@@ -263,9 +263,7 @@ class TestSQLInjectionPrevention:
                 )
                 # Query should complete safely without executing injection
                 assert isinstance(results, list), "Query should return a list"
-                logger.info(
-                    f"✅ Basic injection payload safely handled: {payload[:50]}"
-                )
+                logger.info(f"✅ Basic injection payload safely handled: {payload[:50]}")
         except Exception as e:
             # Database errors are acceptable (means injection was blocked)
             # but syntax errors indicate poor parameterization
@@ -722,10 +720,10 @@ class TestSQLInjectionPrevention:
 
         dangerous_patterns = [
             'f"SELECT',  # f-string interpolation
-            'f\'SELECT',
+            "f'SELECT",
             '" + ',  # String concatenation
             "' + ",
-            '.format(',  # String format
+            ".format(",  # String format
         ]
 
         violations = []
@@ -807,28 +805,14 @@ def test_sql_injection_prevention_summary():
     logger.info("SQL INJECTION PREVENTION TEST SUITE SUMMARY")
     logger.info("=" * 70)
     logger.info(f"Total injection payloads tested: {len(ALL_INJECTION_PAYLOADS)}")
-    logger.info(
-        f"  - Basic SQL injection: {len(BASIC_INJECTION_PAYLOADS)} payloads"
-    )
+    logger.info(f"  - Basic SQL injection: {len(BASIC_INJECTION_PAYLOADS)} payloads")
     logger.info(f"  - UNION-based injection: {len(UNION_INJECTION_PAYLOADS)} payloads")
-    logger.info(
-        f"  - Blind SQL injection: {len(BLIND_INJECTION_PAYLOADS)} payloads"
-    )
-    logger.info(
-        f"  - Error-based injection: {len(ERROR_BASED_PAYLOADS)} payloads"
-    )
-    logger.info(
-        f"  - Column enumeration: {len(COLUMN_ENUMERATION_PAYLOADS)} payloads"
-    )
-    logger.info(
-        f"  - Stacked queries: {len(STACKED_QUERIES_PAYLOADS)} payloads"
-    )
-    logger.info(
-        f"  - Vector-specific: {len(VECTOR_SPECIFIC_PAYLOADS)} payloads"
-    )
-    logger.info(
-        f"  - Full-text search: {len(FULL_TEXT_SEARCH_PAYLOADS)} payloads"
-    )
+    logger.info(f"  - Blind SQL injection: {len(BLIND_INJECTION_PAYLOADS)} payloads")
+    logger.info(f"  - Error-based injection: {len(ERROR_BASED_PAYLOADS)} payloads")
+    logger.info(f"  - Column enumeration: {len(COLUMN_ENUMERATION_PAYLOADS)} payloads")
+    logger.info(f"  - Stacked queries: {len(STACKED_QUERIES_PAYLOADS)} payloads")
+    logger.info(f"  - Vector-specific: {len(VECTOR_SPECIFIC_PAYLOADS)} payloads")
+    logger.info(f"  - Full-text search: {len(FULL_TEXT_SEARCH_PAYLOADS)} payloads")
     logger.info("")
     logger.info("Test Coverage:")
     logger.info("  ✅ Basic SQL injection prevention")
