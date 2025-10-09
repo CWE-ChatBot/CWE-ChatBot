@@ -25,7 +25,6 @@ numpy = "^1.24.3"
 tiktoken = "^0.7.0"
 
 # Story 2.1 Dependencies - Core NLU & Query Matching
-openai = "^1.0.0"  # For text-embedding-3-small per ADR
 chainlit = "^2.8.0"  # For chat interface
 psycopg2-binary = "^2.9.0"  # For PostgreSQL connection
 pgvector = "^0.2.0"  # For vector database operations
