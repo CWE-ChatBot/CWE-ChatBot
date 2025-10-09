@@ -20,45 +20,81 @@ from starlette.responses import PlainTextResponse
 
 # Environment configuration
 PUBLIC_ORIGIN = os.getenv("PUBLIC_ORIGIN", "").rstrip("/")
+CSP_MODE = os.getenv("CSP_MODE", "compatible")  # "compatible", "strict"
+CSP_REPORT_ONLY = (
+    os.getenv("CSP_REPORT_ONLY", "0") == "1"
+)  # emit a strict CSP-RO alongside
 ALLOWED_ORIGINS = [PUBLIC_ORIGIN] if PUBLIC_ORIGIN else []
-CSP_MODE = os.getenv("CSP_MODE", "compatible")  # "compatible" or "strict"
 HSTS_MAX_AGE = int(os.getenv("HSTS_MAX_AGE", "31536000"))  # 1 year default
+IMG_EXTRA = os.getenv("CSP_IMG_EXTRA", "https:")  # Additional img-src hosts
+
+
+def _origin_hosts():
+    """Return ('https://host', 'wss://host') tuples for PUBLIC_ORIGIN, or empty if not set."""
+    if not PUBLIC_ORIGIN:
+        return [], []
+    host = urlparse(PUBLIC_ORIGIN).netloc
+    return [f"https://{host}"], [f"wss://{host}"]
 
 
 def _build_csp() -> str:
     """
-    Build Content-Security-Policy header based on CSP_MODE.
-
-    Returns:
-        CSP header value string
+    Build the enforced Content-Security-Policy header.
+    - Compatibility+ profile: no 'unsafe-inline' in script-src, but keep 'unsafe-eval'
+    - Tight connect-src to self + your exact origin (no broad https:/wss:)
     """
-    if CSP_MODE == "strict":
-        # Strict CSP (may require UI tweaks if Chainlit uses inline scripts/eval)
+    https_hosts, wss_hosts = _origin_hosts()
+    connect_list = " ".join(["'self'"] + https_hosts + wss_hosts)
+
+    # Compatibility+ CSP (recommended for Chainlit today)
+    if CSP_MODE != "strict":
+        img_list = " ".join(filter(None, ["'self'", "data:", IMG_EXTRA.strip()]))
         return (
             "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self'; "
-            "img-src 'self' data: https:; "
-            "font-src 'self'; "
-            f"connect-src 'self' {PUBLIC_ORIGIN} wss: https:; "
+            "script-src 'self' 'unsafe-eval'; "  # <-- removed 'unsafe-inline'
+            "style-src 'self' 'unsafe-inline'; "
+            f"img-src {img_list}; "
+            "font-src 'self' data:; "
+            f"connect-src {connect_list}; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "object-src 'none'; "
             "form-action 'self'"
         )
 
-    # Compatible CSP for Chainlit UI (allows inline/eval used by some frontends)
+    # Strict CSP (no unsafe-*). Expect breakage unless you’ve audited Chainlit build.
+    img_list = " ".join(filter(None, ["'self'", "data:", IMG_EXTRA.strip()]))
     return (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: https:; "
-        "font-src 'self' data:; "
-        f"connect-src 'self' {PUBLIC_ORIGIN} wss: https:; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        f"img-src {img_list}; "
+        "font-src 'self'; "
+        f"connect-src {connect_list}; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "object-src 'none'; "
         "form-action 'self'"
+    )
+
+
+def _build_csp_report_only() -> str:
+    """A strict CSP in Report-Only to see what would break."""
+    https_hosts, wss_hosts = _origin_hosts()
+    connect_list = " ".join(["'self'"] + https_hosts + wss_hosts)
+    img_list = " ".join(filter(None, ["'self'", "data:", IMG_EXTRA.strip()]))
+    return (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        f"img-src {img_list}; "
+        "font-src 'self'; "
+        f"connect-src {connect_list}; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "object-src 'none'; "
+        "form-action 'self'; "
+        "report-uri /csp-report"
     )
 
 
