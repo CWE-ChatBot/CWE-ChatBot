@@ -128,8 +128,13 @@ class GoogleProvider(LLMProvider):
                 generation_config=cast(Any, self._gen_cfg),
                 safety_settings=cast(Any, self._safety),
             )
-            logger.debug("Non-streaming generation completed successfully")
-            return resp.text or ""
+            # Log response details for debugging truncation issues
+            response_text = resp.text or ""
+            finish_reason = getattr(resp.candidates[0] if resp.candidates else None, "finish_reason", "UNKNOWN")
+            logger.info(f"Gemini generation completed: {len(response_text)} chars, finish_reason={finish_reason}")
+            if finish_reason not in ["STOP", 1]:  # STOP=1 is normal completion
+                logger.warning(f"Non-normal finish_reason: {finish_reason} - response may be truncated")
+            return response_text
         except Exception as e:
             logger.error(f"Gemini generation failed with error: {e}")
             logger.error(f"Error type: {type(e).__name__}")
