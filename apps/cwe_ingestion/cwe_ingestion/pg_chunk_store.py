@@ -181,9 +181,14 @@ class PostgresChunkStore:
     @contextlib.contextmanager
     def _get_connection(self) -> Generator[Any, None, None]:
         """
-        Connection factory (no per-query handshakes):
-          - With Engine: checkout a pooled connection from SQLAlchemy; close() returns to pool.
-          - Without Engine: reuse one persistent psycopg connection for the process.
+        Connection factory with transaction management:
+          - With Engine: checkout a pooled connection from SQLAlchemy; commit on success, rollback on error.
+          - Without Engine: reuse one persistent psycopg connection; commit on success, rollback on error.
+
+        This context manager handles transaction lifecycle automatically:
+        - Commits on successful completion
+        - Rolls back on exceptions
+        - Never leaves transactions dangling
         """
         if self._engine is not None:
             logger.debug("Using SQLAlchemy pooled connection")
@@ -191,6 +196,15 @@ class PostgresChunkStore:
             conn = self._engine.raw_connection()
             try:
                 yield conn
+                # Commit transaction on successful completion
+                conn.commit()
+            except Exception:
+                # Rollback on error
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
             finally:
                 conn.close()  # return to pool
         else:
@@ -199,7 +213,17 @@ class PostgresChunkStore:
                 logger.debug("Opening persistent psycopg connection")
                 assert self.database_url is not None
                 self._persistent_conn = psycopg.connect(self.database_url)
-            yield self._persistent_conn
+            try:
+                yield self._persistent_conn
+                # Commit transaction on successful completion
+                self._persistent_conn.commit()
+            except Exception:
+                # Rollback on error
+                try:
+                    self._persistent_conn.rollback()
+                except Exception:
+                    pass
+                raise
 
     def _ensure_schema(self) -> None:
         logger.info("Ensuring Postgres chunked schema exists...")
