@@ -1,1 +1,1 @@
-"""cwe_ingestion test import shim package."""
+"""CWE Ingestion Package."""
