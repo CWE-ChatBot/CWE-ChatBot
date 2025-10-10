@@ -104,6 +104,10 @@ class Config:
     enable_debug_logging: bool = os.getenv("DEBUG", "false").lower() == "true"
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     section_boost_value: float = float(os.getenv("SECTION_BOOST_VALUE", "0.15"))
+    # Debug: Log user messages and responses (enable for testing/debugging, disable in production)
+    debug_log_messages: bool = (
+        os.getenv("DEBUG_LOG_MESSAGES", "false").lower() == "true"
+    )
 
     # Authentication / OAuth / Chainlit
     enable_oauth: bool = os.getenv("ENABLE_OAUTH", "true").lower() == "true"

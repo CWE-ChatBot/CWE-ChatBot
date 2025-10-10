@@ -596,6 +596,17 @@ Here are some questions to get you started:
 async def main(message: cl.Message):
     """Handle incoming messages with Story 2.1 NLU and RAG pipeline."""
 
+    # Debug logging: Log user message content if enabled
+    if app_config.debug_log_messages:
+        user_email = "anonymous"
+        if requires_authentication():
+            user = cl.user_session.get("user")
+            if user and hasattr(user, "metadata") and user.metadata:
+                user_email = user.metadata.get("email", "unknown")
+        logger.info(
+            f"[DEBUG_MSG] User: {user_email} | Message: {message.content[:200]}{'...' if len(message.content) > 200 else ''}"
+        )
+
     # Authentication enforcement - require OAuth authentication if enabled
     if requires_authentication() and not is_user_authenticated():
         await cl.Message(
@@ -766,6 +777,22 @@ async def main(message: cl.Message):
                     message_content=user_query,
                     message_id=message.id,
                 )
+
+        # Debug logging: Log response content if enabled
+        if app_config.debug_log_messages and result.get("message"):
+            response_text = (
+                result["message"].content
+                if hasattr(result["message"], "content")
+                else str(result["message"])
+            )
+            user_email = "anonymous"
+            if requires_authentication():
+                user = cl.user_session.get("user")
+                if user and hasattr(user, "metadata") and user.metadata:
+                    user_email = user.metadata.get("email", "unknown")
+            logger.info(
+                f"[DEBUG_RESP] User: {user_email} | Response length: {len(response_text)} chars | First 200: {response_text[:200]}{'...' if len(response_text) > 200 else ''}"
+            )
 
         # Create source cards as Chainlit Elements if we have retrieved chunks
         elements = []
