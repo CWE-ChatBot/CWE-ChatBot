@@ -191,21 +191,49 @@ class PostgresChunkStore:
         - Never leaves transactions dangling
         """
         if self._engine is not None:
-            logger.debug("Using SQLAlchemy pooled connection")
+            logger.debug("Checking out connection from SQLAlchemy pool")
             # Use raw_connection() for transaction control
             conn = self._engine.raw_connection()
             try:
+                # D4 investigation: Log connection state before use
+                try:
+                    status = getattr(conn, 'status', 'unknown')
+                    logger.debug(f"Connection checked out, status: {status}")
+                except Exception:
+                    pass
+
                 yield conn
+
+                # D4 investigation: Log successful completion
+                logger.debug("Connection use completed successfully, committing transaction")
                 # Commit transaction on successful completion
                 conn.commit()
-            except Exception:
+            except Exception as e:
+                # D4 investigation: Log rollback with error details
+                logger.warning(f"Connection use failed, rolling back transaction: {type(e).__name__}")
                 # Rollback on error
                 try:
                     conn.rollback()
-                except Exception:
-                    pass
+                except Exception as rb_error:
+                    logger.error(f"Rollback failed: {type(rb_error).__name__}: {rb_error}")
                 raise
             finally:
+                # D4 investigation: Ensure clean state before returning to pool
+                try:
+                    # Check if connection is in a clean state
+                    status = getattr(conn, 'status', None)
+                    if status is not None and hasattr(psycopg, 'pq'):
+                        # psycopg v3 has TransactionStatus enum
+                        if status != psycopg.pq.TransactionStatus.IDLE:
+                            logger.warning(f"Connection not idle before pool return, status: {status}, forcing rollback")
+                            try:
+                                conn.rollback()
+                            except Exception as cleanup_error:
+                                logger.error(f"Cleanup rollback failed: {cleanup_error}")
+                except Exception:
+                    pass
+
+                logger.debug("Returning connection to pool")
                 conn.close()  # return to pool
         else:
             # Lazy init persistent psycopg connection
