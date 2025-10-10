@@ -40,6 +40,12 @@ if finish_reason not in ["STOP", 1]:  # STOP=1 is normal completion
 
 ### Cloud Logging Analysis (Last 2 days)
 
+**Finish Reason Distribution (Last 500 queries):**
+```
+16 finish_reason=1 (STOP - Normal completion) ✅  94.1%
+ 1 finish_reason=2 (MAX_TOKENS - Truncated)  ⚠️   5.9%
+```
+
 **Normal completions (finish_reason=1):**
 ```
 2025-10-10 19:48:45 - 2,270 chars, finish_reason=1 ✅
@@ -53,6 +59,19 @@ if finish_reason not in ["STOP", 1]:  # STOP=1 is normal completion
 ```
 2025-10-10 15:11:59 - 250,294 chars, finish_reason=2 ⚠️
 Log: "Non-normal finish_reason: 2 - response may be truncated"
+```
+
+**User Activity Analysis (OAuth integrations):**
+```
+773 sessions - crashedmind@gmail.com (Primary tester)
+147 sessions - asummers@mitre.org
+ 59 sessions - jay@empiricalsecurity.com
+ 16 sessions - mpower@mitre.org
+  3 sessions - chris.madden@yahooinc.com
+  1 session  - rdornin@protonmail.com
+  1 session  - rdornin@mitre.org
+---
+Total: 1,000 OAuth integration events across 7 users
 ```
 
 ### Finish Reason Codes
@@ -168,6 +187,32 @@ gcloud logging read 'resource.type="cloud_run_revision"
   AND textPayload=~"Non-normal finish_reason"' \
   --limit=10
 ```
+
+### User Activity Analysis
+
+**Get user email distribution:**
+```bash
+gcloud logging read 'resource.type="cloud_run_revision"
+  AND resource.labels.service_name="cwe-chatbot"
+  AND textPayload=~"OAuth integration completed for user"' \
+  --limit=1000 --format=json | \
+  jq -r '.[] | select(.textPayload) | .textPayload' | \
+  grep -oE "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" | \
+  sort | uniq -c | sort -rn
+```
+
+**Get persona usage per user:**
+```bash
+gcloud logging read 'resource.type="cloud_run_revision"
+  AND resource.labels.service_name="cwe-chatbot"
+  AND textPayload=~"Persona.*assigned to authenticated user"' \
+  --limit=500 --format=json | \
+  jq -r '.[] | select(.textPayload) | .textPayload' | \
+  awk -F"Persona '|' assigned" '{print $2}' | \
+  sort | uniq -c | sort -rn
+```
+
+**Note:** Individual user message content is not logged for privacy. Only metadata (OAuth events, persona selection, response metrics) are captured.
 
 ## Resolution Status
 
