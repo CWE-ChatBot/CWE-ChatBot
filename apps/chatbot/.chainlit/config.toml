@@ -125,10 +125,10 @@ alert_style = "classic"
 # Load assistant logo directly from URL.
 logo_file_url = ""
 
-# Theme-specific logos (D4 Issue #2 fix: eliminate /logo 404 warnings)
-# Paths relative to public directory (Chainlit serves from public/)
-logo_light = "logo_light.png"
-logo_dark = "logo_dark.png"
+# Logo configuration
+# Note: Chainlit 2.8.0 requests /logo?theme=light/dark endpoints
+# These are not configurable via config.toml in this version
+# The 404s are expected behavior when custom logo endpoint not implemented
 
 # Load assistant avatar image directly from URL.
 default_avatar_file_url = ""
