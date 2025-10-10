@@ -166,3 +166,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
 
         return response
+
+
+# Explicitly export and reference the middleware dispatch so static analyzers see usage
+__all__ = ["SecurityHeadersMiddleware"]
+_ASGI_MIDDLEWARE_REFS: tuple[object, ...] = (SecurityHeadersMiddleware.dispatch,)

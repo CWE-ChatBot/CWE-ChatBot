@@ -269,40 +269,6 @@ class EmbeddingCache:
             / (1024 * 1024),
         }
 
-    def clear_cache(
-        self, embedder_type: Optional[str] = None, model_name: Optional[str] = None
-    ) -> None:
-        """Clear cache entries (optionally filtered by embedder type/model)."""
-        to_remove = []
-
-        for cache_key, info in self.metadata.get("embeddings", {}).items():
-            should_remove = True
-            if embedder_type and info.get("embedder_type") != embedder_type:
-                should_remove = False
-            if model_name and info.get("model_name") != model_name:
-                should_remove = False
-
-            if should_remove:
-                to_remove.append(cache_key)
-                # Remove file - try both old and new filename formats
-                cwe_id = info.get("cwe_id", "unknown")
-                cache_file_new = self._get_cache_filename(cache_key, cwe_id)
-                cache_file_old = self._get_cache_filename(cache_key)
-
-                if cache_file_new.exists():
-                    cache_file_new.unlink()
-                elif cache_file_old.exists():
-                    cache_file_old.unlink()
-
-        # Update metadata
-        for cache_key in to_remove:
-            del self.metadata["embeddings"][cache_key]
-
-        self.metadata["total_cached"] = len(self.metadata["embeddings"])
-        self._save_metadata()
-
-        logger.info(f"Cleared {len(to_remove)} cache entries")
-
 
 def create_sample_cwe_list(total_cwes: int = 30) -> List[str]:
     """Create a representative sample of CWEs for testing."""

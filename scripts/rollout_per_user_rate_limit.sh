@@ -66,30 +66,30 @@ if gcloud compute security-policies rules describe 1000 --security-policy "$POLI
   gcloud compute security-policies rules update 1000 \
     --security-policy="$POLICY" \
     --action=rate-based-ban \
-    --expression="request.headers['$USER_HEADER_LOWER'] != null" \
+    --expression="has(request.headers['$USER_HEADER_LOWER'])" \
     --rate-limit-threshold-count="$RPM_PER_USER" \
     --rate-limit-threshold-interval-sec="$INTERVAL_SEC" \
-    --conform-action=deny-429 \
+    --conform-action=allow \
     --exceed-action=deny-429 \
     --ban-threshold-count="$((RPM_PER_USER * BAN_COUNT_MULTIPLIER))" \
     --ban-threshold-interval-sec="$INTERVAL_SEC" \
     --ban-duration-sec="$BAN_DURATION_SEC" \
-    --enforce-on-key=HTTP_HEADER \
+    --enforce-on-key=http-header \
     --enforce-on-key-name="$USER_HEADER_LOWER"
 else
   say "Rule 1000 not present — creating..."
   gcloud compute security-policies rules create 1000 \
     --security-policy="$POLICY" \
     --action=rate-based-ban \
-    --expression="request.headers['$USER_HEADER_LOWER'] != null" \
+    --expression="has(request.headers['$USER_HEADER_LOWER'])" \
     --rate-limit-threshold-count="$RPM_PER_USER" \
     --rate-limit-threshold-interval-sec="$INTERVAL_SEC" \
-    --conform-action=deny-429 \
+    --conform-action=allow \
     --exceed-action=deny-429 \
     --ban-threshold-count="$((RPM_PER_USER * BAN_COUNT_MULTIPLIER))" \
     --ban-threshold-interval-sec="$INTERVAL_SEC" \
     --ban-duration-sec="$BAN_DURATION_SEC" \
-    --enforce-on-key=HTTP_HEADER \
+    --enforce-on-key=http-header \
     --enforce-on-key-name="$USER_HEADER_LOWER"
 fi
 

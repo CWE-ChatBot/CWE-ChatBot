@@ -19,6 +19,8 @@ def test_httpx_http2_installed():
     # Check that h2 package is available (required for HTTP/2)
     try:
         import h2
+
+        assert h2 is not None  # reference to satisfy static analyzers
     except ImportError:
         pytest.fail(
             "h2 package is not installed. " "Install with: pip install httpx[http2]"
@@ -53,6 +55,8 @@ def test_file_processor_http2_client():
         # Verify HTTP/2 is enabled
         # The h2 library should be importable if http2=True works
         import h2
+
+        assert h2 is not None  # reference to satisfy static analyzers
 
         # Client should be configured with http2=True
         # We can't directly inspect the http2 setting, but if h2 is installed

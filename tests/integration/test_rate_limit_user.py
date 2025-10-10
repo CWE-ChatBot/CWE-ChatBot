@@ -25,7 +25,6 @@ from typing import Dict, Optional
 import pytest
 import requests
 
-
 # Configuration from environment
 STAGING_URL = os.environ.get("STAGING_URL")
 TEST_USER_ID = os.environ.get("TEST_USER_ID", "itest-user-1")
@@ -42,9 +41,7 @@ def validate_env():
 
 
 def make_request(
-    url: str,
-    headers: Optional[Dict[str, str]] = None,
-    timeout: int = TEST_TIMEOUT
+    url: str, headers: Optional[Dict[str, str]] = None, timeout: int = TEST_TIMEOUT
 ) -> requests.Response:
     """
     Make GET request with error handling.
@@ -78,7 +75,7 @@ def test_per_user_rate_limit_enforced(validate_env):
     url = validate_env
     headers = {"X-User-Id": TEST_USER_ID}
 
-    print(f"\n=== Testing per-user rate limit ===")
+    print("\n=== Testing per-user rate limit ===")
     print(f"URL: {url}")
     print(f"User-ID: {TEST_USER_ID}")
     print(f"Limit: {TEST_RATE_LIMIT} requests")
@@ -90,9 +87,9 @@ def test_per_user_rate_limit_enforced(validate_env):
         print(f"Request {i+1}/{TEST_RATE_LIMIT}: {response.status_code}")
 
         # Should not get 5xx errors during normal operation
-        assert response.status_code < 500, (
-            f"Unexpected server error on request {i+1}: {response.status_code}"
-        )
+        assert (
+            response.status_code < 500
+        ), f"Unexpected server error on request {i+1}: {response.status_code}"
 
         if response.status_code == 200:
             success_count += 1
@@ -129,7 +126,7 @@ def test_multiple_users_independent_limits(validate_env):
     user1 = f"{TEST_USER_ID}-1"
     user2 = f"{TEST_USER_ID}-2"
 
-    print(f"\n=== Testing per-user isolation ===")
+    print("\n=== Testing per-user isolation ===")
     print(f"User1: {user1}")
     print(f"User2: {user2}")
 
@@ -149,9 +146,11 @@ def test_multiple_users_independent_limits(validate_env):
     response_user2 = make_request(url, headers=headers_user2)
     print(f"User2 request: {response_user2.status_code}")
 
-    assert response_user2.status_code in (200, 201, 204), (
-        f"User2 should NOT be rate limited (got {response_user2.status_code})"
-    )
+    assert response_user2.status_code in (
+        200,
+        201,
+        204,
+    ), f"User2 should NOT be rate limited (got {response_user2.status_code})"
 
     print("✅ Per-user isolation verified!")
 
@@ -173,7 +172,7 @@ def test_spoofing_protection_header_stripped(validate_env):
     spoofed_user = "attacker-spoof-attempt"
     headers = {"X-User-Id": spoofed_user}
 
-    print(f"\n=== Testing spoofing protection ===")
+    print("\n=== Testing spoofing protection ===")
     print(f"Sending spoofed X-User-Id: {spoofed_user}")
     print("Header should be stripped by LB, per-IP rule applies")
 
@@ -182,14 +181,17 @@ def test_spoofing_protection_header_stripped(validate_env):
 
     # Should get either 200 (allowed) or 429 (per-IP limit)
     # Should NOT bypass security
-    assert response.status_code in (200, 429), (
-        f"Unexpected status {response.status_code} for spoofed header"
-    )
+    assert response.status_code in (
+        200,
+        429,
+    ), f"Unexpected status {response.status_code} for spoofed header"
 
     print("✅ Spoofing protection test passed")
     print("\n⚠️ MANUAL VERIFICATION REQUIRED:")
     print("   Check Cloud Logging with filter:")
-    print('   resource.type="http_load_balancer" AND jsonPayload.enforcedAction="DENY_429"')
+    print(
+        '   resource.type="http_load_balancer" AND jsonPayload.enforcedAction="DENY_429"'
+    )
     print("   Verify enforcedOnKey shows IP (not HTTP_HEADER) for this request")
 
 
@@ -206,7 +208,7 @@ def test_per_ip_fallback_without_user_header(validate_env):
     """
     url = validate_env
 
-    print(f"\n=== Testing per-IP fallback ===")
+    print("\n=== Testing per-IP fallback ===")
     print("Sending requests without X-User-Id header")
     print("Should hit per-IP rule (priority 1100)")
 
@@ -223,9 +225,9 @@ def test_per_ip_fallback_without_user_header(validate_env):
 
     # May or may not be 429 depending on per-IP limit settings
     # Just verify no server errors
-    assert response.status_code < 500, (
-        f"Server error on per-IP fallback: {response.status_code}"
-    )
+    assert (
+        response.status_code < 500
+    ), f"Server error on per-IP fallback: {response.status_code}"
 
     print("✅ Per-IP fallback verified!")
 
@@ -239,7 +241,9 @@ if __name__ == "__main__":
     """
     if not STAGING_URL:
         print("ERROR: STAGING_URL environment variable required")
-        print("Example: STAGING_URL=https://staging.example.com python test_rate_limit_user.py")
+        print(
+            "Example: STAGING_URL=https://staging.example.com python test_rate_limit_user.py"
+        )
         exit(1)
 
     print(f"Running integration tests against {STAGING_URL}")
@@ -249,15 +253,15 @@ if __name__ == "__main__":
 
     # Run tests manually
     test_per_user_rate_limit_enforced(STAGING_URL)
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
 
     test_multiple_users_independent_limits(STAGING_URL)
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
 
     test_spoofing_protection_header_stripped(STAGING_URL)
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
 
     test_per_ip_fallback_without_user_header(STAGING_URL)
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
 
     print("✅ All integration tests completed!")

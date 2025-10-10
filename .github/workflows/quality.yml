@@ -124,3 +124,67 @@ jobs:
         run: |
           echo "pip-audit found vulnerabilities."
           exit 1
+
+  # === Bandit (security lint) ===
+  bandit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Bandit
+        run: python -m pip install --upgrade pip bandit
+      - name: Run Bandit (JSON report)
+        run: >
+          bandit -r ./apps
+          -x ./apps/chatbot/tests,./apps/cwe_ingestion/tests,./apps/pdf_worker/tests,./apps/tests,./apps/cwe_ingestion/build/lib/tests,./apps/cwe_ingestion/scripts
+          -f json -o bandit_report_no_tests.json -iii -l
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit_report_no_tests.json
+          path: bandit_report_no_tests.json
+      # Optional: fail the job if Bandit found issues (parses JSON count>0)
+      - name: Fail if Bandit found issues
+        run: |
+          python - <<'PY'
+          import json, sys
+          with open("bandit_report_no_tests.json") as f:
+              data = json.load(f)
+          issues = data.get("results", [])
+          if issues:
+              print(f"Bandit found {len(issues)} issue(s).")
+              sys.exit(1)
+          print("Bandit found no issues.")
+          PY
+
+  # === Vulture (dead code finder) ===
+  vulture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Vulture
+        run: python -m pip install --upgrade pip vulture
+      - name: Run Vulture
+        run: |
+          set +e
+          vulture --sort-by-size --min-confidence 70 ./ > vulture.txt
+          exit 0
+      - name: Upload Vulture output
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulture.txt
+          path: vulture.txt
+      # Optional: fail if Vulture reported potential dead code
+      - name: Fail if Vulture found dead code
+        run: |
+          if grep -E ":[0-9]+:" -q vulture.txt; then
+            echo "::error::Vulture found potential dead code. See vulture.txt artifact."
+            exit 1
+          else
+            echo "Vulture found no reportable dead code."
+          fi

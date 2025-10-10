@@ -1,0 +1,219 @@
+vulture --sort-by-size --min-confidence 60 ./
+chatbot/main.py:662: unused attribute 'input' (60% confidence, 1 line)
+chatbot/main.py:745: unused attribute 'input' (60% confidence, 1 line)
+chatbot/src/app_config.py:59: unused variable 'embedding_dimensions' (60% confidence, 1 line)
+chatbot/src/app_config.py:67: unused variable 'max_retrieval_results' (60% confidence, 1 line)
+chatbot/src/app_config.py:68: unused variable 'similarity_threshold' (60% confidence, 1 line)
+chatbot/src/app_config.py:70: unused variable 'rrf_k_vec' (60% confidence, 1 line)
+chatbot/src/app_config.py:71: unused variable 'rrf_fts_k' (60% confidence, 1 line)
+chatbot/src/app_config.py:72: unused variable 'rrf_alias_k' (60% confidence, 1 line)
+chatbot/src/app_config.py:73: unused variable 'rrf_k_rrf' (60% confidence, 1 line)
+chatbot/src/app_config.py:77: unused variable 'enable_strict_sanitization' (60% confidence, 1 line)
+chatbot/src/app_config.py:104: unused variable 'enable_debug_logging' (60% confidence, 1 line)
+chatbot/src/app_config.py:105: unused variable 'log_level' (60% confidence, 1 line)
+chatbot/src/conversation.py:42: unused variable 'message_type' (60% confidence, 1 line)
+chatbot/src/conversation.py:43: unused variable 'timestamp' (60% confidence, 1 line)
+chatbot/src/processing/confidence_calculator.py:20: unused variable 'top_hybrid_scores' (60% confidence, 1 line)
+chatbot/src/processing/confidence_calculator.py:21: unused variable 'exact_alias_match' (60% confidence, 1 line)
+chatbot/src/processing/confidence_calculator.py:23: unused variable 'source_count' (60% confidence, 1 line)
+chatbot/src/processing/followup_processor.py:29: unused variable 'matched_patterns' (60% confidence, 1 line)
+chatbot/src/processing/followup_processor.py:117: unused variable 'HIGH_CONFIDENCE_THRESHOLD' (60% confidence, 1 line)
+chatbot/src/processing/pipeline.py:32: unused variable 'top_chunks' (60% confidence, 1 line)
+chatbot/src/processing/pipeline.py:33: unused variable 'relationships' (60% confidence, 1 line)
+chatbot/src/processing/pipeline.py:40: unused variable 'low_confidence' (60% confidence, 1 line)
+chatbot/src/query_handler.py:47: unused variable 'top_chunks' (60% confidence, 1 line)
+chatbot/src/query_handler.py:48: unused variable 'relationships' (60% confidence, 1 line)
+chatbot/src/query_handler.py:55: unused variable 'low_confidence' (60% confidence, 1 line)
+chatbot/src/security/middleware.py:24: unused variable 'CSP_REPORT_ONLY' (60% confidence, 1 line)
+chatbot/src/user_context.py:74: unused variable 'preferred_cwe_categories' (60% confidence, 1 line)
+chatbot/tests/automated_flow_test.py:34: unused attribute 'websocket_url' (60% confidence, 1 line)
+chatbot/tests/e2e/test_comprehensive_ui_flows.py:305: unused variable 'initial_content' (60% confidence, 1 line)
+chatbot/tests/e2e/test_comprehensive_ui_flows.py:306: unused variable 'initial_messages_count' (60% confidence, 1 line)
+chatbot/tests/e2e/test_comprehensive_ui_flows.py:585: unused variable 'has_focus_indicator' (60% confidence, 1 line)
+chatbot/tests/e2e/test_comprehensive_ui_flows.py:602: unused variable 'skip_links' (60% confidence, 1 line)
+chatbot/tests/e2e/test_cross_browser_compatibility.py:199: unused variable 'upload_success' (60% confidence, 1 line)
+chatbot/tests/e2e/test_cross_browser_compatibility.py:406: unused variable 'local_storage_works' (60% confidence, 1 line)
+chatbot/tests/e2e/test_non_cwe_query_regression.py:86: unused variable 'min_chunks' (60% confidence, 1 line)
+chatbot/tests/test_conversational_flows.py:31: unused attribute 'websocket_url' (60% confidence, 1 line)
+chatbot/tests/test_pdf_worker_integration.py:22: unused variable 'pytestmark' (60% confidence, 1 line)
+chatbot/tests/test_story_2_1_components.py:206: unused attribute 'mock_query_handler' (60% confidence, 1 line)
+chatbot/tests/test_story_2_1_components.py:207: unused attribute 'mock_response_generator' (60% confidence, 1 line)
+chatbot/tests/test_story_2_1_components.py:211: unused attribute 'test_session_id' (60% confidence, 1 line)
+chatbot/tests/test_story_2_1_components.py:212: unused attribute 'test_message_id' (60% confidence, 1 line)
+cwe_ingestion/build/lib/cwe_ingestion/downloader.py:25: unused attribute 'schema_url' (60% confidence, 1 line)
+cwe_ingestion/build/lib/cwe_ingestion/models.py:14: unused variable 'Link' (60% confidence, 1 line)
+cwe_ingestion/build/lib/cwe_ingestion/models.py:20: unused variable 'Ordinal' (60% confidence, 1 line)
+cwe_ingestion/build/lib/cwe_ingestion/models.py:48: unused variable 'Rationale' (60% confidence, 1 line)
+cwe_ingestion/build/lib/cwe_ingestion/models.py:49: unused variable 'Comments' (60% confidence, 1 line)
+cwe_ingestion/build/lib/cwe_ingestion/models.py:52: unused variable 'Type' (60% confidence, 1 line)
+cwe_ingestion/build/lib/cwe_ingestion/models.py:365: unused variable 'Notes' (60% confidence, 1 line)
+cwe_ingestion/build/lib/cwe_ingestion/pg_vector_store.py:16: unused variable 'DDL_SINGLE' (60% confidence, 1 line)
+cwe_ingestion/build/lib/cwe_ingestion/validate_persona_queries.py:260: unused variable 'export_file' (60% confidence, 1 line)
+cwe_ingestion/build/lib/tests/unit/test_pipeline_gemini.py:26: unused variable 'mock_store' (60% confidence, 1 line)
+cwe_ingestion/build/lib/tests/unit/test_pipeline_gemini.py:27: unused variable 'mock_parser' (60% confidence, 1 line)
+cwe_ingestion/build/lib/tests/unit/test_pipeline_gemini.py:47: unused variable 'mock_store' (60% confidence, 1 line)
+cwe_ingestion/build/lib/tests/unit/test_pipeline_gemini.py:48: unused variable 'mock_parser' (60% confidence, 1 line)
+cwe_ingestion/build/lib/tests/unit/test_pipeline_gemini.py:65: unused variable 'mock_store' (60% confidence, 1 line)
+cwe_ingestion/build/lib/tests/unit/test_pipeline_gemini.py:66: unused variable 'mock_parser' (60% confidence, 1 line)
+cwe_ingestion/cwe_ingestion/downloader.py:27: unused attribute 'schema_url' (60% confidence, 1 line)
+cwe_ingestion/cwe_ingestion/models.py:16: unused variable 'Link' (60% confidence, 1 line)
+cwe_ingestion/cwe_ingestion/models.py:23: unused variable 'Ordinal' (60% confidence, 1 line)
+cwe_ingestion/cwe_ingestion/models.py:57: unused variable 'Rationale' (60% confidence, 1 line)
+cwe_ingestion/cwe_ingestion/models.py:58: unused variable 'Comments' (60% confidence, 1 line)
+cwe_ingestion/cwe_ingestion/models.py:62: unused variable 'Type' (60% confidence, 1 line)
+cwe_ingestion/cwe_ingestion/models.py:417: unused variable 'Notes' (60% confidence, 1 line)
+cwe_ingestion/cwe_ingestion/pg_vector_store.py:18: unused variable 'DDL_SINGLE' (60% confidence, 1 line)
+cwe_ingestion/scripts/import_policy_from_xml.py:60: unused variable 'VALID_LABELS' (60% confidence, 1 line)
+cwe_ingestion/scripts/migrate_to_halfvec.py:25: unused attribute 'autocommit' (60% confidence, 1 line)
+cwe_ingestion/tests/unit/test_pipeline_gemini.py:27: unused variable 'mock_store' (60% confidence, 1 line)
+cwe_ingestion/tests/unit/test_pipeline_gemini.py:28: unused variable 'mock_parser' (60% confidence, 1 line)
+cwe_ingestion/tests/unit/test_pipeline_gemini.py:47: unused variable 'mock_store' (60% confidence, 1 line)
+cwe_ingestion/tests/unit/test_pipeline_gemini.py:48: unused variable 'mock_parser' (60% confidence, 1 line)
+cwe_ingestion/tests/unit/test_pipeline_gemini.py:66: unused variable 'mock_store' (60% confidence, 1 line)
+cwe_ingestion/tests/unit/test_pipeline_gemini.py:67: unused variable 'mock_parser' (60% confidence, 1 line)
+cwe_ingestion/tests/ws_security/tests/test_actions_csrf.py:9: unused variable 'pytestmark' (60% confidence, 1 line)
+cwe_ingestion/tests/ws_security/tests/test_csp_headers.py:4: unused variable 'pytestmark' (60% confidence, 1 line)
+cwe_ingestion/tests/ws_security/tests/test_ws.py:4: unused variable 'pytestmark' (60% confidence, 1 line)
+chatbot/health_server.py:62: unused method 'log_message' (60% confidence, 3 lines)
+chatbot/src/processing/analyzer_handler.py:301: unused method 'get_handler_status' (60% confidence, 3 lines)
+chatbot/src/processing/followup_processor.py:394: unused method 'get_supported_intents' (60% confidence, 3 lines)
+chatbot/src/processing/followup_processor.py:398: unused method 'get_pattern_examples' (60% confidence, 3 lines)
+chatbot/tests/unit/test_evidence_injection_all_personas.py:81: unused method 'generate_response' (60% confidence, 3 lines)
+chatbot/main.py:286: unused function 'set_profiles' (60% confidence, 4 lines)
+cwe_ingestion/build/lib/cwe_ingestion/embedder.py:68: unused method '_use_mock_embedder' (60% confidence, 5 lines)
+cwe_ingestion/cwe_ingestion/embedder.py:69: unused method '_use_mock_embedder' (60% confidence, 5 lines)
+chatbot/health_server.py:21: unused method 'do_GET' (60% confidence, 6 lines)
+tests/conftest.py:9: unused function 'pytest_sessionstart' (60% confidence, 6 lines)
+chatbot/src/model_armor_guard.py:285: unused method 'aclose' (60% confidence, 8 lines)
+chatbot/src/query_handler.py:264: unused method 'get_database_stats' (60% confidence, 8 lines)
+chatbot/src/app_config.py:125: unused method 'get_pg_config' (60% confidence, 9 lines)
+cwe_ingestion/build/lib/cwe_ingestion/embedding_cache.py:176: unused method 'get_cached_cwe_ids' (60% confidence, 9 lines)
+chatbot/src/conversation.py:35: unused class 'ConversationMessage' (60% confidence, 10 lines)
+chatbot/src/conversation.py:418: unused method '_summarize_attachment' (60% confidence, 10 lines)
+chatbot/tests/integration/test_cwe_analyzer_end_to_end.py:44: unused function 'mock_chainlit_session' (60% confidence, 10 lines)
+cwe_ingestion/build/lib/cwe_ingestion/embedding_cache.py:165: unused method 'load_batch' (60% confidence, 10 lines)
+chatbot/src/processing/pipeline.py:566: unused method 'get_pipeline_health' (60% confidence, 11 lines)
+chatbot/src/processing/query_processor.py:179: unused method 'is_direct_cwe_query' (60% confidence, 11 lines)
+cwe_ingestion/cwe_ingestion/embedding_cache.py:238: unused method 'get_cached_cwe_ids' (60% confidence, 11 lines)
+chatbot/src/processing/cwe_filter.py:157: unused method 'add_prohibited' (60% confidence, 12 lines)
+chatbot/src/processing/cwe_filter.py:170: unused method 'add_discouraged' (60% confidence, 12 lines)
+chatbot/tests/conftest.py:278: unused function 'pytest_configure' (60% confidence, 12 lines)
+chatbot/src/processing/cwe_filter.py:183: unused method 'get_filter_stats' (60% confidence, 13 lines)
+chatbot/tests/conftest.py:262: unused function 'clean_env' (60% confidence, 13 lines)
+cwe_ingestion/build/lib/cwe_ingestion/embedding_cache.py:151: unused method 'save_batch' (60% confidence, 13 lines)
+cwe_ingestion/cwe_ingestion/embedding_cache.py:223: unused method 'load_batch' (60% confidence, 14 lines)
+cwe_ingestion/cwe_ingestion/embedding_cache.py:207: unused method 'save_batch' (60% confidence, 15 lines)
+chatbot/src/security/secure_logging.py:199: unused function 'log_exception_securely' (60% confidence, 17 lines)
+chatbot/src/security/middleware.py:81: unused function '_build_csp_report_only' (60% confidence, 18 lines)
+chatbot/src/user_context.py:200: unused method 'get_conversation_context' (60% confidence, 18 lines)
+chatbot/src/processing/query_processor.py:191: unused method 'validate_input' (60% confidence, 19 lines)
+chatbot/tests/conftest.py:292: unused function 'pytest_collection_modifyitems' (60% confidence, 24 lines)
+chatbot/src/file_processor.py:510: unused method 'analyze_vulnerability_content' (60% confidence, 30 lines)
+chatbot/src/processing/cwe_filter.py:198: unused function 'load_filter_config_from_corpus_metadata' (60% confidence, 30 lines)
+chatbot/src/processing/analyzer_handler.py:198: unused method '_handle_compare_mode' (60% confidence, 32 lines)
+
+
+
+
+> Here’s the classification for items in docs/stories/R5/vulture.txt:
+  
+  - 
+  chatbot/main.py:662: unused attribute 'input' — FP: Chainlit uses Step.input via framework side-effects.
+  - 
+  chatbot/main.py:745: unused attribute 'input' — FP: Same reason as above.
+  - 
+  chatbot/src/app_config.py:59: unused variable 'embedding_dimensions' — TP: Not referenced anywhere.
+  - 
+  chatbot/src/app_config.py:67: unused variable 'max_retrieval_results' — TP: Not referenced.
+  - 
+  chatbot/src/app_config.py:68: unused variable 'similarity_threshold' — TP: Not referenced.
+  - 
+  chatbot/src/app_config.py:70: unused variable 'rrf_k_vec' — TP: Not referenced.
+  - 
+  chatbot/src/app_config.py:71: unused variable 'rrf_fts_k' — TP: Not referenced.
+  - 
+  chatbot/src/app_config.py:72: unused variable 'rrf_alias_k' — TP: Not referenced.
+  - 
+  chatbot/src/app_config.py:73: unused variable 'rrf_k_rrf' — TP: Not referenced.
+  - 
+  chatbot/src/app_config.py:77: unused variable 'enable_strict_sanitization' — TP: Env flag is read directly elsewhere; config field unused.
+  - 
+  chatbot/src/app_config.py:104: unused variable 'enable_debug_logging' — TP: Not referenced.
+  - 
+  chatbot/src/app_config.py:105: unused variable 'log_level' — TP: Not referenced.
+  - 
+  chatbot/src/conversation.py:42: unused variable 'message_type' — TP: ConversationMessage dataclass unused.
+  - 
+  chatbot/src/conversation.py:43: unused variable 'timestamp' — TP: ConversationMessage dataclass unused.
+  - 
+  chatbot/src/processing/confidence_calculator.py:20: unused variable 'top_hybrid_scores' — FP: Used in score() computation.
+  - 
+  chatbot/src/processing/confidence_calculator.py:21: unused variable 'exact_alias_match' — FP: Used in score() computation.
+  - 
+  chatbot/src/processing/confidence_calculator.py:23: unused variable 'source_count' — FP: Used in score() computation.
+  - 
+  chatbot/src/processing/followup_processor.py:29: unused variable 'matched_patterns' — FP: Included in FollowupIntent and used in tests/logic.
+  - 
+  chatbot/src/processing/followup_processor.py:117: unused variable 'HIGH_CONFIDENCE_THRESHOLD' — TP: Defined but not used.
+  - 
+  chatbot/src/processing/pipeline.py:32: unused variable 'top_chunks' — FP: TypedDict field (type definition).
+  - 
+  chatbot/src/processing/pipeline.py:33: unused variable 'relationships' — FP: TypedDict field (type definition).
+  - 
+  chatbot/src/processing/pipeline.py:40: unused variable 'low_confidence' — FP: TypedDict field (type definition).
+  - 
+  chatbot/src/query_handler.py:47: unused variable 'top_chunks' — FP: TypedDict field (type definition).
+  - 
+  chatbot/src/query_handler.py:48: unused variable 'relationships' — FP: TypedDict field (type definition).
+  - 
+  chatbot/src/query_handler.py:55: unused variable 'low_confidence' — FP: TypedDict field (type definition).
+  - 
+  chatbot/src/security/middleware.py:24: unused variable 'CSP_REPORT_ONLY' — TP: Not used to set a RO header.
+  - 
+  chatbot/src/user_context.py:74: unused variable 'preferred_cwe_categories' — TP: Not referenced.
+  - 
+  chatbot/tests/automated_flow_test.py:34: unused attribute 'websocket_url' — TP: Not used in test logic.
+  - 
+  chatbot/tests/e2e/test_comprehensive_ui_flows.py:305: unused variable 'initial_content' — TP: Assigned, not used.
+  - 
+  chatbot/tests/e2e/test_comprehensive_ui_flows.py:306: unused variable 'initial_messages_count' — TP: Assigned, not used.
+  - 
+  chatbot/tests/e2e/test_comprehensive_ui_flows.py:585: unused variable 'has_focus_indicator' — TP: Assigned, not asserted.
+  - 
+  chatbot/tests/e2e/test_comprehensive_ui_flows.py:602: unused variable 'skip_links' — TP: Assigned, not used.
+  - 
+  chatbot/tests/e2e/test_cross_browser_compatibility.py:199: unused variable 'upload_success' — TP: Assigned, not used.
+  - 
+  chatbot/tests/e2e/test_cross_browser_compatibility.py:406: unused variable 'local_storage_works' — TP: Assigned, not used.
+  - 
+  chatbot/tests/e2e/test_non_cwe_query_regression.py:86: unused variable 'min_chunks' — TP: Assigned, not used.
+  - 
+  chatbot/tests/test_conversational_flows.py:31: unused attribute 'websocket_url' — TP: Assigned, not used.
+  - 
+  chatbot/tests/test_pdf_worker_integration.py:22: unused variable 'pytestmark' — FP: Pytest consumes module-level pytestmark for conditional skip.
+  - 
+  chatbot/tests/test_story_2_1_components.py:206: unused attribute 'mock_query_handler' — TP: Defined in setUp, not used.
+  - 
+  chatbot/tests/test_story_2_1_components.py:207: unused attribute 'mock_response_generator' — TP: Defined in setUp, not used.
+  - 
+  chatbot/tests/test_story_2_1_components.py:211: unused attribute 'test_session_id' — TP: Defined in setUp, not used.
+  - 
+  chatbot/tests/test_story_2_1_components.py:212: unused attribute 'test_message_id' — TP: Defined in setUp, not used.
+  - 
+  cwe_ingestion/build/lib/cwe_ingestion/downloader.py:25: unused attribute 'schema_url' — TP: Not used.
+  - 
+  cwe_ingestion/build/lib/cwe_ingestion/models.py:14: unused variable 'Link' — FP: Pydantic model field.
+  - 
+  cwe_ingestion/build/lib/cwe_ingestion/models.py:20: unused variable 'Ordinal' — FP: Pydantic model field.
+  - 
+  cwe_ingestion/build/lib/cwe_ingestion/models.py:48: unused variable 'Rationale' — FP: Pydantic model field.
+  - 
+  cwe_ingestion/build/lib/cwe_ingestion/models.py:49: unused variable 'Comments' — FP: Pydantic model field.
+  - 
+  cwe_ingestion/build/lib/cwe_ingestion/models.py:52: unused variable 'Type' — FP: Pydantic model field.
+  - 
+  cwe_ingestion/build/lib/cwe_ingestion/models.py:365: unused variable 'Notes' — FP: Pydantic model field.
+  - 
+  cwe_ingestion/build/lib/cwe_ingestion/pg_vector_store.py:16: unused variable 'DDL_SINGLE' — TP: Not referenced (dynamic DDL used instead).
+  - 
+  cwe_ingestion/build/lib/cwe_ingestion/validate_persona_queries.py:260: unused variable 'export_file' — TP: Assigned, not used.

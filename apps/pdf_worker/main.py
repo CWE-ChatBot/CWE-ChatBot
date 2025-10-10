@@ -57,6 +57,15 @@ MODEL_ARMOR_LOCATION = os.getenv("MODEL_ARMOR_LOCATION", "us-central1")
 MODEL_ARMOR_TEMPLATE_ID = os.getenv("MODEL_ARMOR_TEMPLATE_ID", "llm-guardrails-default")
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 
+# Explicitly export entry points for tooling/static analyzers
+__all__ = [
+    "pdf_worker",
+    "sanitize_pdf",
+    "extract_pdf_text",
+    "sanitize_text_with_model_armor",
+    "count_pdf_pages",
+]
+
 
 def sanitize_pdf(pdf_data: bytes) -> bytes:
     """
@@ -370,3 +379,7 @@ def pdf_worker(request):
     }
 
     return (json.dumps(response), 200, headers)
+
+
+# Keep a concrete reference so tools like vulture see usage
+_HANDLERS: tuple[object, ...] = (pdf_worker,)

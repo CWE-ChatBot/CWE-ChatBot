@@ -37,6 +37,16 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
+# Export CLI entry points for tooling and clarity
+__all__ = [
+    "cli",
+    "ingest",
+    "query",
+    "stats",
+    "ingest_multi",
+    "policy_import",
+]
+
 
 @click.group()
 @click.option("--debug", is_flag=True, help="Enable debug logging")
@@ -621,6 +631,16 @@ def policy_import(
     sys.argv = ["import_policy_from_xml.py"] + argv
     policy_import_main()
 
+
+# Keep explicit references so static analyzers (e.g., vulture) see usage
+_CLI_COMMANDS: tuple[object, ...] = (
+    cli,
+    ingest,
+    query,
+    stats,
+    ingest_multi,
+    policy_import,
+)
 
 if __name__ == "__main__":
     cli()

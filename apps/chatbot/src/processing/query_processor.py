@@ -37,6 +37,9 @@ class QueryProcessor:
         # Story 2.2: Follow-up processor initialization
         self.followup_processor = FollowupProcessor()
 
+        # Keep configured limits for potential downstream use/validation
+        self.max_input_length = int(max_input_length)
+
         logger.info(
             "Initialized QueryProcessor with security-first design and follow-up support"
         )

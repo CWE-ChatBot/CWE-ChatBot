@@ -55,7 +55,7 @@ def mock_chainlit_session(mocker):
 
 @pytest.mark.asyncio
 async def test_cwe_analyzer_end_to_end(
-    conversation_manager: ConversationManager, mock_chainlit_session
+    conversation_manager: ConversationManager, _mock_chainlit_session
 ):
     for i, input_text in enumerate(INPUT_SAMPLES):
         print(f"Testing input {i+1}/{len(INPUT_SAMPLES)}")

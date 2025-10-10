@@ -176,5 +176,20 @@ def _mask_url(url: str) -> str:
     return url
 
 
+# Export CLI entry points and create explicit references for analyzers
+__all__ = [
+    "cli",
+    "create_url",
+    "test_iam_auth",
+    "check_auth",
+]
+
+_CLI_COMMANDS: tuple[object, ...] = (
+    cli,
+    create_url,
+    test_iam_auth,
+    check_auth,
+)
+
 if __name__ == "__main__":
     cli()

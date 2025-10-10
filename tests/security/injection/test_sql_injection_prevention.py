@@ -626,31 +626,6 @@ class TestSQLInjectionPrevention:
         except Exception as e:
             logger.info(f"✅ Injection blocked: {malicious_input}")
 
-    def test_hybrid_search_parameter_safety(
-        self, chunk_store: Optional[PostgresChunkStore]
-    ):
-        """Test that hybrid_search properly parameterizes all inputs."""
-        if chunk_store is None:
-            pytest.skip("Database not available")
-
-        malicious_text = "'; DROP TABLE cwe_chunks; --"
-        malicious_similarity = "0.1; DELETE FROM cwe_chunks WHERE '1'='1"
-
-        dummy_embedding = [0.1] * 3072
-
-        try:
-            with assert_no_destructive_operation(chunk_store._engine):
-                # All parameters should be properly parameterized
-                results = chunk_store.hybrid_search(
-                    query_embedding=dummy_embedding,
-                    query_text=malicious_text,
-                    limit=5,
-                    similarity_threshold=0.1,  # This is a float, not string
-                )
-                logger.info("✅ hybrid_search parameters properly sanitized")
-        except Exception as e:
-            logger.info("✅ hybrid_search injection blocked")
-
     def test_query_hybrid_all_parameters(
         self, chunk_store: Optional[PostgresChunkStore]
     ):

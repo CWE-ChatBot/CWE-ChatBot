@@ -294,7 +294,7 @@ async def oauth_callback(
     provider_id: str,
     token: str,
     raw_user_data: Dict[str, Any],
-    default_user: cl.User,
+    _default_user: cl.User,
     id_token: Optional[str] = None,
 ) -> Optional[cl.User]:
     """
@@ -1190,6 +1190,12 @@ if app_config.enable_oauth:
 else:
     logger.info("OAuth callback not registered (OAuth disabled)")
 
+
+# Keep explicit references so static analyzers (e.g., vulture) recognize action handlers
+_ACTION_HANDLER_REFS: tuple[object, ...] = (
+    on_ask_action,
+    on_exit_question_action,
+)
 
 if __name__ == "__main__":
     # This allows running the app directly with: python main.py
