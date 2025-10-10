@@ -42,6 +42,10 @@ def _build_csp() -> str:
     Build the enforced Content-Security-Policy header.
     - Compatibility+ profile: no 'unsafe-inline' in script-src, but keep 'unsafe-eval'
     - Tight connect-src to self + your exact origin (no broad https:/wss:)
+    - Allow external CSS/fonts for Chainlit dependencies:
+      * fonts.googleapis.com - Google Fonts (Inter font family)
+      * cdn.jsdelivr.net - KaTeX CSS for math rendering
+      * fonts.gstatic.com - Google Fonts assets
     """
     https_hosts, wss_hosts = _origin_hosts()
     connect_list = " ".join(["'self'"] + https_hosts + wss_hosts)
@@ -52,9 +56,9 @@ def _build_csp() -> str:
         return (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-eval'; "  # <-- removed 'unsafe-inline'
-            "style-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
             f"img-src {img_list}; "
-            "font-src 'self' data:; "
+            "font-src 'self' data: https://fonts.gstatic.com; "
             f"connect-src {connect_list}; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
