@@ -126,8 +126,9 @@ alert_style = "classic"
 logo_file_url = ""
 
 # Theme-specific logos (D4 Issue #2 fix: eliminate /logo 404 warnings)
-logo_light = "/public/logo_light.png"
-logo_dark = "/public/logo_dark.png"
+# Paths relative to public directory (Chainlit serves from public/)
+logo_light = "logo_light.png"
+logo_dark = "logo_dark.png"
 
 # Load assistant avatar image directly from URL.
 default_avatar_file_url = ""
