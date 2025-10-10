@@ -511,6 +511,14 @@ async def start():
             user_context.persona = persona
             logger.info(f"Persona '{persona}' assigned (OAuth disabled mode)")
 
+    # Check if welcome message already sent (prevent duplicates on reconnections)
+    # Story D2: Fix duplicate welcome messages on WebSocket reconnection (every 150s)
+    if cl.user_session.get("welcome_sent"):
+        logger.debug(
+            "Skipping welcome message - already sent for this session (reconnection)"
+        )
+        return
+
     # Enhanced onboarding welcome message with progressive introduction
     # Personalize welcome if user is authenticated (OAuth mode only)
     user_greeting = "Welcome to the CWE ChatBot! 🛡️"
@@ -572,6 +580,11 @@ Here are some questions to get you started:
 **Ready to begin!** Select your persona above and ask your first question."""
 
     await cl.Message(content=examples_message, elements=[persona_element]).send()
+
+    # Mark welcome message as sent to prevent duplicates on reconnection
+    # Story D2: Prevent duplicate welcome messages on WebSocket reconnection
+    cl.user_session.set("welcome_sent", True)
+    logger.debug("Welcome message sequence completed and flagged")
 
     # Optional: Debug action rendering if DEBUG_ACTIONS=1 (disabled due to environment ValidationError)
     # To test actions, use the CWE Analyzer flow or thumbs-down feedback instead.
