@@ -44,6 +44,7 @@ logger = get_secure_logger(__name__)
 try:
     from chainlit.server import app as asgi_app
     from starlette.middleware.cors import CORSMiddleware
+    from starlette.responses import FileResponse, Response
 
     # Add SecurityHeadersMiddleware for CSP, HSTS, XFO, WebSocket origin validation
     asgi_app.add_middleware(SecurityHeadersMiddleware)
@@ -60,6 +61,38 @@ try:
             allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
         )
         logger.info(f"CORS middleware configured for origin: {public_origin}")
+
+    # D4 Issue #2 fix: Add /logo endpoint to eliminate 404 warnings
+    @asgi_app.get("/logo")
+    async def get_logo(theme: str = "light"):
+        """
+        Serve theme-appropriate logo for Chainlit UI.
+        D4 Issue #2: Chainlit 2.8.0 requests /logo?theme=light/dark
+        """
+        import os.path
+
+        logo_file = "logo_dark.png" if theme == "dark" else "logo_light.png"
+        logo_path = os.path.join(
+            os.path.dirname(__file__), "public", logo_file
+        )
+
+        if os.path.exists(logo_path):
+            return FileResponse(
+                logo_path, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"}
+            )
+        else:
+            # Fallback to existing cwe-logo.png if theme logos don't exist
+            fallback_path = os.path.join(
+                os.path.dirname(__file__), "public", "cwe-logo.png"
+            )
+            if os.path.exists(fallback_path):
+                return FileResponse(
+                    fallback_path, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"}
+                )
+            return Response(status_code=404, content="Logo not found")
+
+    logger.info("Custom /logo endpoint added to eliminate 404 warnings (D4 Issue #2)")
+
 except Exception as e:
     logger.warning(f"Could not add security middleware: {e}")
 
