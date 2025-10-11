@@ -58,7 +58,7 @@ def _build_csp() -> str:
             "script-src 'self' 'unsafe-eval'; "  # <-- removed 'unsafe-inline'
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
             f"img-src {img_list}; "
-            "font-src 'self' data: https://fonts.gstatic.com; "
+            "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "
             f"connect-src {connect_list}; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
