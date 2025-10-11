@@ -147,7 +147,8 @@ deploy_service() {
         --timeout=300 \
         --allow-unauthenticated \
         --execution-environment=gen2 \
-        --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,ENABLE_OAUTH=true,AUTH_MODE=hybrid,CHAINLIT_URL=https://cwe-staging.crashedmind.com,PUBLIC_ORIGIN=https://cwe-staging.crashedmind.com,CSP_MODE=compatible,HSTS_MAX_AGE=31536000,PDF_WORKER_URL=https://pdf-worker-bmgj6wj65a-uc.a.run.app" \
+        --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,POSTGRES_HOST=10.43.0.3,POSTGRES_PORT=5432,POSTGRES_DATABASE=postgres,POSTGRES_USER=app_user,ENABLE_OAUTH=true,AUTH_MODE=hybrid,CHAINLIT_URL=https://cwe-chatbot-staging-bmgj6wj65a-uc.a.run.app,PUBLIC_ORIGIN=https://cwe-chatbot-staging-bmgj6wj65a-uc.a.run.app,CSP_MODE=compatible,HSTS_MAX_AGE=31536000,PDF_WORKER_URL=https://pdf-worker-bmgj6wj65a-uc.a.run.app" \
+        --update-secrets=GEMINI_API_KEY=gemini-api-key:latest,DB_PASSWORD=db-password-app-user:latest,POSTGRES_PASSWORD=db-password-app-user:latest,CHAINLIT_AUTH_SECRET=chainlit-auth-secret:latest,OAUTH_GOOGLE_CLIENT_ID=oauth-google-client-id:latest,OAUTH_GOOGLE_CLIENT_SECRET=oauth-google-client-secret:latest,OAUTH_GITHUB_CLIENT_ID=oauth-github-client-id:latest,OAUTH_GITHUB_CLIENT_SECRET=oauth-github-client-secret:latest,TEST_API_KEY=test-api-key:latest \
         --quiet || {
         print_error "Deployment failed"
         exit 1
