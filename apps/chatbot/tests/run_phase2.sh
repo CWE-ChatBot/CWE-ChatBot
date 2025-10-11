@@ -3,8 +3,9 @@
 
 export CHATBOT_URL="https://cwe-chatbot-staging-bmgj6wj65a-uc.a.run.app"
 
-# Get TEST_API_KEY from Secret Manager
+# Get secrets from Secret Manager
 export TEST_API_KEY=$(gcloud secrets versions access latest --secret=test-api-key --project=cwechatbot)
+export GEMINI_API_KEY=$(gcloud secrets versions access latest --secret=gemini-api-key --project=cwechatbot)
 
 cd /home/chris/work/CyberSecAI/cwe_chatbot_bmad/apps/chatbot/tests
 

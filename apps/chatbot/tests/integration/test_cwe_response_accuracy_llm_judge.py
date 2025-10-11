@@ -229,9 +229,6 @@ LOW_FREQUENCY_CWES = [
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(
-    reason="Integration test - requires chatbot API running (CHATBOT_URL) and GEMINI_API_KEY"
-)
 class TestCWEResponseAccuracyWithLLMJudge:
     """Integration tests for CWE response accuracy using LLM-as-judge."""
 

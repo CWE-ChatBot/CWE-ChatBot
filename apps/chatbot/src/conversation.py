@@ -269,6 +269,135 @@ class ConversationManager:
         except Exception as e:
             return await self._handle_processing_error(session_id, e)
 
+    async def process_user_message(
+        self, session_id: str, message_content: str
+    ) -> Dict[str, Any]:
+        """
+        Non-streaming version for REST API usage (no Chainlit context required).
+
+        Processes user message without streaming, suitable for programmatic access
+        via REST API where WebSocket context is not available.
+
+        Args:
+            session_id: Ephemeral session identifier
+            message_content: User's query text
+
+        Returns:
+            Dict with response text, retrieved CWEs, chunk count, and metadata
+        """
+        try:
+            logger.info(f"Processing API message for session {session_id}")
+
+            # Get user context
+            context = self.get_user_context(session_id)
+
+            # Process query and security checks
+            processed = self.query_processor.process_with_context(
+                message_content, context.get_session_context_for_processing()
+            )
+
+            # Handle off-topic queries
+            if processed.get("query_type") == "off_topic":
+                off_topic_response = (
+                    "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. "
+                    "Your question doesn't appear to be related to cybersecurity topics."
+                )
+                return {
+                    "response": off_topic_response,
+                    "retrieved_cwes": [],
+                    "chunk_count": 0,
+                    "session_id": session_id,
+                    "message": None,
+                }
+
+            # Security validation
+            security_mode = os.getenv("SECURITY_MODE", "FLAG_ONLY").upper()
+            if security_mode == "BLOCK" and processed.get("security_check", {}).get(
+                "is_potentially_malicious", False
+            ):
+                flags = processed.get("security_check", {}).get("detected_patterns", [])
+                fallback_response = self.input_sanitizer.generate_fallback_message(
+                    flags, context.persona
+                )
+
+                self.security_validator.log_security_event(
+                    "unsafe_input_detected",
+                    {
+                        "session_id": session_id,
+                        "security_flags": flags,
+                        "persona": context.persona,
+                    },
+                )
+
+                return {
+                    "response": fallback_response,
+                    "retrieved_cwes": [],
+                    "chunk_count": 0,
+                    "session_id": session_id,
+                    "message": None,
+                    "is_safe": False,
+                    "security_flags": flags,
+                }
+
+            elif processed.get("security_check", {}).get(
+                "is_potentially_malicious", False
+            ):
+                # In FLAG_ONLY mode, just log the event
+                flags = processed.get("security_check", {}).get("detected_patterns", [])
+                self.security_validator.log_security_event(
+                    "unsafe_input_flagged",
+                    {
+                        "session_id": session_id,
+                        "security_flags": flags,
+                        "persona": context.persona,
+                    },
+                )
+
+            sanitized_q = processed.get("sanitized_query", message_content)
+
+            # Delegate to appropriate handler
+            if context.persona == "CWE Analyzer":
+                pipeline_result = await self.analyzer_handler.process(
+                    sanitized_q, context
+                )
+            elif context.persona == "CVE Creator":
+                pipeline_result = await self._handle_cve_creator(sanitized_q, context)
+            else:
+                # Standard personas use pipeline directly
+                pipeline_result = await self.processing_pipeline.process_user_request(
+                    sanitized_q, context
+                )
+
+            # Update context
+            context.add_conversation_entry(
+                sanitized_q,
+                pipeline_result.final_response_text,
+                pipeline_result.retrieved_cwes,
+            )
+            context.clear_evidence()
+
+            # Build response without Chainlit Message object
+            return {
+                "response": pipeline_result.final_response_text,
+                "retrieved_cwes": pipeline_result.retrieved_cwes,
+                "chunk_count": len(pipeline_result.retrieved_chunks),
+                "session_id": session_id,
+                "message": None,
+                "persona": context.persona,
+                "is_low_confidence": pipeline_result.is_low_confidence,
+            }
+
+        except Exception as e:
+            logger.log_exception(f"API message processing failed for session {session_id}", e)
+            return {
+                "response": "I encountered an error processing your request. Please try again.",
+                "retrieved_cwes": [],
+                "chunk_count": 0,
+                "session_id": session_id,
+                "message": None,
+                "error": str(e),
+            }
+
     async def _handle_cve_creator(self, query: str, context: Any) -> "PipelineResult":
         """Handle CVE Creator persona logic."""
 
