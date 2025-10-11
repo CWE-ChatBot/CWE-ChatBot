@@ -10,10 +10,10 @@ import logging
 import os
 import sys
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import chainlit as cl
-from chainlit.input_widget import Select, Switch
+from chainlit.input_widget import InputWidget, Select, Switch
 
 # Use the extended config which loads from environment files automatically
 from src.app_config import config as app_config
@@ -41,6 +41,8 @@ logging.basicConfig(
 logger = get_secure_logger(__name__)
 
 # Story S-12: Add security middleware to Chainlit's Starlette app
+# Predeclare asgi_app to satisfy static type checkers when imports fail
+asgi_app: Any | None = None
 try:
     from chainlit.server import app as asgi_app
     from starlette.middleware.cors import CORSMiddleware
@@ -108,10 +110,13 @@ except Exception as e:
 
 # Story CWE-82: Add REST API for programmatic query access (testing/integrations)
 try:
-    from api import router as api_router, set_conversation_manager
+    from api import router as api_router
 
-    asgi_app.include_router(api_router)
-    logger.info("REST API router mounted at /api/v1")
+    if asgi_app is not None:
+        asgi_app.include_router(api_router)
+        logger.info("REST API router mounted at /api/v1")
+    else:
+        logger.warning("ASGI app unavailable; skipping REST API router mount")
 except Exception as e:
     logger.warning(f"Could not mount REST API router: {e}")
 
@@ -258,7 +263,8 @@ def initialize_components() -> bool:
             if not database_url:
                 # Derive URL from POSTGRES_* if available
                 if app_config.pg_user and app_config.pg_password:
-                    database_url = f"postgresql://{app_config.pg_user}:{app_config.pg_password}@{app_config.pg_host}:{app_config.pg_port}/{app_config.pg_database}"
+                    # Use postgresql+psycopg:// to use psycopg3 driver (not psycopg2)
+                    database_url = f"postgresql+psycopg://{app_config.pg_user}:{app_config.pg_password}@{app_config.pg_host}:{app_config.pg_port}/{app_config.pg_database}"
             if not database_url:
                 logger.error("No database configuration found!")
                 raise ValueError(
@@ -477,15 +483,19 @@ async def start():
 
     # Build and display the Chainlit settings panel
     try:
-        settings_panel = cl.ChatSettings(
+        items = {
+            "basic": "basic",
+            "standard": "standard",
+            "detailed": "detailed",
+        }
+        widgets: List[InputWidget] = cast(
+            List[InputWidget],
             [
                 Select(
                     id="detail_level",
                     label="Detail Level",
-                    values=["basic", "standard", "detailed"],
-                    initial_index=["basic", "standard", "detailed"].index(
-                        default_settings.detail_level
-                    ),
+                    items=items,
+                    initial=default_settings.detail_level,
                     description="How much detail to include",
                 ),
                 Switch(
@@ -498,8 +508,9 @@ async def start():
                     label="Include Mitigations",
                     initial=default_settings.include_mitigations,
                 ),
-            ]
+            ],
         )
+        settings_panel = cl.ChatSettings(widgets)
         await settings_panel.send()
     except Exception as e:
         # Non-fatal if UI widgets API changes; continue without settings panel

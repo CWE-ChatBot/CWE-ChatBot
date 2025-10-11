@@ -103,14 +103,16 @@ check_prerequisites() {
 build_image() {
     print_header "Building Docker Image"
 
-    IMAGE_TAG="us-central1-docker.pkg.dev/${PROJECT}/chatbot/chatbot:staging"
+    # Use same image as production (:latest tag)
+    # Staging behavior is controlled by AUTH_MODE=hybrid env var, not image tag
+    IMAGE_TAG="us-central1-docker.pkg.dev/${PROJECT}/chatbot/chatbot:latest"
 
-    print_info "Building STAGING image from project root"
+    print_info "Building image from project root (shared image with production)"
     print_info "Image: $IMAGE_TAG"
+    print_info "Note: Staging behavior controlled by AUTH_MODE=hybrid environment variable"
 
     gcloud builds submit \
         --config=apps/chatbot/cloudbuild.yaml \
-        --substitutions=_IMAGE_TAG=staging \
         --suppress-logs \
         --quiet || {
         print_error "Build failed"
@@ -124,7 +126,7 @@ build_image() {
 deploy_service() {
     print_header "Deploying to Cloud Run (STAGING)"
 
-    IMAGE_TAG="us-central1-docker.pkg.dev/${PROJECT}/chatbot/chatbot:staging"
+    IMAGE_TAG="us-central1-docker.pkg.dev/${PROJECT}/chatbot/chatbot:latest"
 
     print_info "Service: $SERVICE"
     print_info "Region: $REGION"
