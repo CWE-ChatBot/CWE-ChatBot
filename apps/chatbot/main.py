@@ -63,22 +63,25 @@ try:
         logger.info(f"CORS middleware configured for origin: {public_origin}")
 
     # D4 Issue #2 fix: Add /logo endpoint to eliminate 404 warnings
-    @asgi_app.get("/logo")
-    async def get_logo(theme: str = "light"):
+    from starlette.routing import Route
+    from starlette.requests import Request
+
+    async def get_logo(request: Request):
         """
         Serve theme-appropriate logo for Chainlit UI.
         D4 Issue #2: Chainlit 2.8.0 requests /logo?theme=light/dark
         """
         import os.path
 
+        theme = request.query_params.get("theme", "light")
         logo_file = "logo_dark.png" if theme == "dark" else "logo_light.png"
-        logo_path = os.path.join(
-            os.path.dirname(__file__), "public", logo_file
-        )
+        logo_path = os.path.join(os.path.dirname(__file__), "public", logo_file)
 
         if os.path.exists(logo_path):
             return FileResponse(
-                logo_path, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"}
+                logo_path,
+                media_type="image/png",
+                headers={"Cache-Control": "public, max-age=3600"},
             )
         else:
             # Fallback to existing cwe-logo.png if theme logos don't exist
@@ -87,10 +90,15 @@ try:
             )
             if os.path.exists(fallback_path):
                 return FileResponse(
-                    fallback_path, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"}
+                    fallback_path,
+                    media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"},
                 )
             return Response(status_code=404, content="Logo not found")
 
+    # Add the route explicitly to the Starlette app
+    logo_route = Route("/logo", get_logo, methods=["GET"])
+    asgi_app.router.routes.insert(0, logo_route)  # Insert at beginning to override any catchall
     logger.info("Custom /logo endpoint added to eliminate 404 warnings (D4 Issue #2)")
 
 except Exception as e:
