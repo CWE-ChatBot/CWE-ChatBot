@@ -52,6 +52,7 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Copy application files with secure permissions
 COPY --chown=appuser:appuser apps/chatbot/main.py ./main.py
+COPY --chown=appuser:appuser apps/chatbot/api.py ./api.py
 COPY --chown=appuser:appuser apps/chatbot/chainlit.md ./chainlit.md
 # Create directories - let Chainlit auto-generate config.toml with correct format
 RUN mkdir -p ./.chainlit ./public
@@ -73,4 +74,12 @@ EXPOSE 8080
 
 # Start command for Cloud Run
 # Note: Cloud Run uses TCP startup probe on port 8080, not Docker HEALTHCHECK
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD python -c "import urllib.request,sys;\n\
+try:\n\
+  r=urllib.request.urlopen('http://127.0.0.1:8080/', timeout=3);\n\
+  sys.exit(0 if r.getcode() < 500 else 1)\n\
+except Exception:\n\
+  sys.exit(1)" 
+
 CMD ["python", "-m", "chainlit", "run", "main.py", "--host", "0.0.0.0", "--port", "8080"]
