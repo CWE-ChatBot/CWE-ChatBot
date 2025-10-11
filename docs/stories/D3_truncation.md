@@ -61,18 +61,7 @@ if finish_reason not in ["STOP", 1]:  # STOP=1 is normal completion
 Log: "Non-normal finish_reason: 2 - response may be truncated"
 ```
 
-**User Activity Analysis (OAuth integrations):**
-```
-773 sessions - crashedmind@gmail.com (Primary tester)
-147 sessions - asummers@mitre.org
- 59 sessions - jay@empiricalsecurity.com
- 16 sessions - mpower@mitre.org
-  3 sessions - chris.madden@yahooinc.com
-  1 session  - rdornin@protonmail.com
-  1 session  - rdornin@mitre.org
----
-Total: 1,000 OAuth integration events across 7 users
-```
+
 
 ### Finish Reason Codes
 - `finish_reason=1` (STOP): Normal completion - Model decided response is complete

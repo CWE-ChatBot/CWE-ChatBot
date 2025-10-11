@@ -29,7 +29,6 @@ from typing import Dict, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-
 from src.app_config import config as app_config
 from src.conversation import ConversationManager
 from src.secrets import get_test_api_key
@@ -333,7 +332,9 @@ async def test_login(
         path="/",
     )
 
-    logger.info(f"test-login: Issued test session {session_id} (expires in {session_expiry}s)")
+    logger.info(
+        f"test-login: Issued test session {session_id} (expires in {session_expiry}s)"
+    )
 
     return TestLoginResponse(
         ok=True,

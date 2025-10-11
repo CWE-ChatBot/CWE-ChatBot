@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chatbot
+  labels:
+    app: cwe-chatbot
+    managed-by: manifests

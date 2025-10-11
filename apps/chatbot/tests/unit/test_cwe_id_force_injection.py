@@ -6,8 +6,9 @@ Tests the fix for ISSUE-CWE-82-NOT-FOUND.md to ensure that when a specific
 CWE ID is mentioned in a query, it appears in the results even if hybrid
 search doesn't rank it highly.
 """
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from src.processing.pipeline import ProcessingPipeline
 from src.processing.query_processor import QueryProcessor
 
@@ -38,16 +39,24 @@ class TestCWEIDForceInjection:
         def fetch_canonical_sections(cwe_ids):
             if "CWE-82" in cwe_ids:
                 return [
-                    make_chunk("CWE-82", "Description",
-                              "Improper Neutralization of Script in Attributes of IMG Tags",
-                              hybrid=0.0),
-                    make_chunk("CWE-82", "Extended_Description",
-                              "Attackers can embed XSS exploits into IMG attributes",
-                              hybrid=0.0),
+                    make_chunk(
+                        "CWE-82",
+                        "Description",
+                        "Improper Neutralization of Script in Attributes of IMG Tags",
+                        hybrid=0.0,
+                    ),
+                    make_chunk(
+                        "CWE-82",
+                        "Extended_Description",
+                        "Attackers can embed XSS exploits into IMG attributes",
+                        hybrid=0.0,
+                    ),
                 ]
             return []
 
-        handler.fetch_canonical_sections_for_cwes = MagicMock(side_effect=fetch_canonical_sections)
+        handler.fetch_canonical_sections_for_cwes = MagicMock(
+            side_effect=fetch_canonical_sections
+        )
         return handler
 
     @pytest.fixture
@@ -81,10 +90,14 @@ class TestCWEIDForceInjection:
 
         # Verify CWE-82 was force-injected
         cwe_ids = [c["metadata"]["cwe_id"] for c in processed_chunks]
-        assert "CWE-82" in cwe_ids, "CWE-82 should be force-injected when missing from results"
+        assert (
+            "CWE-82" in cwe_ids
+        ), "CWE-82 should be force-injected when missing from results"
 
         # Verify fetch was called with CWE-82
-        pipeline.query_handler.fetch_canonical_sections_for_cwes.assert_called_once_with(["CWE-82"])
+        pipeline.query_handler.fetch_canonical_sections_for_cwes.assert_called_once_with(
+            ["CWE-82"]
+        )
 
     def test_force_injection_applies_high_score_boost(self, pipeline):
         """Test that force-injected CWE IDs get +3.0 score boost."""
@@ -96,12 +109,16 @@ class TestCWEIDForceInjection:
         processed_chunks = pipeline._apply_retrieval_business_logic(query, raw_chunks)
 
         # Find CWE-82 chunk
-        cwe_82_chunks = [c for c in processed_chunks if c["metadata"]["cwe_id"] == "CWE-82"]
+        cwe_82_chunks = [
+            c for c in processed_chunks if c["metadata"]["cwe_id"] == "CWE-82"
+        ]
         assert len(cwe_82_chunks) > 0, "CWE-82 should be in results"
 
         # Verify boost applied (original 0.0 + 3.0 boost = 3.0)
         for chunk in cwe_82_chunks:
-            assert chunk["scores"]["hybrid"] >= 3.0, "Force-injected chunks should have +3.0 boost"
+            assert (
+                chunk["scores"]["hybrid"] >= 3.0
+            ), "Force-injected chunks should have +3.0 boost"
 
     def test_no_force_injection_when_cwe_id_already_in_results(self, pipeline):
         """Test that force-injection doesn't happen if CWE ID already in results."""
@@ -119,19 +136,28 @@ class TestCWEIDForceInjection:
         pipeline.query_handler.fetch_canonical_sections_for_cwes.assert_not_called()
 
         # Verify no duplicates
-        cwe_82_count = sum(1 for c in processed_chunks if c["metadata"]["cwe_id"] == "CWE-82")
+        cwe_82_count = sum(
+            1 for c in processed_chunks if c["metadata"]["cwe_id"] == "CWE-82"
+        )
         assert cwe_82_count == 1, "Should not duplicate CWE-82 if already in results"
 
     def test_force_injection_with_multiple_missing_cwe_ids(self, pipeline):
         """Test force-injection when multiple CWE IDs mentioned but missing."""
+
         # Mock fetch to return both CWE-82 and CWE-79
         def fetch_multiple(cwe_ids):
             chunks = []
             for cwe_id in cwe_ids:
-                chunks.append(make_chunk(cwe_id, "Description", f"{cwe_id} description", hybrid=0.0))
+                chunks.append(
+                    make_chunk(
+                        cwe_id, "Description", f"{cwe_id} description", hybrid=0.0
+                    )
+                )
             return chunks
 
-        pipeline.query_handler.fetch_canonical_sections_for_cwes = MagicMock(side_effect=fetch_multiple)
+        pipeline.query_handler.fetch_canonical_sections_for_cwes = MagicMock(
+            side_effect=fetch_multiple
+        )
 
         query = "Compare CWE-82 and CWE-79"
         raw_chunks = [
@@ -186,7 +212,9 @@ class TestCWEIDForceInjection:
             extracted = result.get("cwe_ids", set())
 
             for expected_id in expected_cwe_ids:
-                assert expected_id in extracted, f"Failed to extract {expected_id} from '{query}'"
+                assert (
+                    expected_id in extracted
+                ), f"Failed to extract {expected_id} from '{query}'"
 
     def test_force_injection_preserves_original_results(self, pipeline):
         """Test that force-injection adds to results without removing existing ones."""
@@ -205,7 +233,9 @@ class TestCWEIDForceInjection:
         assert "CWE-82" in cwe_ids, "Force-injected CWE should be added"
 
         # Verify total count is original + injected
-        assert len(processed_chunks) > len(raw_chunks), "Should have more results after injection"
+        assert len(processed_chunks) > len(
+            raw_chunks
+        ), "Should have more results after injection"
 
     def test_boost_mentioned_cwe_ids_in_existing_results(self, pipeline):
         """Test that mentioned CWE IDs in results get +2.0 boost even if already present."""
@@ -220,10 +250,14 @@ class TestCWEIDForceInjection:
         processed_chunks = pipeline._apply_retrieval_business_logic(query, raw_chunks)
 
         # Find CWE-82 chunk
-        cwe_82_chunk = next(c for c in processed_chunks if c["metadata"]["cwe_id"] == "CWE-82")
+        cwe_82_chunk = next(
+            c for c in processed_chunks if c["metadata"]["cwe_id"] == "CWE-82"
+        )
 
         # Verify boost applied (0.15 + 2.0 boost = 2.15)
-        assert cwe_82_chunk["scores"]["hybrid"] >= 2.0, "Mentioned CWE should get +2.0 boost"
+        assert (
+            cwe_82_chunk["scores"]["hybrid"] >= 2.0
+        ), "Mentioned CWE should get +2.0 boost"
 
 
 class TestCWEIDExtractionEdgeCases:
@@ -234,7 +268,9 @@ class TestCWEIDExtractionEdgeCases:
         processor = QueryProcessor()
         result = processor.preprocess_query("What is CWE 82?")
         extracted = result.get("cwe_ids", set())
-        assert "CWE-82" in extracted, "Should extract 'CWE 82' and normalize to 'CWE-82'"
+        assert (
+            "CWE-82" in extracted
+        ), "Should extract 'CWE 82' and normalize to 'CWE-82'"
 
     def test_extract_multiple_cwe_ids(self):
         """Test extraction of multiple CWE IDs from one query."""
@@ -257,7 +293,9 @@ class TestCWEIDExtractionEdgeCases:
         processor = QueryProcessor()
         result = processor.preprocess_query("How do I prevent SQL injection?")
         extracted = result.get("cwe_ids", set())
-        assert len(extracted) == 0, "Semantic query without CWE IDs should extract nothing"
+        assert (
+            len(extracted) == 0
+        ), "Semantic query without CWE IDs should extract nothing"
 
 
 if __name__ == "__main__":

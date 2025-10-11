@@ -126,7 +126,10 @@ class Config:
         _PROJECT_ID
     )
     # Whitelist (comma-separated emails or @domain suffixes)
-    allowed_users_raw: Optional[str] = os.getenv("ALLOWED_USERS")
+    # Prefer environment variable; fallback to a built-in allowlist for production use
+    allowed_users_raw: Optional[str] = os.getenv("ALLOWED_USERS") or (
+        "crashedmind@gmail.com,@mitre.org"
+    )
 
     def get_pg_config(self) -> Dict[str, Any]:
         """Get PostgreSQL connection configuration."""

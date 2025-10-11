@@ -377,11 +377,8 @@ poetry run chainlit --version
 
 ### Health Checks
 ```bash
-# Application health
-curl http://localhost:8000/health
-
-# Database health
-poetry run python healthcheck.py
+# Application health (if exposed)
+curl http://localhost:8000/health || echo "No /health endpoint (404 is OK)"
 ```
 
 ## 📄 License

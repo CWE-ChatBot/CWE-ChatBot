@@ -25,7 +25,6 @@ import re
 import pytest
 from playwright.async_api import Page, expect
 
-
 CHATBOT_URL = os.getenv("CHATBOT_URL", "http://localhost:8000")
 USE_AUTH = os.getenv("USE_AUTH", "false").lower() == "true"
 TEST_EMAIL = os.getenv("TEST_EMAIL", "test@example.com")
@@ -143,7 +142,9 @@ class TestCWEQueriesE2E:
 
         # Verify at least one expected keyword present (case-insensitive)
         response_lower = response.lower()
-        found_keywords = [kw for kw in expected_keywords if kw.lower() in response_lower]
+        found_keywords = [
+            kw for kw in expected_keywords if kw.lower() in response_lower
+        ]
         assert (
             len(found_keywords) > 0
         ), f"Response should contain at least one of {expected_keywords}, got: {response[:200]}"
@@ -221,9 +222,7 @@ class TestCWEQueriesE2E:
         response = await self.send_message_and_wait_for_response(page, query)
 
         # Verify response has reasonable length (not too short)
-        assert (
-            len(response) > 50
-        ), "Response should be more than just a few words"
+        assert len(response) > 50, "Response should be more than just a few words"
 
         # Optionally verify markdown formatting if chatbot uses it
         # (sections, bullet points, code blocks, etc.)

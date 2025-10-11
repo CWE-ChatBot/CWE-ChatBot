@@ -1,4 +1,24 @@
+limit access oauth
 redo the tests with unsafe and update
+
+
+Request URL
+https://cwe.crashedmind.com/project/file/e662fac2-df69-42f0-8d7a-b44702e88b72?session_id=138c7a11-732b-471f-ada2-901ea489d162&
+Request Method
+GET
+Status Code
+404 Not Found
+Remote Address
+34.49.0.7:443
+Referrer Policy
+no-referrer
+
+{"detail":"File not found"}
+
+
+
+
+
 
 
 Buttons for the initial prompts

@@ -100,7 +100,7 @@ gcloud builds submit --config=apps/chatbot/cloudbuild.yaml
 ### Container Security
 - **Minimal Base Image**: Uses `python:3.11-slim` for reduced attack surface
 - **Non-root User**: Container runs as non-root user `appuser`
-- **Health Checks**: Built-in health check endpoint for service monitoring
+- **Health**: Cloud Run uses a TCP startup probe on port 8080; an HTTP `/health` endpoint is optional.
 
 ## Monitoring and Logging
 
@@ -111,9 +111,15 @@ https://console.cloud.google.com/logs/query;query=resource.type%3D%22cloud_run_r
 ```
 
 ### Health Check
-The service exposes a health check endpoint at `/health` that returns:
-```json
-{"status": "healthy", "service": "cwe-chatbot"}
+- Production verification shows `GET /health` returns the Chainlit app HTML with HTTP 200 (no JSON body). This is expected since we do not expose a dedicated health endpoint.
+- Cloud Run relies on its own TCP probe and does not use Docker `HEALTHCHECK`.
+- You can verify availability with either endpoint:
+```bash
+# HTML response (expected): should return 200
+curl -s -o /dev/null -w "%{http_code}\n" https://YOUR_SERVICE_URL/health
+
+# Or check the root page
+curl -s -o /dev/null -w "%{http_code}\n" https://YOUR_SERVICE_URL/
 ```
 
 ## Local Development
@@ -170,6 +176,6 @@ gcloud run services describe cwe-chatbot --region=us-central1
 # View logs
 gcloud logs read --filter="resource.type=cloud_run_revision AND resource.labels.service_name=cwe-chatbot"
 
-# Test health endpoint
-curl https://YOUR_SERVICE_URL/health
+# Test health endpoint (HTML 200 expected)
+curl -s -o /dev/null -w "%{http_code}\n" https://YOUR_SERVICE_URL/health
 ```

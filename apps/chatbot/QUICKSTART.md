@@ -175,7 +175,7 @@ gcloud logging read 'resource.type="cloud_run_revision" resource.labels.service_
 SERVICE_URL=$(gcloud run services describe cwe-chatbot --region=us-central1 --format='value(status.url)')
 
 # Test health endpoint
-curl $SERVICE_URL/health
+curl -s -o /dev/null -w "%{http_code}\n" $SERVICE_URL/health  # 200 HTML or 404 depending on config
 
 # Open in browser
 open $SERVICE_URL  # macOS
