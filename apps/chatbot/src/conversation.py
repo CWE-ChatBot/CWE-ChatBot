@@ -103,13 +103,30 @@ class ConversationManager:
     def get_user_context(self, session_id: str) -> UserContext:
         """
         Public accessor to retrieve or create the per-user context.
-        Uses the centralized helper from src.utils.session.
+
+        For WebSocket sessions: Uses Chainlit's session storage
+        For API sessions: Creates ephemeral context without Chainlit dependency
         """
-        ctx = get_user_context()
-        # Bind session id if missing (back-compat)
-        if not getattr(ctx, "session_id", None):
-            ctx.session_id = session_id
-        return ctx
+        # Check if we're in a Chainlit WebSocket context
+        try:
+            import chainlit as cl
+
+            # Try to access Chainlit context - will raise ChainlitContextException if not available
+            _ = cl.user_session
+            # WebSocket context available, use normal session storage
+            ctx = get_user_context()
+            if not getattr(ctx, "session_id", None):
+                ctx.session_id = session_id
+            return ctx
+        except Exception:
+            # No Chainlit context (API call) - create ephemeral context
+            if not hasattr(self, "session_contexts"):
+                self.session_contexts: Dict[str, UserContext] = {}
+            if session_id not in self.session_contexts:
+                ctx = UserContext()
+                ctx.session_id = session_id
+                self.session_contexts[session_id] = ctx
+            return self.session_contexts[session_id]
 
     async def process_user_message_streaming(
         self, session_id: str, message_content: str, message_id: str
@@ -388,7 +405,9 @@ class ConversationManager:
             }
 
         except Exception as e:
-            logger.log_exception(f"API message processing failed for session {session_id}", e)
+            logger.log_exception(
+                f"API message processing failed for session {session_id}", e
+            )
             return {
                 "response": "I encountered an error processing your request. Please try again.",
                 "retrieved_cwes": [],
