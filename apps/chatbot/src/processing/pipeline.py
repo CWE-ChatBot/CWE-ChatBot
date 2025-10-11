@@ -194,8 +194,16 @@ class ProcessingPipeline:
             user_prefs = user_context.get_persona_preferences()
             raw_chunks = await self.query_handler.process_query(query, user_prefs)
 
+            # Debug: Log what raw retrieval returned
+            raw_cwes = [c.get("metadata", {}).get("cwe_id", "UNKNOWN") for c in raw_chunks]
+            logger.info(f"[DEBUG_PIPELINE] Raw retrieval returned {len(raw_chunks)} chunks with CWEs: {raw_cwes}")
+
             # Step 2: Apply business logic (MOVED FROM QueryHandler)
             processed_chunks = self._apply_retrieval_business_logic(query, raw_chunks)
+
+            # Debug: Log after business logic processing
+            processed_cwes = [c.get("metadata", {}).get("cwe_id", "UNKNOWN") for c in processed_chunks]
+            logger.info(f"[DEBUG_PIPELINE] After business logic: {len(processed_chunks)} chunks with CWEs: {processed_cwes}")
 
             # Step 3: Generate recommendations (existing logic)
             query_result = self.generate_recommendations(
@@ -220,6 +228,14 @@ class ProcessingPipeline:
             )
 
             # Step 6: Generate LLM response
+            # Debug: Log what chunks are being passed to response generator
+            chunks_to_llm_cwes = [
+                c.get("metadata", {}).get("cwe_id", "UNKNOWN") for c in processed_chunks
+            ]
+            logger.info(
+                f"[DEBUG_PIPELINE] Passing {len(processed_chunks)} chunks to LLM with CWEs: {chunks_to_llm_cwes}"
+            )
+
             raw_response = await self.response_generator.generate_response_full_once(
                 llm_prompt,
                 processed_chunks,
@@ -423,21 +439,37 @@ class ProcessingPipeline:
         query_analysis = self.query_processor.preprocess_query(query)
         extracted_cwe_ids = query_analysis.get("cwe_ids", set())
 
+        # Debug: Log extracted CWE IDs
+        logger.info(f"[DEBUG_PIPELINE] Extracted CWE IDs from query '{query[:50]}': {extracted_cwe_ids}")
+
         processed_chunks = list(raw_chunks)  # Start with raw results
 
-        # Force-inject canonical sections if no results for mentioned CWE IDs
-        if extracted_cwe_ids and not processed_chunks and self.query_handler:
-            forced_sections = self.query_handler.fetch_canonical_sections_for_cwes(
-                list(extracted_cwe_ids)
-            )
-            for chunk in forced_sections:
-                scores = chunk.get("scores", {})
-                scores["hybrid"] = scores.get("hybrid", 0.0) + 3.0  # Strong boost
-                chunk["scores"] = scores
-            processed_chunks.extend(forced_sections)
-            logger.info(
-                f"Force-injected sections for mentioned CWE IDs: {extracted_cwe_ids}"
-            )
+        # Force-inject canonical sections if mentioned CWE IDs not in results
+        if extracted_cwe_ids and self.query_handler:
+            # Check which extracted CWE IDs are missing from results
+            retrieved_cwe_ids = set()
+            for chunk in processed_chunks:
+                metadata = chunk.get("metadata", {})
+                if metadata.get("cwe_id"):
+                    retrieved_cwe_ids.add(metadata.get("cwe_id").upper())
+
+            missing_cwe_ids = [cid for cid in extracted_cwe_ids if cid.upper() not in retrieved_cwe_ids]
+
+            if missing_cwe_ids:
+                logger.info(
+                    f"[DEBUG_PIPELINE] Force-injecting missing CWE IDs: {missing_cwe_ids} (retrieved: {retrieved_cwe_ids})"
+                )
+                forced_sections = self.query_handler.fetch_canonical_sections_for_cwes(
+                    missing_cwe_ids
+                )
+                for chunk in forced_sections:
+                    scores = chunk.get("scores", {})
+                    scores["hybrid"] = scores.get("hybrid", 0.0) + 3.0  # Strong boost
+                    chunk["scores"] = scores
+                processed_chunks.extend(forced_sections)
+                logger.info(
+                    f"Force-injected {len(forced_sections)} sections for mentioned CWE IDs: {missing_cwe_ids}"
+                )
 
         # Boost mentioned CWE IDs in existing results
         if extracted_cwe_ids and processed_chunks:

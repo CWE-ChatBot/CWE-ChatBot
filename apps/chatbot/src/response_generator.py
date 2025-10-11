@@ -434,6 +434,11 @@ Response:""",
             by_cwe.setdefault(cid, []).append(ch)
 
         # Build per-CWE sections
+        cwe_ids_in_context = list(by_cwe.keys())
+        logger.info(
+            f"[DEBUG_CONTEXT] Building context from {len(chunks)} chunks covering {len(cwe_ids_in_context)} CWEs: {cwe_ids_in_context}"
+        )
+
         for cid, group in by_cwe.items():
             best = max(
                 group, key=lambda g: float((g.get("scores") or {}).get("hybrid", 0.0))
@@ -458,7 +463,22 @@ Response:""",
 
         # Hard cap overall context size by characters to keep prompt size safe
         context_text = "\n".join(context_parts)
-        return context_text[: config.max_context_length]
+        final_context = context_text[: config.max_context_length]
+
+        # Log context stats for debugging
+        was_truncated = len(context_text) > config.max_context_length
+        final_cwe_ids = []
+        for line in final_context.split("\n"):
+            if line.startswith("--- CWE-"):
+                cwe_id = line.split(":")[0].replace("--- ", "").strip()
+                final_cwe_ids.append(cwe_id)
+
+        logger.info(
+            f"[DEBUG_CONTEXT] Final context: {len(final_context)}/{config.max_context_length} chars, "
+            f"truncated={was_truncated}, CWEs in final context: {final_cwe_ids}"
+        )
+
+        return final_context
 
     def _clean_response_chunk(self, chunk: str) -> str:
         """
