@@ -195,15 +195,23 @@ class ProcessingPipeline:
             raw_chunks = await self.query_handler.process_query(query, user_prefs)
 
             # Debug: Log what raw retrieval returned
-            raw_cwes = [c.get("metadata", {}).get("cwe_id", "UNKNOWN") for c in raw_chunks]
-            logger.info(f"[DEBUG_PIPELINE] Raw retrieval returned {len(raw_chunks)} chunks with CWEs: {raw_cwes}")
+            raw_cwes = [
+                c.get("metadata", {}).get("cwe_id", "UNKNOWN") for c in raw_chunks
+            ]
+            logger.info(
+                f"[DEBUG_PIPELINE] Raw retrieval returned {len(raw_chunks)} chunks with CWEs: {raw_cwes}"
+            )
 
             # Step 2: Apply business logic (MOVED FROM QueryHandler)
             processed_chunks = self._apply_retrieval_business_logic(query, raw_chunks)
 
             # Debug: Log after business logic processing
-            processed_cwes = [c.get("metadata", {}).get("cwe_id", "UNKNOWN") for c in processed_chunks]
-            logger.info(f"[DEBUG_PIPELINE] After business logic: {len(processed_chunks)} chunks with CWEs: {processed_cwes}")
+            processed_cwes = [
+                c.get("metadata", {}).get("cwe_id", "UNKNOWN") for c in processed_chunks
+            ]
+            logger.info(
+                f"[DEBUG_PIPELINE] After business logic: {len(processed_chunks)} chunks with CWEs: {processed_cwes}"
+            )
 
             # Step 3: Generate recommendations (existing logic)
             query_result = self.generate_recommendations(
@@ -440,7 +448,9 @@ class ProcessingPipeline:
         extracted_cwe_ids = query_analysis.get("cwe_ids", set())
 
         # Debug: Log extracted CWE IDs
-        logger.info(f"[DEBUG_PIPELINE] Extracted CWE IDs from query '{query[:50]}': {extracted_cwe_ids}")
+        logger.info(
+            f"[DEBUG_PIPELINE] Extracted CWE IDs from query '{query[:50]}': {extracted_cwe_ids}"
+        )
 
         processed_chunks = list(raw_chunks)  # Start with raw results
 
@@ -453,7 +463,9 @@ class ProcessingPipeline:
                 if metadata.get("cwe_id"):
                     retrieved_cwe_ids.add(metadata.get("cwe_id").upper())
 
-            missing_cwe_ids = [cid for cid in extracted_cwe_ids if cid.upper() not in retrieved_cwe_ids]
+            missing_cwe_ids = [
+                cid for cid in extracted_cwe_ids if cid.upper() not in retrieved_cwe_ids
+            ]
 
             if missing_cwe_ids:
                 logger.info(

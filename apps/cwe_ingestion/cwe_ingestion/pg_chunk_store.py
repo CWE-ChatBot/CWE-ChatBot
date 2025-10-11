@@ -197,7 +197,7 @@ class PostgresChunkStore:
             try:
                 # D4 investigation: Log connection state before use
                 try:
-                    status = getattr(conn, 'status', 'unknown')
+                    status = getattr(conn, "status", "unknown")
                     logger.debug(f"Connection checked out, status: {status}")
                 except Exception:
                     pass
@@ -205,31 +205,41 @@ class PostgresChunkStore:
                 yield conn
 
                 # D4 investigation: Log successful completion
-                logger.debug("Connection use completed successfully, committing transaction")
+                logger.debug(
+                    "Connection use completed successfully, committing transaction"
+                )
                 # Commit transaction on successful completion
                 conn.commit()
             except Exception as e:
                 # D4 investigation: Log rollback with error details
-                logger.warning(f"Connection use failed, rolling back transaction: {type(e).__name__}")
+                logger.warning(
+                    f"Connection use failed, rolling back transaction: {type(e).__name__}"
+                )
                 # Rollback on error
                 try:
                     conn.rollback()
                 except Exception as rb_error:
-                    logger.error(f"Rollback failed: {type(rb_error).__name__}: {rb_error}")
+                    logger.error(
+                        f"Rollback failed: {type(rb_error).__name__}: {rb_error}"
+                    )
                 raise
             finally:
                 # D4 investigation: Ensure clean state before returning to pool
                 try:
                     # Check if connection is in a clean state
-                    status = getattr(conn, 'status', None)
-                    if status is not None and hasattr(psycopg, 'pq'):
+                    status = getattr(conn, "status", None)
+                    if status is not None and hasattr(psycopg, "pq"):
                         # psycopg v3 has TransactionStatus enum
                         if status != psycopg.pq.TransactionStatus.IDLE:
-                            logger.warning(f"Connection not idle before pool return, status: {status}, forcing rollback")
+                            logger.warning(
+                                f"Connection not idle before pool return, status: {status}, forcing rollback"
+                            )
                             try:
                                 conn.rollback()
                             except Exception as cleanup_error:
-                                logger.error(f"Cleanup rollback failed: {cleanup_error}")
+                                logger.error(
+                                    f"Cleanup rollback failed: {cleanup_error}"
+                                )
                 except Exception:
                     pass
 

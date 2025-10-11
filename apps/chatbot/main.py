@@ -63,8 +63,8 @@ try:
         logger.info(f"CORS middleware configured for origin: {public_origin}")
 
     # D4 Issue #2 fix: Add /logo endpoint to eliminate 404 warnings
-    from starlette.routing import Route
     from starlette.requests import Request
+    from starlette.routing import Route
 
     async def get_logo(request: Request):
         """
@@ -98,7 +98,9 @@ try:
 
     # Add the route explicitly to the Starlette app
     logo_route = Route("/logo", get_logo, methods=["GET"])
-    asgi_app.router.routes.insert(0, logo_route)  # Insert at beginning to override any catchall
+    asgi_app.router.routes.insert(
+        0, logo_route
+    )  # Insert at beginning to override any catchall
     logger.info("Custom /logo endpoint added to eliminate 404 warnings (D4 Issue #2)")
 
 except Exception as e:

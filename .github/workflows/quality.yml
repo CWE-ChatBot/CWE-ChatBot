@@ -188,3 +188,24 @@ jobs:
           else
             echo "Vulture found no reportable dead code."
           fi
+
+  # === Checkov (SARIF -> Code Scanning) ===
+  checkov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Checkov
+        run: python -m pip install --upgrade pip checkov
+
+      - name: Run Checkov (SARIF only, skip tests)
+        run: |
+          checkov -d . \
+            --framework dockerfile,github_actions,kubernetes,helm \
+            --skip-path ".git,.venv,venv,node_modules,**/tests/**" \
+            -o sarif --output-file-path checkov.sarif || true
+
+      - name: Upload Checkov SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov.sarif
