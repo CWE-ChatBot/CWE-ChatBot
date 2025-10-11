@@ -230,7 +230,7 @@ LOW_FREQUENCY_CWES = [
 
 @pytest.mark.asyncio
 @pytest.mark.skip(
-    reason="Integration test - requires production chatbot running and GEMINI_API_KEY"
+    reason="Integration test - requires chatbot API running (CHATBOT_URL) and GEMINI_API_KEY"
 )
 class TestCWEResponseAccuracyWithLLMJudge:
     """Integration tests for CWE response accuracy using LLM-as-judge."""
@@ -247,10 +247,7 @@ class TestCWEResponseAccuracyWithLLMJudge:
 
     async def query_chatbot(self, cwe_id: str) -> str:
         """
-        Query the chatbot for a specific CWE.
-
-        This should be replaced with actual chatbot API call when available.
-        For now, returns a placeholder.
+        Query the chatbot for a specific CWE via REST API.
 
         Args:
             cwe_id: CWE ID to query
@@ -258,16 +255,19 @@ class TestCWEResponseAccuracyWithLLMJudge:
         Returns:
             Chatbot response text
         """
-        # TODO: Replace with actual chatbot API call
-        # Example:
-        # async with httpx.AsyncClient() as client:
-        #     response = await client.post(
-        #         "https://cwe-chatbot.example.com/api/query",
-        #         json={"query": f"What is {cwe_id}?"}
-        #     )
-        #     return response.json()["response"]
+        import httpx
 
-        return f"Placeholder response for {cwe_id}"
+        chatbot_url = os.getenv("CHATBOT_URL", "http://localhost:8081")
+        api_endpoint = f"{chatbot_url}/api/v1/query"
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                api_endpoint,
+                json={"query": f"What is {cwe_id}?", "persona": "Developer"},
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["response"]
 
     @pytest.mark.parametrize("cwe_id", HIGH_PRIORITY_CWES)
     async def test_high_priority_cwe_accuracy(
@@ -338,9 +338,7 @@ class TestCWEResponseAccuracyWithLLMJudge:
                 failures.append((cwe_id, verdict["reasoning"]))
 
         # Allow up to 10% failure rate (2/20) for edge cases
-        assert (
-            len(failures) <= 2
-        ), f"Too many failures ({len(failures)}/20): {failures}"
+        assert len(failures) <= 2, f"Too many failures ({len(failures)}/20): {failures}"
 
 
 # Standalone test runner with detailed output
@@ -378,7 +376,13 @@ async def run_llm_judge_tests_standalone():
         verdict = await judge.evaluate(cwe_id, ground_truth, chatbot_response)
 
         # Print verdict
-        emoji = "✅" if verdict["verdict"] == "PASS" else "⚠️" if verdict["verdict"] == "PARTIAL" else "❌"
+        emoji = (
+            "✅"
+            if verdict["verdict"] == "PASS"
+            else "⚠️"
+            if verdict["verdict"] == "PARTIAL"
+            else "❌"
+        )
         print(f"  {emoji} Verdict: {verdict['verdict']}")
         print(f"  Reasoning: {verdict['reasoning']}")
 

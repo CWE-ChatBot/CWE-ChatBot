@@ -22,8 +22,8 @@ import pytest
 
 # Import from the LLM judge test
 from test_cwe_response_accuracy_llm_judge import (
-    MITREGroundTruth,
     LLMJudge,
+    MITREGroundTruth,
 )
 
 
@@ -63,7 +63,7 @@ def sample_cwes(
 
 @pytest.mark.asyncio
 @pytest.mark.skip(
-    reason="Integration test - requires chatbot running and GEMINI_API_KEY"
+    reason="Integration test - requires chatbot API running (CHATBOT_URL) and GEMINI_API_KEY"
 )
 async def test_random_cwe_sample_systematic_coverage():
     """
@@ -92,7 +92,11 @@ async def test_random_cwe_sample_systematic_coverage():
     sample = sample_cwes(all_cwes, sample_size, seed)
 
     print(f"📋 Sampling {sample_size} CWEs from {len(all_cwes)} total")
-    print(f"Sample: {', '.join(sample[:10])}..." if len(sample) > 10 else f"Sample: {', '.join(sample)}")
+    print(
+        f"Sample: {', '.join(sample[:10])}..."
+        if len(sample) > 10
+        else f"Sample: {', '.join(sample)}"
+    )
     print()
 
     # Track results
@@ -173,9 +177,7 @@ async def test_random_cwe_sample_systematic_coverage():
 
 async def query_chatbot_placeholder(cwe_id: str) -> str:
     """
-    Placeholder for chatbot API call.
-
-    TODO: Replace with actual chatbot API integration.
+    Query chatbot for CWE via REST API.
 
     Args:
         cwe_id: CWE ID to query
@@ -183,11 +185,19 @@ async def query_chatbot_placeholder(cwe_id: str) -> str:
     Returns:
         Chatbot response text
     """
-    # Simulate API call delay
-    await asyncio.sleep(0.1)
+    import httpx
 
-    # Return placeholder response
-    return f"Placeholder response for {cwe_id}"
+    chatbot_url = os.getenv("CHATBOT_URL", "http://localhost:8081")
+    api_endpoint = f"{chatbot_url}/api/v1/query"
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(
+            api_endpoint,
+            json={"query": f"What is {cwe_id}?", "persona": "Developer"},
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["response"]
 
 
 # Standalone runner for debugging

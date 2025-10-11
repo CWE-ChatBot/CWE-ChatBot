@@ -106,6 +106,15 @@ try:
 except Exception as e:
     logger.warning(f"Could not add security middleware: {e}")
 
+# Story CWE-82: Add REST API for programmatic query access (testing/integrations)
+try:
+    from api import router as api_router, set_conversation_manager
+
+    asgi_app.include_router(api_router)
+    logger.info("REST API router mounted at /api/v1")
+except Exception as e:
+    logger.warning(f"Could not mount REST API router: {e}")
+
 # Global components (initialized on startup)
 conversation_manager: Optional[ConversationManager] = None
 input_sanitizer: Optional[InputSanitizer] = None
@@ -290,6 +299,15 @@ def initialize_components() -> bool:
         logger.info("Story 2.1 components initialized successfully")
         logger.info(f"Database health: {health}")
 
+        # Story CWE-82: Set conversation manager for REST API
+        try:
+            from api import set_conversation_manager
+
+            set_conversation_manager(conversation_manager)
+            logger.info("Conversation manager set for REST API")
+        except Exception as api_err:
+            logger.warning(f"Could not set conversation manager for API: {api_err}")
+
         # Log OAuth configuration status
         if not app_config.enable_oauth:
             logger.info("OAuth mode: disabled (open access)")
@@ -332,7 +350,6 @@ async def set_profiles(user: Optional[cl.User] = None):
     return create_chat_profiles()
 
 
-@cl.oauth_callback
 async def oauth_callback(
     provider_id: str,
     token: str,
@@ -1253,13 +1270,14 @@ async def on_stop() -> None:
         logger.log_exception("Shutdown cleanup failed", e)
 
 
-# Log OAuth configuration status
+# Log OAuth configuration status and register callback if needed
 if app_config.enable_oauth:
     has_google_oauth = app_config.google_oauth_configured
     has_github_oauth = app_config.github_oauth_configured
 
     if has_google_oauth or has_github_oauth:
-        # OAuth callback already registered via @cl.oauth_callback decorator
+        # Register OAuth callback decorator
+        cl.oauth_callback(oauth_callback)
         providers = []
         if has_google_oauth:
             providers.append("Google")

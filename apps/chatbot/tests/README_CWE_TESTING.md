@@ -56,7 +56,8 @@ poetry run pytest apps/chatbot/tests/unit/test_cwe_id_force_injection.py::TestCW
 **Prerequisites**:
 - MITRE CWE XML downloaded: `/tmp/cwec_v4.18.xml`
 - Gemini API key: `export GEMINI_API_KEY=your_key`
-- Chatbot running (production or local)
+- Chatbot API running (production or local): `export CHATBOT_URL=http://localhost:8081`
+- **REST API Integration**: Tests now use `/api/v1/query` endpoint (anonymous access)
 
 **Run**:
 ```bash
@@ -64,14 +65,18 @@ poetry run pytest apps/chatbot/tests/unit/test_cwe_id_force_injection.py::TestCW
 wget https://cwe.mitre.org/data/xml/cwec_latest.xml.zip
 unzip cwec_latest.xml.zip -d /tmp/
 
-# Run LLM judge tests (currently skipped - needs chatbot integration)
-poetry run pytest apps/chatbot/tests/integration/test_cwe_response_accuracy_llm_judge.py -v -s
+# Start chatbot with REST API (in another terminal)
+cd apps/chatbot
+ENABLE_OAUTH=false poetry run chainlit run main.py --port 8081
+
+# Run LLM judge tests
+CHATBOT_URL=http://localhost:8081 GEMINI_API_KEY=your_key poetry run pytest --no-header -rN apps/chatbot/tests/integration/test_cwe_response_accuracy_llm_judge.py -v -s
 
 # Run standalone for debugging
-poetry run python apps/chatbot/tests/integration/test_cwe_response_accuracy_llm_judge.py
+CHATBOT_URL=http://localhost:8081 poetry run python apps/chatbot/tests/integration/test_cwe_response_accuracy_llm_judge.py
 ```
 
-**Expected**: 21 tests (currently skipped - requires chatbot API integration)
+**Expected**: 21 tests (now integrated with REST API)
 
 **Speed**: Slow (~2-3 seconds per CWE with Gemini API calls)
 
@@ -128,19 +133,23 @@ poetry run pytest apps/chatbot/tests/e2e/test_cwe_queries_puppeteer.py::TestCWEQ
 - Reproducible with random seed
 
 **Prerequisites**:
-- Same as Phase 2 (MITRE XML + Gemini API key)
-- Chatbot running
+- Same as Phase 2 (MITRE XML + Gemini API key + Chatbot API)
+- **REST API Integration**: Tests now use `/api/v1/query` endpoint
 
 **Run**:
 ```bash
+# Start chatbot with REST API (in another terminal)
+cd apps/chatbot
+ENABLE_OAUTH=false poetry run chainlit run main.py --port 8081
+
 # Run with random seed
-poetry run pytest apps/chatbot/tests/integration/test_random_cwe_sampling.py -v -s
+CHATBOT_URL=http://localhost:8081 GEMINI_API_KEY=your_key poetry run pytest apps/chatbot/tests/integration/test_random_cwe_sampling.py -v -s
 
 # Run with specific seed (reproducible)
-RANDOM_SEED=42 poetry run pytest apps/chatbot/tests/integration/test_random_cwe_sampling.py -v -s
+RANDOM_SEED=42 CHATBOT_URL=http://localhost:8081 GEMINI_API_KEY=your_key poetry run pytest apps/chatbot/tests/integration/test_random_cwe_sampling.py -v -s
 
 # Run standalone for debugging
-poetry run python apps/chatbot/tests/integration/test_random_cwe_sampling.py
+CHATBOT_URL=http://localhost:8081 poetry run python apps/chatbot/tests/integration/test_random_cwe_sampling.py
 ```
 
 **Expected**: Maximum 10% failure rate (3/30 failures allowed for edge cases)
@@ -151,12 +160,19 @@ poetry run python apps/chatbot/tests/integration/test_random_cwe_sampling.py
 
 ## Test Status
 
-| Phase | Tests | Status | Speed | Ready to Run |
-|-------|-------|--------|-------|--------------|
-| Phase 1: Unit Tests | 13 | ✅ Passing | Fast | ✅ Yes |
-| Phase 2: LLM Judge | 21 | ⏸️ Skipped | Slow | ⚠️ Needs chatbot API |
-| Phase 3: Puppeteer E2E | 9 | ⏸️ Skipped | Slow | ⚠️ Needs deployment |
-| Phase 4: Random Sampling | 1 | ⏸️ Skipped | Very Slow | ⚠️ Needs chatbot API |
+| Phase | Tests | Status | Speed | Ready to Run | API Integration |
+|-------|-------|--------|-------|--------------|-----------------|
+| Phase 1: Unit Tests | 13 | ✅ Passing | Fast | ✅ Yes | N/A (mocked) |
+| Phase 2: LLM Judge | 21 | ✅ Ready | Slow | ✅ Yes | REST API `/api/v1/query` |
+| Phase 3: Puppeteer E2E | 9 | ⏸️ Skipped | Slow | ⚠️ Needs deployment | WebSocket UI |
+| Phase 4: Random Sampling | 1 | ✅ Ready | Very Slow | ✅ Yes | REST API `/api/v1/query` |
+
+**API Integration Status (2025-10-11)**:
+- ✅ REST API endpoint created: `/api/v1/query` (anonymous access, rate-limited)
+- ✅ Phase 2 tests updated with `httpx` API client
+- ✅ Phase 4 tests updated with `httpx` API client
+- ⚠️ Requires running chatbot with full configuration (DB + GEMINI_API_KEY)
+- ⚠️ Local testing requires `.env` setup with database credentials
 
 ## Running All Tests
 
@@ -171,36 +187,56 @@ poetry run pytest apps/chatbot/tests/ -v
 poetry run pytest apps/chatbot/tests/unit/test_cwe_id_force_injection.py --cov=src/processing/pipeline --cov-report=html
 ```
 
-## Integration Requirements
+## REST API Integration (Completed 2025-10-11)
 
-To enable Phase 2-4 (currently skipped), you need to:
+Phase 2-4 now use the REST API endpoint for anonymous CWE queries.
 
-### Option 1: Anonymous Access (Recommended for Testing)
+### API Endpoint: `/api/v1/query`
 
-Add anonymous/guest mode to chatbot:
-```python
-# In main.py or auth middleware
-@app.get("/api/guest-query")
-async def guest_query(query: str):
-    """Anonymous query endpoint for testing (rate-limited)."""
-    # Rate limit by IP
-    # Process query without OAuth
-    # Return response
+**Request**:
+```json
+POST /api/v1/query
+Content-Type: application/json
+
+{
+  "query": "What is CWE-82?",
+  "persona": "Developer"  // Optional: Developer, PSIRT Member, Academic Researcher, etc.
+}
 ```
 
-### Option 2: Test Service Account
-
-Create a service account with API key:
-```python
-# In test configuration
-TEST_API_KEY = os.getenv("TEST_API_KEY")
-headers = {"Authorization": f"Bearer {TEST_API_KEY}"}
-response = requests.post(f"{CHATBOT_URL}/api/query", json={"query": query}, headers=headers)
+**Response**:
+```json
+{
+  "response": "CWE-82 (Improper Neutralization of Script in Attributes...",
+  "retrieved_cwes": ["CWE-82"],
+  "chunk_count": 5,
+  "session_id": "api-test-a1b2c3d4"
+}
 ```
 
-### Option 3: OAuth Test Flow
+**Rate Limiting**: 10 requests/minute per IP address
 
-Implement OAuth flow in Puppeteer tests (requires test Google account).
+**Health Check**: `GET /api/v1/health` returns service status and database connectivity
+
+### Testing with curl
+
+```bash
+# Test health endpoint
+curl http://localhost:8081/api/v1/health
+
+# Test CWE query
+curl -X POST http://localhost:8081/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is CWE-79?", "persona": "Developer"}'
+
+# Test rate limiting (run 15 times quickly)
+for i in {1..15}; do
+  curl -X POST http://localhost:8081/api/v1/query \
+    -H "Content-Type: application/json" \
+    -d '{"query": "What is CWE-82?"}'
+  echo ""
+done
+```
 
 ## CI/CD Integration
 
