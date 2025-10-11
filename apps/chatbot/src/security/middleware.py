@@ -51,14 +51,15 @@ def _build_csp() -> str:
     connect_list = " ".join(["'self'"] + https_hosts + wss_hosts)
 
     # Compatibility+ CSP (recommended for Chainlit today)
+    # Allows external CDN resources (Google Fonts, KaTeX) and necessary unsafe-* directives
     if CSP_MODE != "strict":
         img_list = " ".join(filter(None, ["'self'", "data:", IMG_EXTRA.strip()]))
         return (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-eval'; "  # <-- removed 'unsafe-inline'
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "  # Chainlit requires both for React/inline scripts
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "  # Google Fonts + KaTeX CSS
             f"img-src {img_list}; "
-            "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "
+            "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "  # Google Fonts + KaTeX fonts
             f"connect-src {connect_list}; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
