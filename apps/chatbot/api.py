@@ -13,24 +13,43 @@ Features:
 """
 
 import asyncio
+import hashlib
 import logging
+import os
+import secrets
 import time
 import uuid
 from collections import defaultdict
 from typing import Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-
-from src.app_config import config
 from src.conversation import ConversationManager
+from src.secrets import get_test_api_key
 from src.security.secure_logging import get_secure_logger
 
 logger = get_secure_logger(__name__)
 
 # Global conversation manager (initialized by main.py)
 _conversation_manager: Optional[ConversationManager] = None
+
+# API Key Configuration
+# Get from GCP Secret Manager or fall back to TEST_API_KEY env var
+# Generate key with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+_TEST_API_KEY = get_test_api_key(_PROJECT_ID)
+_TEST_API_KEY_HASH = None
+
+if _TEST_API_KEY:
+    # Store hash instead of plaintext for comparison
+    _TEST_API_KEY_HASH = hashlib.sha256(_TEST_API_KEY.encode()).hexdigest()
+    logger.info("API key authentication enabled for /api/v1/query endpoint")
+else:
+    logger.warning(
+        "TEST_API_KEY not configured - API endpoint will reject all requests. "
+        "Set 'test-api-key' in GCP Secret Manager or TEST_API_KEY env var."
+    )
 
 
 def set_conversation_manager(cm: ConversationManager):
@@ -78,9 +97,7 @@ class RateLimiter:
         self._cleanup_old_requests()
 
         # Get requests in last 60 seconds
-        recent_requests = [
-            ts for ts in self.request_counts[ip] if ts > now - 60
-        ]
+        recent_requests = [ts for ts in self.request_counts[ip] if ts > now - 60]
         self.request_counts[ip] = recent_requests
 
         if len(recent_requests) >= self.requests_per_minute:
@@ -103,8 +120,41 @@ class RateLimiter:
 rate_limiter = RateLimiter(requests_per_minute=10)
 
 
+async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> str:
+    """
+    Verify API key from X-API-Key header.
+
+    Args:
+        x_api_key: API key from request header
+
+    Returns:
+        API key if valid
+
+    Raises:
+        HTTPException: 401 if API key invalid or missing
+    """
+    if not _TEST_API_KEY_HASH:
+        raise HTTPException(
+            status_code=503,
+            detail="API key authentication not configured on server",
+        )
+
+    # Constant-time comparison to prevent timing attacks
+    provided_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
+
+    if not secrets.compare_digest(provided_hash, _TEST_API_KEY_HASH):
+        logger.warning("Invalid API key attempt")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "API-Key"},
+        )
+
+    return x_api_key
+
+
 async def rate_limit_check(request: Request):
-    """Dependency for rate limiting anonymous API requests."""
+    """Dependency for rate limiting API requests."""
     # Get client IP (handle proxy headers)
     client_ip = request.client.host if request.client else "unknown"
     forwarded_for = request.headers.get("X-Forwarded-For")
@@ -155,9 +205,7 @@ class QueryRequest(BaseModel):
             "CVE Creator",
         ]
         if v not in allowed_personas:
-            raise ValueError(
-                f"Invalid persona. Allowed: {', '.join(allowed_personas)}"
-            )
+            raise ValueError(f"Invalid persona. Allowed: {', '.join(allowed_personas)}")
         return v
 
 
@@ -208,12 +256,18 @@ async def health_check():
         )
 
 
-@router.post("/query", response_model=QueryResponse, dependencies=[Depends(rate_limit_check)])
+@router.post(
+    "/query",
+    response_model=QueryResponse,
+    dependencies=[Depends(verify_api_key), Depends(rate_limit_check)],
+)
 async def query_cwe(request: QueryRequest):
     """
-    Anonymous CWE query endpoint for testing and integrations.
+    Authenticated CWE query endpoint for testing and integrations.
 
-    Rate limit: 10 requests/minute per IP address.
+    **Authentication**: Requires `X-API-Key` header with valid API key.
+
+    **Rate limit**: 10 requests/minute per IP address.
 
     Args:
         request: QueryRequest with query text and optional persona
@@ -222,7 +276,7 @@ async def query_cwe(request: QueryRequest):
         QueryResponse with chatbot response and metadata
 
     Raises:
-        HTTPException: 429 if rate limit exceeded, 503 if service unavailable
+        HTTPException: 401 if API key invalid, 429 if rate limit exceeded, 503 if service unavailable
     """
     cm = get_conversation_manager()
 
@@ -246,9 +300,7 @@ async def query_cwe(request: QueryRequest):
         response_text = ""
         if result.get("message"):
             msg = result["message"]
-            response_text = (
-                msg.content if hasattr(msg, "content") else str(msg)
-            )
+            response_text = msg.content if hasattr(msg, "content") else str(msg)
 
         # Build response
         response = QueryResponse(

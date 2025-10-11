@@ -78,6 +78,14 @@ def get_gemini_api_key(project_id: Optional[str] = None) -> str:
     return os.getenv("GEMINI_API_KEY", "")
 
 
+def get_test_api_key(project_id: Optional[str] = None) -> str:
+    """Get TEST API key from Secret Manager or TEST_API_KEY env var."""
+    key = get_secret("test-api-key", project_id)
+    if key:
+        return key
+    return os.getenv("TEST_API_KEY", "")
+
+
 def get_chainlit_auth_secret(project_id: Optional[str] = None) -> Optional[str]:
     """Get Chainlit auth secret from Secret Manager or CHAINLIT_AUTH_SECRET env var."""
     secret = get_secret("chainlit-auth-secret", project_id)

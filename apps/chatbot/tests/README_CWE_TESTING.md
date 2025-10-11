@@ -70,10 +70,10 @@ cd apps/chatbot
 ENABLE_OAUTH=false poetry run chainlit run main.py --port 8081
 
 # Run LLM judge tests
-CHATBOT_URL=http://localhost:8081 GEMINI_API_KEY=your_key poetry run pytest --no-header -rN apps/chatbot/tests/integration/test_cwe_response_accuracy_llm_judge.py -v -s
+CHATBOT_URL=http://localhost:8081 TEST_API_KEY=your_api_key GEMINI_API_KEY=your_gemini_key poetry run pytest --no-header -rN apps/chatbot/tests/integration/test_cwe_response_accuracy_llm_judge.py -v -s
 
 # Run standalone for debugging
-CHATBOT_URL=http://localhost:8081 poetry run python apps/chatbot/tests/integration/test_cwe_response_accuracy_llm_judge.py
+CHATBOT_URL=http://localhost:8081 TEST_API_KEY=your_api_key poetry run python apps/chatbot/tests/integration/test_cwe_response_accuracy_llm_judge.py
 ```
 
 **Expected**: 21 tests (now integrated with REST API)
@@ -143,13 +143,13 @@ cd apps/chatbot
 ENABLE_OAUTH=false poetry run chainlit run main.py --port 8081
 
 # Run with random seed
-CHATBOT_URL=http://localhost:8081 GEMINI_API_KEY=your_key poetry run pytest apps/chatbot/tests/integration/test_random_cwe_sampling.py -v -s
+CHATBOT_URL=http://localhost:8081 TEST_API_KEY=your_api_key GEMINI_API_KEY=your_gemini_key poetry run pytest apps/chatbot/tests/integration/test_random_cwe_sampling.py -v -s
 
 # Run with specific seed (reproducible)
-RANDOM_SEED=42 CHATBOT_URL=http://localhost:8081 GEMINI_API_KEY=your_key poetry run pytest apps/chatbot/tests/integration/test_random_cwe_sampling.py -v -s
+RANDOM_SEED=42 CHATBOT_URL=http://localhost:8081 TEST_API_KEY=your_api_key GEMINI_API_KEY=your_gemini_key poetry run pytest apps/chatbot/tests/integration/test_random_cwe_sampling.py -v -s
 
 # Run standalone for debugging
-CHATBOT_URL=http://localhost:8081 poetry run python apps/chatbot/tests/integration/test_random_cwe_sampling.py
+CHATBOT_URL=http://localhost:8081 TEST_API_KEY=your_api_key poetry run python apps/chatbot/tests/integration/test_random_cwe_sampling.py
 ```
 
 **Expected**: Maximum 10% failure rate (3/30 failures allowed for edge cases)
@@ -168,9 +168,11 @@ CHATBOT_URL=http://localhost:8081 poetry run python apps/chatbot/tests/integrati
 | Phase 4: Random Sampling | 1 | ✅ Ready | Very Slow | ✅ Yes | REST API `/api/v1/query` |
 
 **API Integration Status (2025-10-11)**:
-- ✅ REST API endpoint created: `/api/v1/query` (anonymous access, rate-limited)
-- ✅ Phase 2 tests updated with `httpx` API client
-- ✅ Phase 4 tests updated with `httpx` API client
+- ✅ REST API endpoint created: `/api/v1/query` (API key authentication, rate-limited)
+- ✅ API key stored in GCP Secret Manager (`test-api-key`) with env fallback
+- ✅ Phase 2 tests updated with `httpx` API client + `X-API-Key` header
+- ✅ Phase 4 tests updated with `httpx` API client + `X-API-Key` header
+- ⚠️ Requires `TEST_API_KEY` environment variable for testing
 - ⚠️ Requires running chatbot with full configuration (DB + GEMINI_API_KEY)
 - ⚠️ Local testing requires `.env` setup with database credentials
 
@@ -193,10 +195,25 @@ Phase 2-4 now use the REST API endpoint for anonymous CWE queries.
 
 ### API Endpoint: `/api/v1/query`
 
+**Authentication**: Requires `X-API-Key` header with valid API key.
+
+**API Key Setup**:
+```bash
+# Generate a secure API key (32 bytes URL-safe)
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# For local testing: Set environment variable
+export TEST_API_KEY="your-generated-key-here"
+
+# For production: Store in GCP Secret Manager
+gcloud secrets create test-api-key --data-file=- <<< "your-generated-key-here"
+```
+
 **Request**:
 ```json
 POST /api/v1/query
 Content-Type: application/json
+X-API-Key: your-api-key-here
 
 {
   "query": "What is CWE-82?",
@@ -216,23 +233,35 @@ Content-Type: application/json
 
 **Rate Limiting**: 10 requests/minute per IP address
 
-**Health Check**: `GET /api/v1/health` returns service status and database connectivity
+**Health Check**: `GET /api/v1/health` (no authentication required) returns service status and database connectivity
 
 ### Testing with curl
 
 ```bash
-# Test health endpoint
+# Generate and set API key
+export TEST_API_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+echo "API Key: $TEST_API_KEY"
+
+# Test health endpoint (no auth required)
 curl http://localhost:8081/api/v1/health
 
-# Test CWE query
+# Test CWE query (requires X-API-Key header)
 curl -X POST http://localhost:8081/api/v1/query \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: $TEST_API_KEY" \
   -d '{"query": "What is CWE-79?", "persona": "Developer"}'
+
+# Test authentication failure (invalid API key)
+curl -X POST http://localhost:8081/api/v1/query \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: invalid-key" \
+  -d '{"query": "What is CWE-82?"}'
 
 # Test rate limiting (run 15 times quickly)
 for i in {1..15}; do
   curl -X POST http://localhost:8081/api/v1/query \
     -H "Content-Type: application/json" \
+    -H "X-API-Key: $TEST_API_KEY" \
     -d '{"query": "What is CWE-82?"}'
   echo ""
 done

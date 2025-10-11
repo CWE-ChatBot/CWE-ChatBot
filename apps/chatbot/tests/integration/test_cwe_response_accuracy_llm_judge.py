@@ -259,10 +259,19 @@ class TestCWEResponseAccuracyWithLLMJudge:
 
         chatbot_url = os.getenv("CHATBOT_URL", "http://localhost:8081")
         api_endpoint = f"{chatbot_url}/api/v1/query"
+        api_key = os.getenv("TEST_API_KEY")
+
+        if not api_key:
+            raise ValueError(
+                "TEST_API_KEY environment variable required for API authentication"
+            )
+
+        headers = {"X-API-Key": api_key}
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 api_endpoint,
+                headers=headers,
                 json={"query": f"What is {cwe_id}?", "persona": "Developer"},
             )
             response.raise_for_status()
