@@ -55,6 +55,7 @@ COPY --chown=appuser:appuser apps/chatbot/main.py ./main.py
 COPY --chown=appuser:appuser apps/chatbot/chainlit.md ./chainlit.md
 # Create directories - let Chainlit auto-generate config.toml with correct format
 RUN mkdir -p ./.chainlit ./public
+COPY --chown=appuser:appuser apps/chatbot/public/ ./public/
 COPY --chown=appuser:appuser apps/chatbot/src/ ./src/
 
 # Create directories with proper permissions
