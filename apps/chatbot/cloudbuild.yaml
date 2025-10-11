@@ -4,13 +4,20 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '--tag=us-central1-docker.pkg.dev/$PROJECT_ID/chatbot/chatbot:latest'
       - '--tag=gcr.io/$PROJECT_ID/cwe-chatbot:latest'
       - '--tag=gcr.io/$PROJECT_ID/cwe-chatbot:oauth-refactor'
       - '-f'
       - 'apps/chatbot/Dockerfile'
       - '.'
 
-  # Push the Docker image to Container Registry
+  # Push to Artifact Registry (primary)
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/chatbot/chatbot:latest'
+
+  # Push to Container Registry (legacy/backup)
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
