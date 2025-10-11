@@ -111,6 +111,8 @@ class Config:
 
     # Authentication / OAuth / Chainlit
     enable_oauth: bool = os.getenv("ENABLE_OAUTH", "true").lower() == "true"
+    # AUTH_MODE: "oauth" (production), "hybrid" (testing - allows test-login endpoint)
+    auth_mode: str = os.getenv("AUTH_MODE", "oauth")
     chainlit_url: str = os.getenv("CHAINLIT_URL", "http://localhost:8081")
     # Secrets retrieved from Secret Manager (fall back to env vars)
     chainlit_auth_secret: Optional[str] = get_chainlit_auth_secret(_PROJECT_ID)

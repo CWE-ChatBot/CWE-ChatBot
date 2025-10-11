@@ -6,15 +6,19 @@ This module provides a REST API for querying the CWE ChatBot programmatically,
 designed primarily for automated testing but also usable for integrations.
 
 Features:
-- Anonymous/guest query endpoint with rate limiting
+- API key authenticated query endpoint with rate limiting
+- Test-login endpoint for hybrid auth mode (Playwright E2E tests)
 - Ephemeral sessions (no persistent state)
 - IP-based rate limiting to prevent abuse
 - Reuses existing ConversationManager and security layers
+
+Auth Modes:
+- oauth (production): OAuth only, test-login endpoint disabled
+- hybrid (testing/staging): OAuth + test-login endpoint for E2E tests
 """
 
 import asyncio
 import hashlib
-import logging
 import os
 import secrets
 import time
@@ -22,9 +26,11 @@ import uuid
 from collections import defaultdict
 from typing import Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
+
+from src.app_config import config as app_config
 from src.conversation import ConversationManager
 from src.secrets import get_test_api_key
 from src.security.secure_logging import get_secure_logger
@@ -230,13 +236,22 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class TestLoginResponse(BaseModel):
+    """Response model for test-login endpoint."""
+
+    ok: bool
+    session_id: str
+    expires_in: int  # seconds
+    message: str
+
+
 # API Router
 router = APIRouter(prefix="/api/v1", tags=["CWE Query API"])
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint for API availability."""
+    """Health check endpoint for API availability (no authentication required)."""
     try:
         cm = get_conversation_manager()
         health = cm.get_system_health()
@@ -254,6 +269,78 @@ async def health_check():
                 "version": "2.1.0",
             },
         )
+
+
+@router.post("/test-login", response_model=TestLoginResponse)
+async def test_login(
+    response: Response, x_api_key: str = Header(..., alias="X-API-Key")
+):
+    """
+    Test-only endpoint to exchange API key for session cookie (hybrid auth mode).
+
+    **SECURITY**: Only available when AUTH_MODE=hybrid (testing/staging).
+    Disabled in production (AUTH_MODE=oauth).
+
+    **Purpose**: Enables Playwright E2E tests to authenticate once and use
+    WebSocket/UI without OAuth dance.
+
+    **Flow**:
+    1. Test sends X-API-Key header
+    2. Validates API key
+    3. Mints short-lived session cookie (30 minutes)
+    4. Returns session info
+    5. Browser/WebSocket uses cookie for subsequent requests
+
+    Args:
+        response: FastAPI response object (for setting cookies)
+        x_api_key: API key from X-API-Key header
+
+    Returns:
+        TestLoginResponse with session info
+
+    Raises:
+        HTTPException: 404 if not in hybrid mode, 401 if API key invalid
+    """
+    # Only available in hybrid auth mode
+    if app_config.auth_mode != "hybrid":
+        logger.warning(
+            "test-login endpoint accessed but AUTH_MODE != hybrid (disabled in production)"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="Not found",  # Hide endpoint existence in production
+        )
+
+    # Validate API key (reuse existing verification logic)
+    try:
+        await verify_api_key(x_api_key)
+    except HTTPException:
+        logger.warning("test-login: Invalid API key attempt")
+        raise
+
+    # Generate test session ID
+    session_id = f"test-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+    session_expiry = 30 * 60  # 30 minutes
+
+    # Set session cookie (HttpOnly, Secure, SameSite for security)
+    response.set_cookie(
+        key="test_session_id",
+        value=session_id,
+        httponly=True,
+        secure=True,  # HTTPS only
+        samesite="lax",
+        max_age=session_expiry,
+        path="/",
+    )
+
+    logger.info(f"test-login: Issued test session {session_id} (expires in {session_expiry}s)")
+
+    return TestLoginResponse(
+        ok=True,
+        session_id=session_id,
+        expires_in=session_expiry,
+        message="Test session created. Cookie set for WebSocket/UI authentication.",
+    )
 
 
 @router.post(
