@@ -397,7 +397,7 @@ class ConversationManager:
             return {
                 "response": pipeline_result.final_response_text,
                 "retrieved_cwes": pipeline_result.retrieved_cwes,
-                "chunk_count": len(pipeline_result.retrieved_chunks),
+                "chunk_count": pipeline_result.chunk_count,
                 "session_id": session_id,
                 "message": None,
                 "persona": context.persona,
