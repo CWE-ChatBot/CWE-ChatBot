@@ -6,17 +6,44 @@
 
 ---
 
-## 🎉 ALL A+ GRADES ACHIEVED! 🎉
+## ⚠️ UPDATE: October 12, 2025 - CSP Relaxation Required for Chainlit
 
-### Final Security Scanner Results
+**Score Impact**: Mozilla Observatory A+ (110/100) → B+ (80/100)
+
+After achieving perfect A+ scores, we had to **revert CSP changes** because **Chainlit 2.8.0 requires `unsafe-inline` and `unsafe-eval`** to function. Removing these directives breaks the Chainlit UI completely.
+
+**What Changed**:
+- **Before**: `script-src 'self'` (strict CSP)
+- **After**: `script-src 'self' 'unsafe-inline' 'unsafe-eval'` (required for Chainlit)
+- **Impact**: -20 points on Mozilla Observatory CSP test
+
+**Why This Was Necessary**:
+- Chainlit's React-based UI requires inline scripts and eval for rendering
+- Framework limitation, not an application vulnerability
+- Trade-off: Functional application vs perfect security score
+
+**What Remains Unchanged**:
+- ✅ SSL Labs: Still **A+ (100/100)**
+- ✅ SecurityHeaders.com: Still **A (~96-98/100)**
+- ✅ HSTS, X-Frame-Options, X-Content-Type-Options: Still optimal
+- ✅ Infrastructure protection (Cloud Armor, rate limiting): Still active
+
+**Conclusion**: The -20 point reduction is an **acceptable trade-off** for a functional application. The CSP is still significantly better than default, and all other security measures remain at maximum strength.
+
+---
+
+## 🎉 ORIGINAL PERFECT SCORES (October 9, 2025) 🎉
+
+### Final Security Scanner Results (Before CSP Reversion)
 
 | Scanner | Grade | Score | Status |
 |---------|-------|-------|--------|
-| **Mozilla Observatory** | **A+** ↗️ | **110/100** | 🏆 **PERFECT!** |
-| **SSL Labs (Qualys)** | **A+** | **100/100** | 🏆 **PERFECT!** |
-| **SecurityHeaders.com** | **A** | **~96-98/100** | ✅ **EXCELLENT!** |
+| **Mozilla Observatory** | **A+** ↗️ | **110/100** | 🏆 **PERFECT!** (Reverted to B+ due to Chainlit) |
+| **SSL Labs (Qualys)** | **A+** | **100/100** | 🏆 **PERFECT!** (Still maintained) |
+| **SecurityHeaders.com** | **A** | **~96-98/100** | ✅ **EXCELLENT!** (Still maintained) |
 
-**Overall Achievement**: **PERFECT SECURITY POSTURE** across all major security scanners! 🎉
+**Original Achievement**: **PERFECT SECURITY POSTURE** across all major security scanners!
+**Current Status**: **EXCELLENT SECURITY POSTURE** with necessary framework compromises.
 
 ---
 
@@ -166,6 +193,11 @@ After:  script-src 'self' 'unsafe-eval'  ← Removed unsafe-inline!
 - CSP must be restrictive
 - COOP, CORP, COEP for cross-origin isolation
 - Many sites fail basic headers
+
+https://securityheaders.com/?q=https%3A%2F%2Fcwe.crashedmind.com&followRedirects=on
+
+
+> -Policy	This policy contains 'unsafe-inline' which is dangerous in the script-src directive. This policy contains 'unsafe-eval' which is dangerous in the script-src directive.
 
 **We Achieved**: Grade A with all headers present and properly configured
 

@@ -7,6 +7,30 @@
 
 ---
 
+## ⚠️ Update: October 12, 2025 - CSP Relaxation Required
+
+**Mozilla Observatory Score Change**: A+ (100/100) → B+ (80/100)
+
+After achieving perfect A+ scores, we discovered that **Chainlit 2.8.0 requires `unsafe-inline` and `unsafe-eval` in CSP** to function properly. Removing these directives causes the Chainlit UI to break completely.
+
+**CSP Reversion Required**:
+- `script-src 'self'` → `script-src 'self' 'unsafe-inline' 'unsafe-eval'`
+- **Impact**: -20 points on Mozilla Observatory (100 → 80)
+- **Reason**: Chainlit's JavaScript bundle requires inline scripts and eval for React rendering
+- **Trade-off**: Functional application vs perfect security score
+
+**Current Status**:
+- ✅ Application fully functional with Chainlit UI
+- ⚠️ CSP score reduced due to framework requirements
+- ✅ All other security headers remain at optimal settings (HSTS, X-Frame-Options, etc.)
+- ✅ Infrastructure-level protection still active (Cloud Armor, rate limiting)
+
+**Future Consideration**: When Chainlit framework adds CSP-compatible mode, we can restore strict CSP and regain A+ score.
+
+**Reference**: Mozilla Observatory Analysis - https://developer.mozilla.org/en-US/observatory/analyze?host=cwe.crashedmind.com
+
+---
+
 ## Executive Summary
 
 Story S-12 web protection security hardening has been **successfully completed and deployed to production**. The application now has comprehensive multi-layered security with both application-level and infrastructure-level protections.
