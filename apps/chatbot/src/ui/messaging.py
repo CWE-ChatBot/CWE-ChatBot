@@ -36,10 +36,12 @@ class UIMessaging:
         Create progressive disclosure response based on detail level setting.
         Story 3.4: Progressive Disclosure Implementation
         """
-        if detail_level == "basic" and len(content) > 300:
+        # Increased from 300 to 2000 chars to show meaningful context before truncation
+        # 2000 chars ≈ 300-400 words, enough for users to understand the response
+        if detail_level == "basic" and len(content) > 2000:
             # Create summary with expandable details
-            summary = content[:300] + "..."
-            remaining = content[300:]
+            summary = content[:2000] + "..."
+            remaining = content[2000:]
 
             # Use Chainlit's Text element with expandable content
             return [
@@ -134,10 +136,11 @@ class UIMessaging:
         if detail_level == "basic" and hasattr(message, "content"):
             # Create progressive disclosure for long responses
             content = message.content
-            if len(content) > 300:
+            # Increased from 300 to 2000 chars for meaningful context
+            if len(content) > 2000:
                 # Split into summary and details
-                summary = content[:300] + "..."
-                details = content[300:]
+                summary = content[:2000] + "..."
+                details = content[2000:]
 
                 # Update the main message to show summary
                 message.content = summary

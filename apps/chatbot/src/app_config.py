@@ -83,7 +83,9 @@ class Config:
     max_attachment_summary_length: int = int(
         os.getenv("MAX_ATTACHMENT_SUMMARY_LENGTH", "1200")
     )
-    max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "4096"))
+    # Increased from 4096 to 16384 to prevent truncation of long responses
+    # 16384 tokens ≈ 12,000 words (addresses truncation at 9182 words)
+    max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "16384"))
     max_document_snippet_length: int = int(
         os.getenv("MAX_DOCUMENT_SNIPPET_LENGTH", "1000")
     )
