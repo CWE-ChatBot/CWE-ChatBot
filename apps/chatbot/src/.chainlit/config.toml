@@ -101,7 +101,7 @@ cot = "full"
 
 # Specify a CSS file that can be used to customize the user interface.
 # The CSS file can be served from the public directory or via an external link.
-custom_css = "/public/theme_min.css"
+# custom_css = "/public/theme_min.css"
 
 # Specify additional attributes for a custom CSS file
 # custom_css_attributes = "media=\"print\""
@@ -112,6 +112,45 @@ custom_css = "/public/theme_min.css"
 
 # The style of alert boxes. Can be "classic" or "modern".
 alert_style = "classic"
+
+[UI.theme]
+    default = "light"
+    #layout = "wide"
+    #font_family = "Inter, sans-serif"
+
+# Override default MUI light theme. (Check theme.ts)
+[UI.theme.light]
+    background = "#F8F9FA"        # matches --background
+    paper = "#FFFFFF"
+
+    [UI.theme.light.primary]
+        main = "#4169E1"        # CWE Blue
+        dark = "#2F4DB3"
+        light = "#7B93F0"
+    [UI.theme.light.secondary]
+        main = "#8B0000"        # CWE Maroon
+        dark = "#5E0000"
+        light = "#B22222"
+    [UI.theme.light.text]
+        primary = "#333333"      # neutral text
+        secondary = "#6C757D"    # neutral secondary
+
+# Override default MUI dark theme. (Check theme.ts)
+[UI.theme.dark]
+    background = "#151923"
+    paper = "#1C2128"
+
+    [UI.theme.dark.primary]
+        main = "#6F8EFF"        # lighter CWE Blue
+        dark = "#4F6BD1"
+        light = "#9FB2FF"
+    [UI.theme.dark.secondary]
+        main = "#C23A3A"        # lighter Maroon accent
+        dark = "#8E1E1E"
+        light = "#E06666"
+    [UI.theme.dark.text]
+        primary = "#EEEEEE"
+        secondary = "#BDBDBD"
 
 # Specify additional attributes for custom JS file
 # custom_js_attributes = "async type = \"module\""
