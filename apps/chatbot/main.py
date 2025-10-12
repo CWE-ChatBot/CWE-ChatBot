@@ -644,23 +644,49 @@ Each persona provides responses tailored to your specific needs and expertise le
 Click any button below to ask a common security question, or type your own question in the chat:"""
 
     # Create action buttons for example queries (no CSRF needed for read-only queries)
-    example_actions = [
-        cl.Action(
-            name="example_cwe79",
-            label="🛡️ What is CWE-79 and how do I prevent it?",
-            payload={"query": "What is CWE-79 and how do I prevent it?"},
-        ),
-        cl.Action(
-            name="example_sql_injection",
-            label="💉 Show me SQL injection prevention techniques",
-            payload={"query": "Show me SQL injection prevention techniques"},
-        ),
-        cl.Action(
-            name="example_xss_types",
-            label="🔍 Explain the types of XSS",
-            payload={"query": "Explain the types of XSS"},
-        ),
-    ]
+    # Persona-specific examples: CWE Analyzer gets CVE analysis buttons, others get general security questions
+    if persona == "CWE Analyzer":
+        example_actions = [
+            cl.Action(
+                name="example_nvidia_cve",
+                label="🔬 Analyze NVIDIA vulnerability",
+                payload={
+                    "query": "NVIDIA Base Command Manager contains a missing authentication vulnerability in the CMDaemon component. A successful exploit of this vulnerability might lead to code execution, denial of service, escalation of privileges, information disclosure, and data tampering."
+                },
+            ),
+            cl.Action(
+                name="example_phpgurukul_cve",
+                label="🔬 Analyze PHPGurukul SQL injection",
+                payload={
+                    "query": "A vulnerability has been found in PHPGurukul Boat Booking System 1.0 and classified as critical. Affected by this vulnerability is an unknown functionality of the file book-boat.php?bid=1 of the component Book a Boat Page. The manipulation of the argument nopeople leads to sql injection. The attack can be launched remotely. The exploit has been disclosed to the public and may be used."
+                },
+            ),
+            cl.Action(
+                name="example_wordpress_xss",
+                label="🔬 Analyze WordPress XSS vulnerability",
+                payload={
+                    "query": "The Advanced Schedule Posts WordPress plugin through 2.1.8 does not sanitise and escape a parameter before outputting it back in the page, leading to a Reflected Cross-Site Scripting which could be used against high privilege users such as admins."
+                },
+            ),
+        ]
+    else:
+        example_actions = [
+            cl.Action(
+                name="example_cwe79",
+                label="🛡️ What is CWE-79 and how do I prevent it?",
+                payload={"query": "What is CWE-79 and how do I prevent it?"},
+            ),
+            cl.Action(
+                name="example_sql_injection",
+                label="💉 Show me SQL injection prevention techniques",
+                payload={"query": "Show me SQL injection prevention techniques"},
+            ),
+            cl.Action(
+                name="example_xss_types",
+                label="🔍 Explain the types of XSS",
+                payload={"query": "Explain the types of XSS"},
+            ),
+        ]
 
     await cl.Message(
         content=examples_message, actions=example_actions, elements=[persona_element]
@@ -1150,6 +1176,24 @@ async def on_example_sql_injection_action(action: cl.Action):
 @cl.action_callback("example_xss_types")
 async def on_example_xss_types_action(action: cl.Action):
     """Handle 'Explain XSS types' example query button."""
+    await handle_example_query_action(action)
+
+
+@cl.action_callback("example_nvidia_cve")
+async def on_example_nvidia_cve_action(action: cl.Action):
+    """Handle NVIDIA CVE analysis example query button (CWE Analyzer persona)."""
+    await handle_example_query_action(action)
+
+
+@cl.action_callback("example_phpgurukul_cve")
+async def on_example_phpgurukul_cve_action(action: cl.Action):
+    """Handle PHPGurukul SQL injection CVE analysis example query button (CWE Analyzer persona)."""
+    await handle_example_query_action(action)
+
+
+@cl.action_callback("example_wordpress_xss")
+async def on_example_wordpress_xss_action(action: cl.Action):
+    """Handle WordPress XSS CVE analysis example query button (CWE Analyzer persona)."""
     await handle_example_query_action(action)
 
 
