@@ -50,7 +50,8 @@ reaction_on_message_received = false
     enabled = true
     # Story 4.3 - Ephemeral PDF Extraction System (AC4)
     # Accept only PDF and text files for security analysis
-    accept = ["application/pdf", "text/plain", "text/*"]
+    # Fixed: Removed "text/*" wildcard - browsers require explicit MIME types
+    accept = ["application/pdf", "text/plain", "text/markdown", "text/csv", "text/html", "text/xml"]
     max_files = 20
     # AC4: 10MB limit for ephemeral processing
     max_size_mb = 10
