@@ -369,6 +369,34 @@ class TestCWEResponseAccuracyWithLLMJudge:
         # Allow up to 10% failure rate (2/20) for edge cases
         assert len(failures) <= 2, f"Too many failures ({len(failures)}/20): {failures}"
 
+    @pytest.mark.asyncio
+    async def test_off_topic_query_handling(self):
+        """
+        Test that off-topic queries (non-security topics) are properly rejected.
+
+        Verifies the query processor correctly identifies and handles queries
+        unrelated to CWE/security topics with appropriate guidance.
+        """
+        # Off-topic query that should be rejected
+        query = "tell me about dogs"
+
+        # Query chatbot
+        response = await self.query_chatbot(query)
+
+        # Verify response indicates off-topic rejection
+        assert (
+            "cybersecurity" in response.lower()
+        ), f"Expected off-topic rejection mentioning 'cybersecurity', got: {response[:200]}"
+        assert (
+            "cwe" in response.lower() or "weakness" in response.lower()
+        ), f"Expected guidance about CWE topics, got: {response[:200]}"
+
+        # Should NOT attempt to analyze dogs as a security topic
+        assert (
+            "vulnerability" not in response.lower()
+            or "cybersecurity" in response.lower()
+        ), "Should not treat 'dogs' as a vulnerability without cybersecurity context"
+
 
 # Standalone test runner with detailed output
 async def run_llm_judge_tests_standalone():
