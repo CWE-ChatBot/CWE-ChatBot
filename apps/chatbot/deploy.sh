@@ -91,7 +91,7 @@ deploy_service() {
     print_info "Region: $REGION"
     print_info "Image: $IMAGE_TAG"
 
-    print_info "Using Secret Manager for all secrets (no --update-secrets needed)"
+    print_info "Mounting secrets from Secret Manager (including ALLOWED_USERS)"
 
     gcloud run deploy "$SERVICE" \
         --region="$REGION" \
@@ -108,12 +108,13 @@ deploy_service() {
         --allow-unauthenticated \
         --execution-environment=gen2 \
         --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,ENABLE_OAUTH=true,AUTH_MODE=oauth,CHAINLIT_URL=https://cwe.crashedmind.com,PUBLIC_ORIGIN=https://cwe.crashedmind.com,CSP_MODE=compatible,HSTS_MAX_AGE=31536000,PDF_WORKER_URL=https://pdf-worker-bmgj6wj65a-uc.a.run.app" \
+        --update-secrets="GEMINI_API_KEY=gemini-api-key:latest,DB_PASSWORD=db-password-app-user:latest,CHAINLIT_AUTH_SECRET=chainlit-auth-secret:latest,OAUTH_GOOGLE_CLIENT_ID=oauth-google-client-id:latest,OAUTH_GOOGLE_CLIENT_SECRET=oauth-google-client-secret:latest,OAUTH_GITHUB_CLIENT_ID=oauth-github-client-id:latest,OAUTH_GITHUB_CLIENT_SECRET=oauth-github-client-secret:latest,ALLOWED_USERS=allowed-users:latest" \
         --quiet || {
         print_error "Deployment failed"
         exit 1
     }
 
-    print_info "Secrets retrieved from Secret Manager at runtime"
+    print_info "Secrets retrieved from Secret Manager at runtime (including ALLOWED_USERS)"
 
     print_info "Deployment successful"
 }
