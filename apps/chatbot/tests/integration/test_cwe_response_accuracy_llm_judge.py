@@ -15,7 +15,7 @@ import asyncio
 import os
 import random
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pytest
 from src.llm_provider import get_llm_provider
@@ -24,7 +24,7 @@ from src.llm_provider import get_llm_provider
 class MITREGroundTruth:
     """Fetch ground truth CWE descriptions from MITRE CWE XML."""
 
-    def __init__(self, xml_path: str = None):
+    def __init__(self, xml_path: Optional[str] = None):
         """
         Initialize with path to CWE XML file.
 
@@ -110,7 +110,9 @@ class MITREGroundTruth:
 class LLMJudge:
     """LLM-based judge for evaluating chatbot response accuracy."""
 
-    def __init__(self, api_key: str = None, model_name: str = "gemini-2.0-flash-lite"):
+    def __init__(
+        self, api_key: Optional[str] = None, model_name: str = "gemini-2.0-flash-lite"
+    ):
         """
         Initialize LLM judge.
 

@@ -182,3 +182,76 @@ Story CWE-82 REST API implementation is **COMPLETE** with all accuracy tests pas
 
 **Test Success Rate**: 21/21 (100%)
 **Key Achievement**: Successfully fixed CWE-82 retrieval issue that inspired this story - test validates chatbot correctly explains "Improper Neutralization of Script in IMG Tags"
+
+---
+
+## Test Reproduction Instructions
+
+To reproduce the Phase 2 LLM-as-Judge tests from scratch:
+
+### Prerequisites
+- GCP project: `cwechatbot`
+- Secrets in GCP Secret Manager:
+  - `test-api-key` (version 3+): API authentication key
+  - `gemini-api-key`: LLM judge evaluation
+
+### Step 1: Deploy Staging Environment
+```bash
+# From project root
+./apps/chatbot/deploy_staging.sh
+```
+
+**The deploy script handles everything:**
+- ✅ AUTH_MODE=hybrid configuration (enables test-login endpoint)
+- ✅ TEST_API_KEY secret mounting from Secret Manager
+- ✅ All required environment variables (DB, OAuth, CSP, etc.)
+- ✅ Database connectivity via VPC connector
+- ✅ Service account permissions (cwe-chatbot-run-sa)
+- ✅ Staging service name (cwe-chatbot-staging)
+- ✅ Safety checks to prevent accidental production deployment
+
+**Staging URL**: https://cwe-chatbot-staging-bmgj6wj65a-uc.a.run.app
+
+### Step 2: Run Phase 2 Tests
+```bash
+cd apps/chatbot/tests
+
+# Export environment variables
+export CHATBOT_URL="https://cwe-chatbot-staging-bmgj6wj65a-uc.a.run.app"
+export TEST_API_KEY=$(gcloud secrets versions access latest --secret=test-api-key --project=cwechatbot)
+export GEMINI_API_KEY=$(gcloud secrets versions access latest --secret=gemini-api-key --project=cwechatbot)
+
+# Run all 21 Phase 2 tests (~7 minutes due to rate limiting)
+./run_phase2.sh
+
+# Or run specific CWE tests with verbose output
+poetry run pytest integration/test_cwe_response_accuracy_llm_judge.py -k "CWE-79 or CWE-82" -s
+```
+
+### Step 3: Verify Deployment (Optional)
+```bash
+# Check service status
+gcloud run services describe cwe-chatbot-staging --region us-central1
+
+# Test API endpoint manually
+curl -X POST "$CHATBOT_URL/api/v1/query" \
+  -H "X-API-Key: $TEST_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is CWE-79?", "persona": "Developer"}' | jq .
+
+# View staging logs
+gcloud logging tail 'resource.type="cloud_run_revision" resource.labels.service_name="cwe-chatbot-staging"' --limit 20
+```
+
+### Important Notes
+- **Rate Limiting**: Tests include 7-second delays to comply with 10 req/min limit
+- **Test Duration**: Full Phase 2 suite takes ~7 minutes (21 tests × ~20s each)
+- **API Key Version**: Must use version 3+ (earlier versions had newline issues)
+- **LLM Judge**: Uses Gemini 2.0 Flash Lite with temperature=0.0 for deterministic judging
+- **No Manual Setup Required**: `deploy_staging.sh` configures everything automatically
+
+### Troubleshooting
+- **401 errors**: Check TEST_API_KEY secret version (should be 3+)
+- **429 errors**: Rate limiting active - tests handle this with delays
+- **Empty responses**: Check staging logs for LLM generation errors
+- **Event loop errors**: Ensure using latest test code with function-scoped llm_judge fixture
