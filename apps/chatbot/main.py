@@ -638,19 +638,33 @@ Each persona provides responses tailored to your specific needs and expertise le
         name="Persona Guide", content=persona_info, display="inline"
     )
 
-    # Send example queries as a third guided step
+    # Send example queries as a third guided step with action buttons
     examples_message = """**🚀 Step 3: Try Example Queries**
 
-Here are some questions to get you started:
+Click any button below to ask a common security question, or type your own question in the chat:"""
 
-• *"What is CWE-79 and how do I prevent it?"*
-• *"Map this vulnerability to appropriate CWEs"*
-• *"Show me SQL injection prevention techniques"*
-• *"Analyze the security impact of buffer overflows"*
+    # Create action buttons for example queries (no CSRF needed for read-only queries)
+    example_actions = [
+        cl.Action(
+            name="example_cwe79",
+            label="🛡️ What is CWE-79 and how do I prevent it?",
+            payload={"query": "What is CWE-79 and how do I prevent it?"},
+        ),
+        cl.Action(
+            name="example_sql_injection",
+            label="💉 Show me SQL injection prevention techniques",
+            payload={"query": "Show me SQL injection prevention techniques"},
+        ),
+        cl.Action(
+            name="example_xss_types",
+            label="🔍 Explain the types of XSS",
+            payload={"query": "Explain the types of XSS"},
+        ),
+    ]
 
-**Ready to begin!** Select your persona above and ask your first question."""
-
-    await cl.Message(content=examples_message, elements=[persona_element]).send()
+    await cl.Message(
+        content=examples_message, actions=example_actions, elements=[persona_element]
+    ).send()
 
     # Mark welcome message as sent to prevent duplicates on reconnection
     # Story D2: Prevent duplicate welcome messages on WebSocket reconnection
@@ -1121,6 +1135,67 @@ async def on_exit_question_action(action: cl.Action):
         ).send()
 
 
+@cl.action_callback("example_cwe79")
+async def on_example_cwe79_action(action: cl.Action):
+    """Handle 'What is CWE-79' example query button."""
+    await handle_example_query_action(action)
+
+
+@cl.action_callback("example_sql_injection")
+async def on_example_sql_injection_action(action: cl.Action):
+    """Handle 'SQL injection prevention' example query button."""
+    await handle_example_query_action(action)
+
+
+@cl.action_callback("example_xss_types")
+async def on_example_xss_types_action(action: cl.Action):
+    """Handle 'Explain XSS types' example query button."""
+    await handle_example_query_action(action)
+
+
+async def handle_example_query_action(action: cl.Action):
+    """
+    Common handler for example query action buttons.
+
+    Extracts the query from the action payload and processes it as if
+    the user typed it in the chat input.
+    """
+    # Authentication enforcement - require OAuth authentication if enabled
+    if requires_authentication() and not is_user_authenticated():
+        await cl.Message(
+            content="🔒 Authentication required. Please authenticate to use example queries.",
+            author="System",
+        ).send()
+        return
+
+    try:
+        # Extract query from action payload
+        query = action.payload.get("query", "")
+        if not query:
+            logger.error("Example query action missing query in payload")
+            await cl.Message(
+                content="Sorry, there was an error with that example query. Please try typing your question instead.",
+                author="System",
+            ).send()
+            return
+
+        # Create a fake message object to reuse the existing message handler
+        # We'll process it through the same pipeline as user-typed messages
+        fake_message = cl.Message(content=query, author="User")
+
+        # Process the query using the main message handler logic
+        await main(fake_message)
+
+        logger.info(f"Processed example query action: {query}")
+
+    except Exception as e:
+        logger.log_exception("Error handling example query action", e)
+        await cl.Message(
+            content="Sorry, there was an error processing that example query. Please try typing your question instead.",
+            author="System",
+        ).send()
+
+
 @cl.on_settings_update
 async def on_settings_update(settings: Dict[str, Any]):
     """Handle settings updates from the native Chainlit settings panel."""
@@ -1320,6 +1395,9 @@ else:
 _ACTION_HANDLER_REFS: tuple[object, ...] = (
     on_ask_action,
     on_exit_question_action,
+    on_example_cwe79_action,
+    on_example_sql_injection_action,
+    on_example_xss_types_action,
 )
 
 if __name__ == "__main__":
