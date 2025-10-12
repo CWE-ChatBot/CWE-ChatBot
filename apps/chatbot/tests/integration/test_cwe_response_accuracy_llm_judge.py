@@ -110,7 +110,7 @@ class MITREGroundTruth:
 class LLMJudge:
     """LLM-based judge for evaluating chatbot response accuracy."""
 
-    def __init__(self, api_key: str = None, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: str = None, model_name: str = "gemini-2.0-flash-lite"):
         """
         Initialize LLM judge.
 
