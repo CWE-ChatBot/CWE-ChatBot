@@ -644,7 +644,7 @@ Each persona provides responses tailored to your specific needs and expertise le
 Click any button below to ask a common security question, or type your own question in the chat:"""
 
     # Create action buttons for example queries (no CSRF needed for read-only queries)
-    # Persona-specific examples: CWE Analyzer gets CVE analysis buttons, others get general security questions
+    # Persona-specific examples: CWE Analyzer and CVE Creator get vulnerability analysis buttons
     if persona == "CWE Analyzer":
         example_actions = [
             cl.Action(
@@ -666,6 +666,158 @@ Click any button below to ask a common security question, or type your own quest
                 label="🔬 Analyze WordPress XSS vulnerability",
                 payload={
                     "query": "The Advanced Schedule Posts WordPress plugin through 2.1.8 does not sanitise and escape a parameter before outputting it back in the page, leading to a Reflected Cross-Site Scripting which could be used against high privilege users such as admins."
+                },
+            ),
+        ]
+    elif persona == "CVE Creator":
+        example_actions = [
+            cl.Action(
+                name="example_tomcat_cve",
+                label="📝 Apache Tomcat DoS (CVE-2023-24998 fix incomplete)",
+                payload={
+                    "query": """Fix for CVE-2023-24998 was incomplete
+Severity: Moderate
+Vendor: The Apache Software Foundation
+Versions Affected:
+Apache Tomcat 11.0.0-M2 to 11.0.0-M4
+Apache Tomcat 10.1.5 to 10.1.7
+Apache Tomcat 9.0.71 to 9.0.73
+Apache Tomcat 8.5.85 to 8.5.87
+Description:
+The fix for CVE-2023-24998 was incomplete. If non-default HTTP connector
+settings were used such that the maxParameterCount could be reached
+using query string parameters and a request was submitted that supplied
+exactly maxParameterCount parameters in the query string, the limit for
+uploaded request parts could be bypassed with the potential for a denial
+of service to occur.
+Mitigation:
+Users of the affected versions should apply one of the following
+mitigations:
+Upgrade to Apache Tomcat 11.0.0-M5 or later
+Upgrade to Apache Tomcat 10.1.8 or later
+Upgrade to Apache Tomcat 9.0.74 or later
+Upgrade to Apache Tomcat 8.5.88 or later"""
+                },
+            ),
+            cl.Action(
+                name="example_rocketmq_rce",
+                label="📝 Apache RocketMQ RCE (missing auth)",
+                payload={
+                    "query": """Affected versions:
+
+- Apache RocketMQ through 5.1.0
+
+Description:
+
+For RocketMQ versions 5.1.0 and below, under certain conditions, there is a risk of remote command execution.
+
+Several components of RocketMQ, including NameServer, Broker, and Controller, are leaked on the extranet and lack permission verification, an attacker can exploit this vulnerability by using the update configuration function to execute commands as the system users that RocketMQ is running as. Additionally, an attacker can achieve the same effect by forging the RocketMQ protocol content.
+
+To prevent these attacks, users are recommended to upgrade to version 5.1.1 above for using RocketMQ 5.x or 4.9.6 above for using RocketMQ 4.x ."""
+                },
+            ),
+            cl.Action(
+                name="example_netfilter_overflow",
+                label="📝 Linux netfilter stack overflow (nft_payload)",
+                payload={
+                    "query": """> The vulnerability consists of a stack buffer overflow due to an integer
+> underflow vulnerability inside the nft_payload_copy_vlan function, which is
+> invoked with nft_payload expressions as long as a VLAN tag is present in
+> the current skb.
+> (net/netfilter/nft_payload.c)
+>
+> ```c
+> /* add vlan header into the user buffer for if tag was removed by offloads
+> */
+> static bool nft_payload_copy_vlan(u32 *d, const struct sk_buff *skb, u8
+> offset, u8 len)
+> {
+>     int mac_off = skb_mac_header(skb) - skb->data;
+>     u8 *vlanh, *dst_u8 = (u8 *) d;
+>     struct vlan_ethhdr veth;
+>     u8 vlan_hlen = 0;
+>
+>     if ((skb->protocol == htons(ETH_P_8021AD) ||       <===== (0)
+>          skb->protocol == htons(ETH_P_8021Q)) &&
+>         offset >= VLAN_ETH_HLEN && offset < VLAN_ETH_HLEN + VLAN_HLEN)
+>         vlan_hlen += VLAN_HLEN;
+>
+>     vlanh = (u8 *) &veth;
+>
+>     if (offset < VLAN_ETH_HLEN + vlan_hlen) {
+>         u8 ethlen = len;
+>
+>         if (vlan_hlen &&
+>             skb_copy_bits(skb, mac_off, &veth, VLAN_ETH_HLEN) < 0)
+>             return false;
+>         else if (!nft_payload_rebuild_vlan_hdr(skb, mac_off, &veth))
+>             return false;
+>
+>         if (offset + len > VLAN_ETH_HLEN + vlan_hlen) <===== (1)
+>             ethlen -= offset + len - VLAN_ETH_HLEN + vlan_hlen;   <===== (2)
+>
+>         memcpy(dst_u8, vlanh + offset - vlan_hlen, ethlen);     <===== (3)
+>
+>         len -= ethlen;
+>         if (len == 0)
+>             return true;
+>
+>         dst_u8 += ethlen;
+>         offset = ETH_HLEN + vlan_hlen;
+>     } else {
+>         offset -= VLAN_HLEN + vlan_hlen;
+>     }
+>
+>     return skb_copy_bits(skb, offset + mac_off, dst_u8, len) == 0;
+> }
+> ```
+>
+> The checks at (0) look for a second VLAN tag from the EtherType field and,
+> if the offset falls between the first VLAN_ETH_HLEN bytes and VLAN_ETH_HLEN
+> plus the size of another VLAN header, then nftables should also try and
+> process the second VLAN.
+> At (1) the if statement correctly checks the boundary of the header using
+> the offset and len variables (8-bit unsigned ints), evaluating to true
+> whenever offset + len exceeds the double-tagged VLAN header.
+> The use of inline statements successfully prevents wrappings because u8
+> types are automatically promoted before the comparison.
+>
+> However, on the next line, the subtraction at (2) does not grant type
+> promotion, and ethlen (u8) may wrap to UINT8_MAX under certain conditions.
+> Some examples of vulnerable offset and len pairs are:
+>
+> offset: 19 & len: 4 & ethlen = 251
+> offset: 16 & len: 19 & ethlen = 254
+> offset: 20 & len: 32 & ethlen = 250
+> ...
+> Other pairs can be listed with the following algorithm:
+> ```c
+> uint8_t vlan_hlen = VLAN_HLEN, ethlen;
+> for (uint8_t len = 0; len < UINT8_MAX; len++) {
+>     for (uint8_t offset = 0; offset < UINT8_MAX; offset++) {
+>         if (offset < VLAN_ETH_HLEN + vlan_hlen) {
+>             uint8_t ethlen = len;
+>             if (offset + len > VLAN_ETH_HLEN + vlan_hlen) {
+>                 ethlen -= offset + len - VLAN_ETH_HLEN + vlan_hlen;
+>                 printf("offset: %hhu & len: %hhu & ethlen = %hhu\\n",
+> offset, len, ethlen);
+>             }
+>         }
+>     }
+> }
+> ```
+>
+> Finally, at (3) an up to 255-byte buffer gets copied to the destination
+> register located on the stack, overwriting the adjacent memory.
+> Since we can control the destination register, we can pick NFT_REG32_15 to
+> trigger a 251-byte OOB write on the stack (since NFT_REG32_15 occupies 4
+> bytes).
+> The vulnerable code path can be reached if the function
+> skb_vlan_tag_present(skb) evaluates to true, that is if the skb->vlan_tci
+> field is set. This is known to happen when the host is placed inside a
+> VLAN, although a modified skb could also be forged manually. (perhaps by
+> forging the packet itself or with some other nft_expr that can edit
+> packets?)"""
                 },
             ),
         ]
@@ -1197,6 +1349,24 @@ async def on_example_wordpress_xss_action(action: cl.Action):
     await handle_example_query_action(action)
 
 
+@cl.action_callback("example_tomcat_cve")
+async def on_example_tomcat_cve_action(action: cl.Action):
+    """Handle Apache Tomcat CVE example query button (CVE Creator persona)."""
+    await handle_example_query_action(action)
+
+
+@cl.action_callback("example_rocketmq_rce")
+async def on_example_rocketmq_rce_action(action: cl.Action):
+    """Handle Apache RocketMQ RCE example query button (CVE Creator persona)."""
+    await handle_example_query_action(action)
+
+
+@cl.action_callback("example_netfilter_overflow")
+async def on_example_netfilter_overflow_action(action: cl.Action):
+    """Handle Linux netfilter overflow example query button (CVE Creator persona)."""
+    await handle_example_query_action(action)
+
+
 async def handle_example_query_action(action: cl.Action):
     """
     Common handler for example query action buttons.
@@ -1223,15 +1393,18 @@ async def handle_example_query_action(action: cl.Action):
             ).send()
             return
 
-        # For CWE Analyzer buttons (CVE analysis), display the full input text first
-        # This makes it clear what vulnerability description is being analyzed
-        cwe_analyzer_buttons = [
+        # For CWE Analyzer and CVE Creator buttons, display the full input text first
+        # This makes it clear what vulnerability description is being processed
+        vulnerability_analysis_buttons = [
             "example_nvidia_cve",
             "example_phpgurukul_cve",
             "example_wordpress_xss",
+            "example_tomcat_cve",
+            "example_rocketmq_rce",
+            "example_netfilter_overflow",
         ]
-        if action.name in cwe_analyzer_buttons:
-            # Display the full CVE description as "Input for Analysis"
+        if action.name in vulnerability_analysis_buttons:
+            # Display the full CVE/vulnerability description as "Input for Analysis"
             await cl.Message(
                 content=f"**📝 Input for Analysis:**\n\n{query}",
                 author="User",
