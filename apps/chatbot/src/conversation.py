@@ -262,6 +262,7 @@ class ConversationManager:
             # Architecture: LLM generates full response → Model Armor scans → Display
             # Fake character-by-character streaming provided no value and caused confusion
             # with stop button behavior (LLM generation already complete before streaming)
+            # Feedback buttons controlled by [features.feedback] in config.toml
             msg = cl.Message(content=pipeline_result.final_response_text)
             await msg.send()
 
