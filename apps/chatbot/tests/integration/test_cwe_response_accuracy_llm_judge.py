@@ -304,6 +304,10 @@ class TestCWEResponseAccuracyWithLLMJudge:
         # Judge response
         verdict = await llm_judge.evaluate(cwe_id, ground_truth, chatbot_response)
 
+        # Log verdict for documentation
+        print(f"\n{cwe_id} Judge Verdict: {verdict['verdict']}")
+        print(f"{cwe_id} Judge Reasoning: {verdict['reasoning']}")
+
         # Assert verdict
         assert verdict["verdict"] in [
             "PASS",
@@ -325,6 +329,10 @@ class TestCWEResponseAccuracyWithLLMJudge:
 
         # Judge response
         verdict = await llm_judge.evaluate(cwe_id, ground_truth, chatbot_response)
+
+        # Log verdict for documentation
+        print(f"\n{cwe_id} Judge Verdict: {verdict['verdict']}")
+        print(f"{cwe_id} Judge Reasoning: {verdict['reasoning']}")
 
         # Assert verdict (allow PARTIAL for low-frequency CWEs)
         assert verdict["verdict"] in [

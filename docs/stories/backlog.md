@@ -1,3 +1,4 @@
+update deploy script for staging to ensure it has all vars
 limit access oauth
 redo the tests with unsafe and update
 
