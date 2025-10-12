@@ -124,14 +124,21 @@ class LLMJudge:
                 "GEMINI_API_KEY required for LLM judge (set via env var or parameter)"
             )
 
-        self.provider = get_llm_provider(
-            provider="google",
-            api_key=self.api_key,
-            model_name=model_name,
-            generation_config={"temperature": 0.0},  # Deterministic judging
-            safety_settings=None,
-            offline=False,
-        )
+        self.model_name = model_name
+        self.provider = None
+
+    def _get_provider(self):
+        """Lazy initialize provider to avoid event loop issues."""
+        if self.provider is None:
+            self.provider = get_llm_provider(
+                provider="google",
+                api_key=self.api_key,
+                model_name=self.model_name,
+                generation_config={"temperature": 0.0},  # Deterministic judging
+                safety_settings=None,
+                offline=False,
+            )
+        return self.provider
 
     async def evaluate(
         self, cwe_id: str, ground_truth: Dict[str, str], chatbot_response: str
@@ -178,7 +185,8 @@ Output Format (EXACTLY):
 """
 
         try:
-            response = await self.provider.generate(prompt)
+            provider = self._get_provider()
+            response = await provider.generate(prompt)
 
             # Extract verdict and reasoning
             verdict_match = re.search(
@@ -237,9 +245,9 @@ class TestCWEResponseAccuracyWithLLMJudge:
         """Initialize MITRE ground truth fetcher."""
         return MITREGroundTruth()
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="function")
     def llm_judge(self):
-        """Initialize LLM judge."""
+        """Initialize LLM judge (function scope to avoid event loop issues)."""
         return LLMJudge()
 
     async def query_chatbot(self, cwe_id: str) -> str:
@@ -252,6 +260,8 @@ class TestCWEResponseAccuracyWithLLMJudge:
         Returns:
             Chatbot response text
         """
+        import asyncio
+
         import httpx
 
         chatbot_url = os.getenv("CHATBOT_URL", "http://localhost:8081")
@@ -264,6 +274,9 @@ class TestCWEResponseAccuracyWithLLMJudge:
             )
 
         headers = {"X-API-Key": api_key}
+
+        # Rate limiting: 10 req/min = 6 seconds between requests
+        await asyncio.sleep(7)
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
