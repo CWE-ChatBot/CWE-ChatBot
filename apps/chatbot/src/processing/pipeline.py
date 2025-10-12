@@ -244,11 +244,27 @@ class ProcessingPipeline:
                 f"[DEBUG_PIPELINE] Passing {len(processed_chunks)} chunks to LLM with CWEs: {chunks_to_llm_cwes}"
             )
 
+            # DEBUG: Check response_generator before call
+            logger.info(
+                f"[DEBUG_PIPELINE] response_generator object: {self.response_generator}"
+            )
+            logger.info(
+                f"[DEBUG_PIPELINE] About to call generate_response_full_once with prompt length: {len(llm_prompt)}"
+            )
+
             raw_response = await self.response_generator.generate_response_full_once(
                 llm_prompt,
                 processed_chunks,
                 user_context.persona,
                 user_evidence=getattr(user_context, "file_evidence", None),
+            )
+
+            # DEBUG: Check raw response after call
+            logger.info(
+                f"[DEBUG_PIPELINE] LLM call completed, raw_response length: {len(raw_response) if raw_response else 0}"
+            )
+            logger.info(
+                f"[DEBUG_PIPELINE] raw_response first 100 chars: {raw_response[:100] if raw_response else 'EMPTY'}"
             )
 
             # Step 7: Post-process and validate response (MOVED FROM ConversationManager)

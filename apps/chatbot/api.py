@@ -384,9 +384,10 @@ async def query_cwe(request: QueryRequest):
             session_id=session_id, message_content=request.query
         )
 
-        # Extract response text
-        response_text = ""
-        if result.get("message"):
+        # Extract response text (API calls return "response" key, not "message" object)
+        response_text = result.get("response", "")
+        if not response_text and result.get("message"):
+            # Fallback for WebSocket-style response (shouldn't happen but handle gracefully)
             msg = result["message"]
             response_text = msg.content if hasattr(msg, "content") else str(msg)
 
