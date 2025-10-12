@@ -41,6 +41,11 @@ edit_message = true
 # Allow users to share threads (backend + UI). Requires an app-defined on_shared_thread_view callback.
 allow_thread_sharing = false
 
+# Show feedback buttons (thumbs up/down) on assistant messages
+# Handled by @cl.on_feedback decorator in main.py
+[features.feedback]
+enabled = true
+
 [features.slack]
 # Add emoji reaction when message is received (requires reactions:write OAuth scope)
 reaction_on_message_received = false
@@ -48,18 +53,12 @@ reaction_on_message_received = false
 # Authorize users to spontaneously upload files with messages
 [features.spontaneous_file_upload]
     enabled = true
-    # Define accepted file types using MIME types
-    # Examples:
-    # 1. For specific file types:
-    #    accept = ["image/jpeg", "image/png", "application/pdf"]
-    # 2. For all files of certain type:
-    #    accept = ["image/*", "audio/*", "video/*"]
-    # 3. For specific file extensions:
-    #    accept = { "application/octet-stream" = [".xyz", ".pdb"] }
-    # Note: Using "*/*" is not recommended as it may cause browser warnings
-    accept = ["*/*"]
+    # Define accepted file types using MIME types (explicit types to avoid browser warnings)
+    # Story 4.3 - Accept PDF and text files for security analysis
+    # Fixed: Removed "*/*" wildcard which causes "Skipped */* not a valid MIME type" warnings
+    accept = ["application/pdf", "text/plain", "text/markdown", "text/csv", "text/html", "text/xml"]
     max_files = 20
-    max_size_mb = 500
+    max_size_mb = 10  # Story 4.3 AC4: 10MB limit for ephemeral processing
 
 [features.audio]
     # Enable audio features
