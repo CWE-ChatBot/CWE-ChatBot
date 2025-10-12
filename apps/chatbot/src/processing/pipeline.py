@@ -252,11 +252,19 @@ class ProcessingPipeline:
                 f"[DEBUG_PIPELINE] About to call generate_response_full_once with prompt length: {len(llm_prompt)}"
             )
 
+            # Pass user preferences to response generator
+            user_preferences = {
+                "response_detail_level": user_context.response_detail_level,
+                "include_examples": user_context.include_examples,
+                "include_mitigations": user_context.include_mitigations,
+            }
+
             raw_response = await self.response_generator.generate_response_full_once(
                 llm_prompt,
                 processed_chunks,
                 user_context.persona,
                 user_evidence=getattr(user_context, "file_evidence", None),
+                user_preferences=user_preferences,
             )
 
             # DEBUG: Check raw response after call

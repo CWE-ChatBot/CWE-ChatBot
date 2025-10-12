@@ -240,6 +240,7 @@ Response:""",
         user_persona: str,
         *,
         user_evidence: Optional[str] = None,
+        user_preferences: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
         Async generator yielding response tokens for streaming.
@@ -265,6 +266,12 @@ Response:""",
             prompt_template = self.persona_prompts.get(
                 user_persona, self.persona_prompts["Developer"]
             )
+
+            # Inject user preferences into prompt template
+            prompt_template = self._apply_preferences_to_prompt(
+                prompt_template, user_preferences or {}
+            )
+
             if user_persona == "CVE Creator":
                 prompt = prompt_template.replace("{user_query}", query).replace(
                     "{user_evidence}",
@@ -361,6 +368,7 @@ Response:""",
         user_persona: str,
         *,
         user_evidence: Optional[str] = None,
+        user_preferences: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Non-streaming single-shot generation using the same prompt as streaming.
@@ -383,6 +391,12 @@ Response:""",
             prompt_template = self.persona_prompts.get(
                 user_persona, self.persona_prompts["Developer"]
             )
+
+            # Inject user preferences into prompt template
+            prompt_template = self._apply_preferences_to_prompt(
+                prompt_template, user_preferences or {}
+            )
+
             if user_persona == "CVE Creator":
                 prompt = prompt_template.replace("{user_query}", query).replace(
                     "{user_evidence}",
@@ -539,6 +553,83 @@ Response:""",
     def _generate_error_response(self, user_persona: str) -> str:
         """Generate safe error response without exposing system details."""
         return "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment. I'm here to help with Common Weakness Enumeration (CWE) topics."
+
+    def _apply_preferences_to_prompt(
+        self, prompt_template: str, user_preferences: Dict[str, Any]
+    ) -> str:
+        """
+        Inject user preference instructions into the prompt template.
+
+        Modifies the ## Instructions section of persona prompts to include/exclude:
+        - Detail level (basic, standard, detailed)
+        - Code examples
+        - Mitigation guidance
+        """
+        # Extract preferences with defaults
+        detail_level = user_preferences.get("response_detail_level", "standard")
+        include_examples = user_preferences.get("include_examples", True)
+        include_mitigations = user_preferences.get("include_mitigations", True)
+
+        # Build dynamic instruction additions
+        preference_instructions = []
+
+        # Detail level instructions
+        if detail_level == "basic":
+            preference_instructions.append(
+                "- Keep responses concise (2-3 paragraphs maximum)"
+            )
+            preference_instructions.append(
+                "- Focus on key points and actionable takeaways"
+            )
+        elif detail_level == "detailed":
+            preference_instructions.append(
+                "- Provide comprehensive technical analysis and context"
+            )
+            preference_instructions.append(
+                "- Include additional background and related concepts"
+            )
+        # standard = default behavior, no extra instructions
+
+        # Examples preference
+        if include_examples:
+            preference_instructions.append(
+                "- Include practical code examples and demonstrations where relevant"
+            )
+        else:
+            preference_instructions.append(
+                "- Omit code examples; focus on conceptual explanations"
+            )
+
+        # Mitigations preference
+        if include_mitigations:
+            preference_instructions.append(
+                "- Provide remediation steps and mitigation guidance"
+            )
+        else:
+            preference_instructions.append(
+                "- Omit mitigation details; focus on problem description"
+            )
+
+        # Inject preference instructions after "## Instructions:" section
+        if "## Instructions:" in prompt_template:
+            # Find the instructions section and inject preferences
+            instructions_marker = "## Instructions:"
+            parts = prompt_template.split(instructions_marker, 1)
+            if len(parts) == 2:
+                # Add preferences right after the Instructions header
+                preference_block = "\n".join(preference_instructions)
+                modified_prompt = (
+                    parts[0]
+                    + instructions_marker
+                    + "\n"
+                    + preference_block
+                    + "\n"
+                    + parts[1]
+                )
+                return modified_prompt
+
+        # Fallback: no modifications if Instructions section not found
+        return prompt_template
 
     def _generate_contextual_fallback_answer(
         self,
