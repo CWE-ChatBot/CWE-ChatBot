@@ -1219,6 +1219,16 @@ async def on_settings_update(settings: Dict[str, Any]):
         model = UISettings(**merged)
         cl.user_session.set("ui_settings", model.dict())
 
+        # Synchronize settings to UserContext so they affect LLM responses
+        user_context = get_user_context()
+        if user_context:
+            user_context.response_detail_level = model.detail_level
+            user_context.include_examples = model.include_examples
+            user_context.include_mitigations = model.include_mitigations
+            logger.info(
+                f"Settings synchronized to UserContext: detail={model.detail_level}, examples={model.include_examples}, mitigations={model.include_mitigations}"
+            )
+
         # Acknowledge settings update (persona is driven by ChatProfile, not settings)
         await cl.Message(
             content=f"✅ Settings updated! Detail level: **{model.detail_level}**; Examples: **{'on' if model.include_examples else 'off'}**; Mitigations: **{'on' if model.include_mitigations else 'off'}**.",
