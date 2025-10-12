@@ -1223,6 +1223,20 @@ async def handle_example_query_action(action: cl.Action):
             ).send()
             return
 
+        # For CWE Analyzer buttons (CVE analysis), display the full input text first
+        # This makes it clear what vulnerability description is being analyzed
+        cwe_analyzer_buttons = [
+            "example_nvidia_cve",
+            "example_phpgurukul_cve",
+            "example_wordpress_xss",
+        ]
+        if action.name in cwe_analyzer_buttons:
+            # Display the full CVE description as "Input for Analysis"
+            await cl.Message(
+                content=f"**📝 Input for Analysis:**\n\n{query}",
+                author="User",
+            ).send()
+
         # Create a fake message object to reuse the existing message handler
         # We'll process it through the same pipeline as user-typed messages
         fake_message = cl.Message(content=query, author="User")
@@ -1230,7 +1244,7 @@ async def handle_example_query_action(action: cl.Action):
         # Process the query using the main message handler logic
         await main(fake_message)
 
-        logger.info(f"Processed example query action: {query}")
+        logger.info(f"Processed example query action: {query[:100]}...")
 
     except Exception as e:
         logger.log_exception("Error handling example query action", e)
