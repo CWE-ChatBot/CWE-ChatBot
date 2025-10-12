@@ -840,7 +840,6 @@ async def main(message: cl.Message):
                 analysis_step.input = (
                     f"Query: '{user_query[:100]}...' | Persona: {current_persona}"
                 )
-                analysis_step.output = "Query validated and ready for CWE analysis"
 
                 # Process message using conversation manager with streaming (true streaming)
                 result = await conversation_manager.process_user_message_streaming(
@@ -848,6 +847,11 @@ async def main(message: cl.Message):
                     message_content=user_query,
                     message_id=message.id,
                 )
+
+                # Update step output with retrieval statistics
+                chunk_count = result.get("chunk_count", 0)
+                retrieved_cwes = result.get("retrieved_cwes", [])
+                analysis_step.output = f"Query validated and analyzed: Retrieved {chunk_count} chunks from {len(retrieved_cwes)} CWE(s)"
 
         # Debug logging: Log response content if enabled
         if app_config.debug_log_messages and result.get("message"):
@@ -873,8 +877,17 @@ async def main(message: cl.Message):
             ) as sources_step:
                 # Get the retrieved chunks to create source elements
                 retrieved_chunks = result.get("retrieved_chunks", [])
+                retrieved_cwes = result.get("retrieved_cwes", [])
                 elements = UIMessaging.create_source_elements(retrieved_chunks)
-                sources_step.output = f"Created {len(elements)} source references"
+
+                # Format CWE list for output
+                cwe_list = ", ".join(retrieved_cwes[:5])  # Show first 5 CWEs
+                if len(retrieved_cwes) > 5:
+                    cwe_list += f" and {len(retrieved_cwes) - 5} more"
+
+                sources_step.output = (
+                    f"Created {len(elements)} source references from CWEs: {cwe_list}"
+                )
 
         # Add uploaded file evidence as a side element (if present)
         file_ctx = cl.user_session.get("uploaded_file_context")
