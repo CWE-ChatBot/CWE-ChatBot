@@ -258,18 +258,12 @@ class ConversationManager:
                     pipeline_result, session_id, msg, context
                 )
 
-            # Stream the final response
-            msg = cl.Message(content="")
+            # Display the complete response immediately (no fake streaming)
+            # Architecture: LLM generates full response → Model Armor scans → Display
+            # Fake character-by-character streaming provided no value and caused confusion
+            # with stop button behavior (LLM generation already complete before streaming)
+            msg = cl.Message(content=pipeline_result.final_response_text)
             await msg.send()
-
-            try:
-                # Stream the validated response token by token
-                for char in pipeline_result.final_response_text:
-                    await msg.stream_token(char)
-            except Exception as e:
-                logger.error(f"Streaming failed: {e}")
-                msg.content = pipeline_result.final_response_text
-                await msg.update()
 
             # Update context and return
             context.add_conversation_entry(
