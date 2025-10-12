@@ -54,8 +54,9 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 COPY --chown=appuser:appuser apps/chatbot/main.py ./main.py
 COPY --chown=appuser:appuser apps/chatbot/api.py ./api.py
 COPY --chown=appuser:appuser apps/chatbot/chainlit.md ./chainlit.md
-# Create directories - let Chainlit auto-generate config.toml with correct format
+# Create .chainlit directory and copy our custom config.toml
 RUN mkdir -p ./.chainlit ./public
+COPY --chown=appuser:appuser apps/chatbot/.chainlit/config.toml ./.chainlit/config.toml
 COPY --chown=appuser:appuser apps/chatbot/public/ ./public/
 COPY --chown=appuser:appuser apps/chatbot/src/ ./src/
 
