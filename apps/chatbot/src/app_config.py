@@ -54,6 +54,30 @@ class Config:
     # Password retrieved from Secret Manager (falls back to env var)
     pg_password: str = get_database_password(_PROJECT_ID)
 
+    # Chainlit Data Layer Database Configuration
+    # Uses separate 'chainlit' database on same Cloud SQL instance
+    chainlit_database: str = os.getenv("CHAINLIT_DATABASE", "chainlit")
+    chainlit_user: str = os.getenv("CHAINLIT_USER", "app_user")
+
+    @property
+    def database_url(self) -> str:
+        """
+        Construct DATABASE_URL for Chainlit data layer.
+
+        For Cloud Run (Cloud SQL Unix socket):
+            postgresql://USER:PASSWORD@/DATABASE?host=/cloudsql/CONNECTION_NAME
+        For local development (TCP):
+            postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+        """
+        # Cloud Run uses Cloud SQL Unix socket (check for Cloud SQL connection name in env)
+        cloud_sql_connection = os.getenv("CLOUD_SQL_CONNECTION_NAME")
+        if cloud_sql_connection:
+            # Production: Cloud SQL Unix socket connection
+            return f"postgresql://{self.chainlit_user}:{self.pg_password}@/{self.chainlit_database}?host=/cloudsql/{cloud_sql_connection}"
+        else:
+            # Local development: TCP connection
+            return f"postgresql://{self.chainlit_user}:{self.pg_password}@{self.pg_host}:{self.pg_port}/{self.chainlit_database}"
+
     # Embedding/LLM Configuration (Gemini standard)
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "models/embedding-001")
     embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "3072"))

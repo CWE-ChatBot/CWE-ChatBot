@@ -42,6 +42,7 @@ httpx = {extras = ["http2"], version = "^0.28.1"}
 google-cloud-aiplatform = "^1.119.0"
 google-cloud-modelarmor = "^0.2.8"  # For Model Armor sanitize APIs
 python-socketio = "5.14.0"
+asyncpg = "^0.30.0"
 
 [tool.poetry.extras]
 local-embeddings = ["sentence-transformers"]

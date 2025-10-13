@@ -141,3 +141,6 @@ test-results/
 # Semgrep scan outputs
 semgrep.json
 semgrep.sarif
+node_modules/
+.chainlit/
+prisma/

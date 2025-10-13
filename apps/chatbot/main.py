@@ -17,6 +17,11 @@ from chainlit.input_widget import InputWidget, Select, Switch
 
 # Use the extended config which loads from environment files automatically
 from src.app_config import config as app_config
+
+# Configure Chainlit data layer DATABASE_URL for feedback persistence
+# Must be set before importing chainlit modules that initialize data layer
+os.environ["DATABASE_URL"] = app_config.database_url
+
 from src.conversation import ConversationManager
 from src.file_processor import FileProcessor
 from src.input_security import InputSanitizer, SecurityValidator
