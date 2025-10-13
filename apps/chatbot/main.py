@@ -13,6 +13,7 @@ import time
 from typing import Any, Dict, List, Optional, cast
 
 import chainlit as cl
+from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.input_widget import InputWidget, Select, Switch
 
 # Use the extended config which loads from environment files automatically
@@ -26,6 +27,17 @@ print(
     f"[STARTUP] DATABASE_URL configured for Chainlit data layer: {database_url[:50]}...",
     flush=True,
 )
+
+# Initialize SQLAlchemy data layer for feedback persistence
+# Convert postgresql:// to postgresql+asyncpg:// for async support
+database_url_async = database_url.replace("postgresql://", "postgresql+asyncpg://")
+
+@cl.data_layer
+def get_data_layer():
+    """Initialize PostgreSQL data layer for thread/step/feedback persistence."""
+    return SQLAlchemyDataLayer(conninfo=database_url_async)
+
+print("[STARTUP] SQLAlchemyDataLayer initialized for feedback persistence", flush=True)
 
 # Imports after DATABASE_URL setup (required for Chainlit data layer initialization)
 from src.conversation import ConversationManager  # noqa: E402
