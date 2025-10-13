@@ -47,10 +47,15 @@ class Config:
     """Application configuration with environment variable defaults."""
 
     # PostgreSQL Database Configuration
-    pg_host: str = os.getenv("POSTGRES_HOST", "localhost")
-    pg_port: int = int(os.getenv("POSTGRES_PORT", "5432"))
-    pg_database: str = os.getenv("POSTGRES_DATABASE", "cwe_chatbot")
-    pg_user: str = os.getenv("POSTGRES_USER", "postgres")
+    # Support both POSTGRES_* and DB_* environment variable naming conventions
+    pg_host: str = os.getenv("POSTGRES_HOST") or os.getenv("DB_HOST") or "localhost"
+    pg_port: int = int(
+        os.getenv("POSTGRES_PORT") or os.getenv("DB_PORT") or "5432"
+    )
+    pg_database: str = (
+        os.getenv("POSTGRES_DATABASE") or os.getenv("DB_NAME") or "cwe_chatbot"
+    )
+    pg_user: str = os.getenv("POSTGRES_USER") or os.getenv("DB_USER") or "postgres"
     # Password retrieved from Secret Manager (falls back to env var)
     pg_password: str = get_database_password(_PROJECT_ID)
 
