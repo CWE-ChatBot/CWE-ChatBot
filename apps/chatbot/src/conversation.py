@@ -257,11 +257,9 @@ class ConversationManager:
             # Architecture: LLM generates full response → Model Armor scans → Display
             # Fake character-by-character streaming provided no value and caused confusion
             # with stop button behavior (LLM generation already complete before streaming)
-            # Feedback buttons: Explicitly enable via disable_feedback=False + data layer
-            msg = cl.Message(
-                content=pipeline_result.final_response_text,
-                disable_feedback=False  # Enable feedback buttons (requires data layer)
-            )
+            # Feedback buttons controlled by [features.feedback] in config.toml
+            # type defaults to 'assistant_message' which enables feedback buttons
+            msg = cl.Message(content=pipeline_result.final_response_text)
             await msg.send()
 
             # Update context and return

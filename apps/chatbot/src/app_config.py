@@ -49,9 +49,7 @@ class Config:
     # PostgreSQL Database Configuration
     # Support both POSTGRES_* and DB_* environment variable naming conventions
     pg_host: str = os.getenv("POSTGRES_HOST") or os.getenv("DB_HOST") or "localhost"
-    pg_port: int = int(
-        os.getenv("POSTGRES_PORT") or os.getenv("DB_PORT") or "5432"
-    )
+    pg_port: int = int(os.getenv("POSTGRES_PORT") or os.getenv("DB_PORT") or "5432")
     pg_database: str = (
         os.getenv("POSTGRES_DATABASE") or os.getenv("DB_NAME") or "cwe_chatbot"
     )
