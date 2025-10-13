@@ -263,8 +263,8 @@ class ConversationManager:
             # Fake character-by-character streaming provided no value and caused confusion
             # with stop button behavior (LLM generation already complete before streaming)
             # Feedback buttons controlled by [features.feedback] in config.toml
-            # author must be set to enable feedback buttons on assistant messages
-            msg = cl.Message(content=pipeline_result.final_response_text, author="Assistant")
+            # type defaults to 'assistant_message' which enables feedback buttons
+            msg = cl.Message(content=pipeline_result.final_response_text)
             await msg.send()
 
             # Update context and return
