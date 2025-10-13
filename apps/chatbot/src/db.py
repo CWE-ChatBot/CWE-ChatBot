@@ -110,8 +110,10 @@ def engine() -> Any:
         future=True,
     )
 
+    # Log pool configuration (pool is QueuePool instance)
+    pool = eng.pool
     logger.info(
-        f"✓ Created connection pool: size={eng.pool.size()}, overflow={eng.pool.overflow()}, sslmode={sslmode}"
+        f"✓ Created connection pool: sslmode={sslmode}, pool_class={type(pool).__name__}"
     )
 
     # Note: Planner hints (enable_seqscan, hnsw.ef_search, etc.) are now applied

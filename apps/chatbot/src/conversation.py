@@ -6,11 +6,6 @@ Manages conversation flow, session state, and message handling for Chainlit inte
 
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-try:
-    from sqlalchemy.engine import Engine
-except ImportError:
-    Engine = None
-
 if TYPE_CHECKING:
     from src.processing.pipeline import PipelineResult
 import os
