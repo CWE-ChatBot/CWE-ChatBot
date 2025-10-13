@@ -52,6 +52,21 @@ print(f"[STARTUP] Data layer is None: {dl is None}", flush=True)
 if dl:
     print(f"[STARTUP] Data layer conninfo: {database_url_async[:60]}...", flush=True)
 
+
+# TEMPORARY: Add password auth for feedback button testing
+# Feedback buttons may require authentication to be enabled
+@cl.password_auth_callback
+def auth_callback(username: str, password: str):
+    """Temporary password auth for testing feedback buttons."""
+    # Accept any username/password for testing
+    return cl.User(
+        identifier=username or "test_user",
+        metadata={"role": "user", "provider": "password"}
+    )
+
+
+print("[STARTUP] Password authentication callback registered (TEST ONLY)", flush=True)
+
 # Imports after DATABASE_URL setup (required for Chainlit data layer initialization)
 from src.conversation import ConversationManager  # noqa: E402
 from src.file_processor import FileProcessor  # noqa: E402
