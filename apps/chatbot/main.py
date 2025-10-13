@@ -56,8 +56,11 @@ if dl:
 # TEMPORARY: Add password auth for feedback button testing
 # Feedback buttons may require authentication to be enabled
 @cl.password_auth_callback
-def auth_callback(username: str, password: str):
-    """Temporary password auth for testing feedback buttons."""
+async def auth_callback(username: str, password: str) -> Optional[cl.User]:
+    """Temporary password auth for testing feedback buttons.
+
+    Chainlit expects an async callback returning Optional[User].
+    """
     # Accept any username/password for testing
     return cl.User(
         identifier=username or "test_user",
@@ -1062,12 +1065,31 @@ async def main(message: cl.Message):
             f"Processing user query: '{user_query[:100]}...' for persona: {current_persona}"
         )
 
-        # TEMP: Removed cl.Step wrapper to test if it's blocking feedback buttons
-        # Issue: Chainlit feedback buttons don't show for messages sent inside Step context
-        # See: https://github.com/Chainlit/chainlit/issues/1202
-        result = await conversation_manager.process_user_message_streaming(
-            session_id=session_id, message_content=user_query, message_id=message.id
-        )
+        # Two-phase processing to restore cl.Step without blocking feedback buttons
+        # Phase 1: Retrieval work inside Step (shows progress UI)
+        async with cl.Step(name="Analyze security query", type="tool") as analysis_step:
+            analysis_step.input = f"Query: '{user_query[:100]}...'"
+
+            # Get the pipeline result WITHOUT sending message
+            processing_result = await conversation_manager.process_user_message_no_send(
+                session_id=session_id, message_content=user_query, message_id=message.id
+            )
+
+            # Show retrieval stats in Step output
+            if not processing_result.get("is_direct_response"):
+                pipeline_result = processing_result.get("pipeline_result")
+                if pipeline_result:
+                    chunk_count = getattr(pipeline_result, "chunk_count", 0)
+                    analysis_step.output = (
+                        f"Retrieved {chunk_count} relevant CWE chunks"
+                    )
+                else:
+                    analysis_step.output = "Processing completed"
+            else:
+                analysis_step.output = "Direct response (no retrieval needed)"
+
+        # Phase 2: Send the actual message OUTSIDE Step context (enables feedback buttons)
+        result = await conversation_manager.send_message_from_result(processing_result)
 
         # Debug logging: Log response content if enabled
         if app_config.debug_log_messages and result.get("message"):

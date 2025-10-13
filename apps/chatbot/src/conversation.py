@@ -123,6 +123,226 @@ class ConversationManager:
                 self.session_contexts[session_id] = ctx
             return self.session_contexts[session_id]
 
+    async def process_user_message_no_send(
+        self, session_id: str, message_content: str, message_id: str
+    ) -> Dict[str, Any]:
+        """
+        Two-phase processing: Execute retrieval and processing WITHOUT sending message.
+
+        This allows cl.Step to show retrieval work without blocking feedback buttons.
+        The caller must call send_message_from_result() outside the Step context.
+
+        Returns:
+            Dict containing pipeline_result, context, and other metadata needed for sending
+        """
+        try:
+            logger.info(f"Processing message (no send) for session {session_id}")
+
+            # Get user context
+            context = self.get_user_context(session_id)
+
+            # Process query and security checks
+            processed = self.query_processor.process_with_context(
+                message_content, context.get_session_context_for_processing()
+            )
+
+            # Handle off-topic queries
+            if processed.get("query_type") == "off_topic":
+                off_topic_response = (
+                    "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. "
+                    "Your question doesn't appear to be related to cybersecurity topics. "
+                    "I can help you with:\n\n"
+                    "• **CWE Analysis**: Understanding specific weaknesses like CWE-79 (XSS)\n"
+                    "• **Vulnerability Assessment**: Mapping CVEs to CWEs\n"
+                    "• **Security Best Practices**: Prevention and mitigation strategies\n"
+                    "• **Threat Modeling**: Risk assessment and security guidance\n\n"
+                    "What cybersecurity topic can I help you with today?"
+                )
+                return {
+                    "response_text": off_topic_response,
+                    "session_id": session_id,
+                    "context": context,
+                    "is_direct_response": True,  # Skip normal processing
+                }
+
+            # Security validation
+            security_mode = os.getenv("SECURITY_MODE", "FLAG_ONLY").upper()
+            if security_mode == "BLOCK" and processed.get("security_check", {}).get(
+                "is_potentially_malicious", False
+            ):
+                flags = processed.get("security_check", {}).get("detected_patterns", [])
+                fallback_response = self.input_sanitizer.generate_fallback_message(
+                    flags, context.persona
+                )
+
+                self.security_validator.log_security_event(
+                    "unsafe_input_detected",
+                    {
+                        "session_id": session_id,
+                        "security_flags": flags,
+                        "persona": context.persona,
+                    },
+                )
+                return {
+                    "response_text": fallback_response,
+                    "session_id": session_id,
+                    "context": context,
+                    "is_direct_response": True,
+                    "is_safe": False,
+                    "security_flags": flags,
+                }
+
+            elif processed.get("security_check", {}).get(
+                "is_potentially_malicious", False
+            ):
+                # In FLAG_ONLY mode, just log the event
+                flags = processed.get("security_check", {}).get("detected_patterns", [])
+                self.security_validator.log_security_event(
+                    "unsafe_input_flagged",
+                    {
+                        "session_id": session_id,
+                        "security_flags": flags,
+                        "persona": context.persona,
+                    },
+                )
+
+            # Handle /exit command for analyzer modes
+            if (
+                hasattr(context, "analyzer_mode")
+                and context.analyzer_mode
+                and message_content.strip().lower() == "/exit"
+            ):
+                context.analyzer_mode = None
+                from src.utils.session import set_user_context
+
+                set_user_context(context)
+
+                exit_response = "✅ **Exited analyzer mode.** You can now ask general CWE questions or start a new analysis."
+                return {
+                    "response_text": exit_response,
+                    "session_id": session_id,
+                    "context": context,
+                    "is_direct_response": True,
+                }
+
+            # Set file evidence if present
+            file_ctx = cl.user_session.get("uploaded_file_context")
+            if file_ctx and isinstance(file_ctx, str) and file_ctx.strip():
+                context.set_evidence(file_ctx[: config.max_file_evidence_length])
+
+            sanitized_q = processed.get("sanitized_query", message_content)
+
+            # Delegate to appropriate handler - THIS IS WHERE THE RETRIEVAL WORK HAPPENS
+            if context.persona == "CWE Analyzer":
+                pipeline_result = await self.analyzer_handler.process(
+                    sanitized_q, context
+                )
+            elif context.persona == "CVE Creator":
+                pipeline_result = await self._handle_cve_creator(sanitized_q, context)
+            else:
+                # Standard personas use pipeline directly
+                pipeline_result = await self.processing_pipeline.process_user_request(
+                    sanitized_q, context
+                )
+
+            # Return everything needed to send the message later
+            return {
+                "pipeline_result": pipeline_result,
+                "sanitized_query": sanitized_q,
+                "session_id": session_id,
+                "context": context,
+                "is_direct_response": False,
+            }
+
+        except Exception as e:
+            logger.log_exception("Error in process_user_message_no_send", e)
+            error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
+            return {
+                "response_text": error_response,
+                "session_id": session_id,
+                "context": self.get_user_context(session_id),
+                "is_direct_response": True,
+                "error": str(e),
+            }
+
+    async def send_message_from_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Two-phase processing: Send message from previously computed result.
+
+        This must be called OUTSIDE cl.Step context to ensure feedback buttons work.
+
+        Args:
+            result: Dict returned from process_user_message_no_send()
+
+        Returns:
+            Standard response dict with message object
+        """
+        try:
+            context = result["context"]
+            session_id = result["session_id"]
+
+            # Handle direct responses (off-topic, security blocks, etc.)
+            if result.get("is_direct_response"):
+                msg = cl.Message(content=result["response_text"])
+                await msg.send()
+                return self._build_response_dict(
+                    result["response_text"],
+                    session_id,
+                    msg,
+                    context,
+                    **{
+                        k: v
+                        for k, v in result.items()
+                        if k
+                        not in [
+                            "response_text",
+                            "session_id",
+                            "context",
+                            "is_direct_response",
+                        ]
+                    },
+                )
+
+            # Normal pipeline result
+            pipeline_result = result["pipeline_result"]
+            sanitized_q = result["sanitized_query"]
+
+            # Handle mode switches (no streaming needed)
+            if pipeline_result.metadata.get("mode_switch"):
+                msg = cl.Message(content=pipeline_result.final_response_text)
+                await msg.send()
+                return self._build_response_dict_from_pipeline(
+                    pipeline_result, session_id, msg, context
+                )
+
+            # Send the message (OUTSIDE Step context, so feedback buttons work)
+            msg = cl.Message(content=pipeline_result.final_response_text)
+            await msg.send()
+
+            # Update context
+            context.add_conversation_entry(
+                sanitized_q,
+                pipeline_result.final_response_text,
+                pipeline_result.retrieved_cwes,
+            )
+            context.clear_evidence()
+
+            return self._build_response_dict_from_pipeline(
+                pipeline_result, session_id, msg, context
+            )
+
+        except Exception as e:
+            logger.log_exception("Error in send_message_from_result", e)
+            error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
+            msg = cl.Message(content=error_response)
+            await msg.send()
+            return {
+                "response": error_response,
+                "session_id": result.get("session_id", "unknown"),
+                "error": str(e),
+                "message": msg,
+            }
+
     async def process_user_message_streaming(
         self, session_id: str, message_content: str, message_id: str
     ) -> Dict[str, Any]:
