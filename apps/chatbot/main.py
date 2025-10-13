@@ -32,12 +32,25 @@ print(
 # Convert postgresql:// to postgresql+asyncpg:// for async support
 database_url_async = database_url.replace("postgresql://", "postgresql+asyncpg://")
 
+
 @cl.data_layer
 def get_data_layer():
     """Initialize PostgreSQL data layer for thread/step/feedback persistence."""
-    return SQLAlchemyDataLayer(conninfo=database_url_async)
+    data_layer = SQLAlchemyDataLayer(conninfo=database_url_async)
+    print(f"[STARTUP] SQLAlchemyDataLayer created: {type(data_layer)}", flush=True)
+    return data_layer
+
 
 print("[STARTUP] SQLAlchemyDataLayer initialized for feedback persistence", flush=True)
+
+# Verify data layer is registered
+from chainlit.data import get_data_layer as get_registered_data_layer  # noqa: E402
+
+dl = get_registered_data_layer()
+print(f"[STARTUP] Data layer registered: {type(dl)}", flush=True)
+print(f"[STARTUP] Data layer is None: {dl is None}", flush=True)
+if dl:
+    print(f"[STARTUP] Data layer conninfo: {database_url_async[:60]}...", flush=True)
 
 # Imports after DATABASE_URL setup (required for Chainlit data layer initialization)
 from src.conversation import ConversationManager  # noqa: E402
