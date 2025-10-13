@@ -50,8 +50,8 @@ gcloud run deploy "$SERVICE" \
     --timeout=300 \
     --allow-unauthenticated \
     --execution-environment=gen2 \
-    --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,ENABLE_OAUTH=false,AUTH_MODE=hybrid,CHAINLIT_URL=https://staging-cwe.crashedmind.com,PUBLIC_ORIGIN=https://staging-cwe.crashedmind.com,CSP_MODE=compatible,PDF_WORKER_URL=https://pdf-worker-bmgj6wj65a-uc.a.run.app,CLOUD_SQL_CONNECTION_NAME=cwechatbot:us-central1:cwe-postgres-prod" \
-    --update-secrets="GEMINI_API_KEY=gemini-api-key:latest,DB_PASSWORD=db-password-app-user:latest,CHAINLIT_AUTH_SECRET=chainlit-auth-secret:latest" \
+    --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,ENABLE_OAUTH=true,AUTH_MODE=hybrid,CHAINLIT_URL=https://staging-cwe.crashedmind.com,PUBLIC_ORIGIN=https://staging-cwe.crashedmind.com,CSP_MODE=compatible,PDF_WORKER_URL=https://pdf-worker-bmgj6wj65a-uc.a.run.app,CLOUD_SQL_CONNECTION_NAME=cwechatbot:us-central1:cwe-postgres-prod" \
+    --update-secrets="GEMINI_API_KEY=gemini-api-key:latest,DB_PASSWORD=db-password-app-user:latest,CHAINLIT_AUTH_SECRET=chainlit-auth-secret:latest,TEST_API_KEY=test-api-key:latest,OAUTH_GOOGLE_CLIENT_ID=oauth-google-client-id:latest,OAUTH_GOOGLE_CLIENT_SECRET=oauth-google-client-secret:latest,OAUTH_GITHUB_CLIENT_ID=oauth-github-client-id:latest,OAUTH_GITHUB_CLIENT_SECRET=oauth-github-client-secret:latest" \
     --quiet
 
 STAGING_URL=$(gcloud run services describe "$SERVICE" --region="$REGION" --format='value(status.url)')

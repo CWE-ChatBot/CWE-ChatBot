@@ -53,22 +53,8 @@ if dl:
     print(f"[STARTUP] Data layer conninfo: {database_url_async[:60]}...", flush=True)
 
 
-# TEMPORARY: Add password auth for feedback button testing
-# Feedback buttons may require authentication to be enabled
-@cl.password_auth_callback
-async def auth_callback(username: str, password: str) -> Optional[cl.User]:
-    """Temporary password auth for testing feedback buttons.
-
-    Chainlit expects an async callback returning Optional[User].
-    """
-    # Accept any username/password for testing
-    return cl.User(
-        identifier=username or "test_user",
-        metadata={"role": "user", "provider": "password"},
-    )
-
-
-print("[STARTUP] Password authentication callback registered (TEST ONLY)", flush=True)
+# Password auth removed - using OAuth (Google/GitHub) for staging and production
+# API key auth available via /api/v1/test-login endpoint when AUTH_MODE=hybrid
 
 # Imports after DATABASE_URL setup (required for Chainlit data layer initialization)
 from src.conversation import ConversationManager  # noqa: E402
