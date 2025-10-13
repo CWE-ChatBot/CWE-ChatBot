@@ -54,11 +54,13 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 COPY --chown=appuser:appuser apps/chatbot/main.py ./main.py
 COPY --chown=appuser:appuser apps/chatbot/api.py ./api.py
 COPY --chown=appuser:appuser apps/chatbot/chainlit.md ./chainlit.md
-# Copy src directory first (includes .chainlit/config.toml which is NOT gitignored)
+# Copy src directory first (includes .chainlit/config.toml if present)
 COPY --chown=appuser:appuser apps/chatbot/src/ ./src/
-# Create .chainlit directory and copy config from src location (available in build context)
-RUN mkdir -p ./.chainlit ./public
-COPY --chown=appuser:appuser apps/chatbot/src/.chainlit/config.toml ./.chainlit/config.toml
+# Create .chainlit directory and copy config from src if it exists
+RUN mkdir -p ./.chainlit ./public && \
+    if [ -f ./src/.chainlit/config.toml ]; then \
+      cp ./src/.chainlit/config.toml ./.chainlit/config.toml; \
+    fi
 COPY --chown=appuser:appuser apps/chatbot/public/ ./public/
 
 # Create directories with proper permissions
