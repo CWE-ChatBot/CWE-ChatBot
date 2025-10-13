@@ -61,7 +61,7 @@ def auth_callback(username: str, password: str):
     # Accept any username/password for testing
     return cl.User(
         identifier=username or "test_user",
-        metadata={"role": "user", "provider": "password"}
+        metadata={"role": "user", "provider": "password"},
     )
 
 
@@ -1062,39 +1062,12 @@ async def main(message: cl.Message):
             f"Processing user query: '{user_query[:100]}...' for persona: {current_persona}"
         )
 
-        # Check if this is a follow-up question (don't show analysis step for follow-ups)
-        current_ctx = conversation_manager.get_session_context(session_id)
-        is_followup = (
-            current_ctx
-            and current_ctx.persona == "CWE Analyzer"
-            and getattr(current_ctx, "analyzer_mode", None) in ["question", "compare"]
+        # TEMP: Removed cl.Step wrapper to test if it's blocking feedback buttons
+        # Issue: Chainlit feedback buttons don't show for messages sent inside Step context
+        # See: https://github.com/Chainlit/chainlit/issues/1202
+        result = await conversation_manager.process_user_message_streaming(
+            session_id=session_id, message_content=user_query, message_id=message.id
         )
-
-        if is_followup:
-            # For follow-up questions, process without showing "Analyze security query" step
-            result = await conversation_manager.process_user_message_streaming(
-                session_id=session_id, message_content=user_query, message_id=message.id
-            )
-        else:
-            # For new analysis, show the analysis step
-            async with cl.Step(
-                name="Analyze security query", type="tool"
-            ) as analysis_step:
-                analysis_step.input = (
-                    f"Query: '{user_query[:100]}...' | Persona: {current_persona}"
-                )
-
-                # Process message using conversation manager with streaming (true streaming)
-                result = await conversation_manager.process_user_message_streaming(
-                    session_id=session_id,
-                    message_content=user_query,
-                    message_id=message.id,
-                )
-
-                # Update step output with retrieval statistics
-                chunk_count = result.get("chunk_count", 0)
-                retrieved_cwes = result.get("retrieved_cwes", [])
-                analysis_step.output = f"Query validated and analyzed: Retrieved {chunk_count} chunks from {len(retrieved_cwes)} CWE(s)"
 
         # Debug logging: Log response content if enabled
         if app_config.debug_log_messages and result.get("message"):
