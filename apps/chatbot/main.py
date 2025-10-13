@@ -20,24 +20,30 @@ from src.app_config import config as app_config
 
 # Configure Chainlit data layer DATABASE_URL for feedback persistence
 # Must be set before importing chainlit modules that initialize data layer
-os.environ["DATABASE_URL"] = app_config.database_url
+database_url = app_config.database_url
+os.environ["DATABASE_URL"] = database_url
+print(
+    f"[STARTUP] DATABASE_URL configured for Chainlit data layer: {database_url[:50]}...",
+    flush=True,
+)
 
-from src.conversation import ConversationManager
-from src.file_processor import FileProcessor
-from src.input_security import InputSanitizer, SecurityValidator
+# Imports after DATABASE_URL setup (required for Chainlit data layer initialization)
+from src.conversation import ConversationManager  # noqa: E402
+from src.file_processor import FileProcessor  # noqa: E402
+from src.input_security import InputSanitizer, SecurityValidator  # noqa: E402
 
 # Story S-12: Import security middleware and CSRF protection
-from src.security import (
+from src.security import (  # noqa: E402
     CSRFManager,
     SecurityHeadersMiddleware,
     require_csrf,
 )
-from src.security.secure_logging import get_secure_logger
+from src.security.secure_logging import get_secure_logger  # noqa: E402
 
 # Import the new UI modules
-from src.ui import UIMessaging, UISettings, create_chat_profiles
-from src.user_context import UserPersona
-from src.utils.session import get_user_context
+from src.ui import UIMessaging, UISettings, create_chat_profiles  # noqa: E402
+from src.user_context import UserPersona  # noqa: E402
+from src.utils.session import get_user_context  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
