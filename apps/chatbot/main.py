@@ -1638,6 +1638,14 @@ async def on_stop() -> None:
             if callable(close_fn):
                 close_fn()
                 logger.info("Closed retriever/database resources")
+        # Dispose global SQLAlchemy engine if present
+        try:
+            from src.db import close as db_close
+
+            db_close()
+            logger.info("Disposed SQLAlchemy engine")
+        except Exception as e:
+            logger.warning(f"Engine dispose failed: {e}")
     except Exception as e:
         logger.log_exception("Shutdown cleanup failed", e)
 
