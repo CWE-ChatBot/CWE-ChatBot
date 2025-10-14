@@ -149,7 +149,7 @@ class AnalyzerModeHandler:
         # Generate response using appropriate context
         try:
             # Use special CWE Analyzer Question persona for follow-up questions to avoid full analysis workflow
-            response_text = await self.pipeline.response_generator.generate_response_full_once(
+            response_text = await self.pipeline.response_generator.generate_response(
                 followup_query,
                 chunks_to_use,
                 "CWE Analyzer Question",  # Special persona for answering questions without full analysis

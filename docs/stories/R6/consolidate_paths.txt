@@ -1,0 +1,723 @@
+here’s a focused single commit that introduces a private _plan_and_execute() to unify the three conversation paths (WS streaming, WS no-send, REST API). Public methods now delegate to this one-pass planner/executor so behavior stays consistent and easier to maintain.
+
+Commit — unify conversation flows with _plan_and_execute()
+
+Message (subject + body):
+
+conversation: unify flows with a one-pass _plan_and_execute()
+
+- Add _plan_and_execute() that performs validation, security checks,
+  persona routing, pipeline invocation and context updates once.
+- Refactor process_user_message_no_send(), process_user_message_streaming(),
+  and process_user_message() to delegate to the new method.
+- Keep Chainlit sending isolated in the small wrappers, so Action/feedback
+  behavior remains intact while core logic is de-duplicated.
+
+
+Diff:
+
+diff --git a/src/conversation.py b/src/conversation.py
+index 2f6a2f1..c8f3a4a 100644
+--- a/src/conversation.py
++++ b/src/conversation.py
+@@ -1,11 +1,12 @@
+ #!/usr/bin/env python3
+ """
+ Conversation Management - Story 2.1
+ Manages conversation flow, session state, and message handling for Chainlit integration.
+ """
+ 
+-from typing import TYPE_CHECKING, Any, Dict, Optional
++from typing import TYPE_CHECKING, Any, Dict, Optional, Literal, TypedDict
+ 
+ if TYPE_CHECKING:
+     from src.processing.pipeline import PipelineResult
+ import os
+ from dataclasses import dataclass, field
+ from datetime import datetime, timezone
+@@ -27,6 +28,28 @@ from src.utils.session import get_user_context
+ logger = get_secure_logger(__name__)
+ 
+ 
++class _PlanResult(TypedDict, total=False):
++    """
++    Normalized result from a single planning/execution pass.
++    Chainlit-specific message sending is intentionally excluded here.
++    """
++    # Direct response (off-topic, security block, /exit etc.)
++    is_direct_response: bool
++    response_text: str
++    is_safe: bool
++    security_flags: list[str]
++    error: str
++
++    # Normal pipeline path
++    pipeline_result: "PipelineResult"
++    sanitized_query: str
++    retrieved_cwes: list[str]
++    chunk_count: int
++
++    # Shared context
++    session_id: str
++    context: Any
++
+ @dataclass
+ class ConversationMessage:
+     """Represents a single message in the conversation."""
+@@ -150,6 +173,155 @@ class ConversationManager:
+             raise
+ 
+     # -----------------------------
++    # One-pass planner/executor for all entry points
++    async def _plan_and_execute(
++        self,
++        *,
++        session_id: str,
++        message_content: str,
++        channel: Literal["ws", "api"],
++        message_id: Optional[str] = None,
++    ) -> _PlanResult:
++        """
++        Single place that:
++        - loads/creates user context
++        - runs NLU + security validation
++        - handles special commands (/exit)
++        - attaches file evidence from session (WS)
++        - routes to the right persona handler/pipeline
++        - updates conversation context
++        It DOES NOT send Chainlit messages; wrappers handle UI concerns.
++        """
++        try:
++            logger.info(f"[plan] session={session_id}, channel={channel}")
++
++            # Get user context
++            context = self.get_user_context(session_id)
++
++            # Process query and security checks
++            processed = self.query_processor.process_with_context(
++                message_content, context.get_session_context_for_processing()
++            )
++
++            # Handle off-topic queries (uniform text; UI wrapper decides how to display)
++            if processed.get("query_type") == "off_topic":
++                off_topic_response = (
++                    "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. "
++                    "Your question doesn't appear to be related to cybersecurity topics. "
++                    "I can help you with:\n\n"
++                    "• **CWE Analysis**: Understanding specific weaknesses like CWE-79 (XSS)\n"
++                    "• **Vulnerability Assessment**: Mapping CVEs to CWEs\n"
++                    "• **Security Best Practices**: Prevention and mitigation strategies\n"
++                    "• **Threat Modeling**: Risk assessment and security guidance\n\n"
++                    "What cybersecurity topic can I help you with today?"
++                )
++                return {
++                    "is_direct_response": True,
++                    "response_text": off_topic_response,
++                    "session_id": session_id,
++                    "context": context,
++                    "is_safe": True,
++                }
++
++            # Security validation
++            security_mode = os.getenv("SECURITY_MODE", "FLAG_ONLY").upper()
++            is_potentially_malicious = processed.get("security_check", {}).get(
++                "is_potentially_malicious", False
++            )
++            if security_mode == "BLOCK" and is_potentially_malicious:
++                flags = processed.get("security_check", {}).get("detected_patterns", [])
++                fallback_response = self.input_sanitizer.generate_fallback_message(
++                    flags, context.persona
++                )
++                self.security_validator.log_security_event(
++                    "unsafe_input_detected",
++                    {
++                        "session_id": session_id,
++                        "security_flags": flags,
++                        "persona": context.persona,
++                    },
++                )
++                return {
++                    "is_direct_response": True,
++                    "response_text": fallback_response,
++                    "session_id": session_id,
++                    "context": context,
++                    "is_safe": False,
++                    "security_flags": flags,
++                }
++            elif is_potentially_malicious:
++                flags = processed.get("security_check", {}).get("detected_patterns", [])
++                self.security_validator.log_security_event(
++                    "unsafe_input_flagged",
++                    {
++                        "session_id": session_id,
++                        "security_flags": flags,
++                        "persona": context.persona,
++                    },
++                )
++
++            # Handle /exit for analyzer modes
++            if (
++                hasattr(context, "analyzer_mode")
++                and context.analyzer_mode
++                and message_content.strip().lower() == "/exit"
++            ):
++                context.analyzer_mode = None
++                from src.utils.session import set_user_context
++
++                set_user_context(context)
++                exit_response = "✅ **Exited analyzer mode.** You can now ask general CWE questions or start a new analysis."
++                return {
++                    "is_direct_response": True,
++                    "response_text": exit_response,
++                    "session_id": session_id,
++                    "context": context,
++                    "is_safe": True,
++                }
++
++            # WS channel: attach file evidence stored by UI handlers
++            if channel == "ws":
++                file_ctx = cl.user_session.get("uploaded_file_context")
++                if file_ctx and isinstance(file_ctx, str) and file_ctx.strip():
++                    context.set_evidence(file_ctx[: config.max_file_evidence_length])
++
++            sanitized_q = processed.get("sanitized_query", message_content)
++
++            # Persona routing → pipeline
++            if context.persona == "CWE Analyzer":
++                pipeline_result = await self.analyzer_handler.process(
++                    sanitized_q, context
++                )
++            elif context.persona == "CVE Creator":
++                pipeline_result = await self._handle_cve_creator(sanitized_q, context)
++            else:
++                pipeline_result = await self.processing_pipeline.process_user_request(
++                    sanitized_q, context
++                )
++
++            # Update conversation context (shared across API/WS)
++            context.add_conversation_entry(
++                sanitized_q,
++                pipeline_result.final_response_text,
++                pipeline_result.retrieved_cwes,
++            )
++            context.clear_evidence()
++
++            return {
++                "pipeline_result": pipeline_result,
++                "sanitized_query": sanitized_q,
++                "session_id": session_id,
++                "context": context,
++                "retrieved_cwes": pipeline_result.retrieved_cwes,
++                "chunk_count": pipeline_result.chunk_count,
++                "is_direct_response": False,
++                "is_safe": not pipeline_result.is_low_confidence,
++            }
++
++        except Exception as e:
++            logger.log_exception("Error in _plan_and_execute", e)
++            return {
++                "is_direct_response": True,
++                "response_text": "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment.",
++                "session_id": session_id,
++                "context": self.get_user_context(session_id),
++                "is_safe": True,
++                "error": str(e),
++            }
++
++    # -----------------------------
+     # Lightweight helpers
+     # Method moved to AnalyzerModeHandler for better separation of concerns
+ 
+@@ -198,107 +370,28 @@ class ConversationManager:
+         Returns:
+             Dict containing pipeline_result, context, and other metadata needed for sending
+         """
+-        try:
+-            logger.info(f"Processing message (no send) for session {session_id}")
+-
+-            # Get user context
+-            context = self.get_user_context(session_id)
+-
+-            # Process query and security checks
+-            processed = self.query_processor.process_with_context(
+-                message_content, context.get_session_context_for_processing()
+-            )
+-
+-            # Handle off-topic queries
+-            if processed.get("query_type") == "off_topic":
+-                off_topic_response = (
+-                    "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. "
+-                    "Your question doesn't appear to be related to cybersecurity topics. "
+-                    "I can help you with:\n\n"
+-                    "• **CWE Analysis**: Understanding specific weaknesses like CWE-79 (XSS)\n"
+-                    "• **Vulnerability Assessment**: Mapping CVEs to CWEs\n"
+-                    "• **Security Best Practices**: Prevention and mitigation strategies\n"
+-                    "• **Threat Modeling**: Risk assessment and security guidance\n\n"
+-                    "What cybersecurity topic can I help you with today?"
+-                )
+-                return {
+-                    "response_text": off_topic_response,
+-                    "session_id": session_id,
+-                    "context": context,
+-                    "is_direct_response": True,  # Skip normal processing
+-                }
+-
+-            # Security validation
+-            security_mode = os.getenv("SECURITY_MODE", "FLAG_ONLY").upper()
+-            if security_mode == "BLOCK" and processed.get("security_check", {}).get(
+-                "is_potentially_malicious", False
+-            ):
+-                flags = processed.get("security_check", {}).get("detected_patterns", [])
+-                fallback_response = self.input_sanitizer.generate_fallback_message(
+-                    flags, context.persona
+-                )
+-
+-                self.security_validator.log_security_event(
+-                    "unsafe_input_detected",
+-                    {
+-                        "session_id": session_id,
+-                        "security_flags": flags,
+-                        "persona": context.persona,
+-                    },
+-                )
+-                return {
+-                    "response_text": fallback_response,
+-                    "session_id": session_id,
+-                    "context": context,
+-                    "is_direct_response": True,
+-                    "is_safe": False,
+-                    "security_flags": flags,
+-                }
+-
+-            elif processed.get("security_check", {}).get(
+-                "is_potentially_malicious", False
+-            ):
+-                # In FLAG_ONLY mode, just log the event
+-                flags = processed.get("security_check", {}).get("detected_patterns", [])
+-                self.security_validator.log_security_event(
+-                    "unsafe_input_flagged",
+-                    {
+-                        "session_id": session_id,
+-                        "security_flags": flags,
+-                        "persona": context.persona,
+-                    },
+-                )
+-
+-            # Handle /exit command for analyzer modes
+-            if (
+-                hasattr(context, "analyzer_mode")
+-                and context.analyzer_mode
+-                and message_content.strip().lower() == "/exit"
+-            ):
+-                context.analyzer_mode = None
+-                from src.utils.session import set_user_context
+-
+-                set_user_context(context)
+-
+-                exit_response = "✅ **Exited analyzer mode.** You can now ask general CWE questions or start a new analysis."
+-                return {
+-                    "response_text": exit_response,
+-                    "session_id": session_id,
+-                    "context": context,
+-                    "is_direct_response": True,
+-                }
+-
+-            # Set file evidence if present
+-            file_ctx = cl.user_session.get("uploaded_file_context")
+-            if file_ctx and isinstance(file_ctx, str) and file_ctx.strip():
+-                context.set_evidence(file_ctx[: config.max_file_evidence_length])
+-
+-            sanitized_q = processed.get("sanitized_query", message_content)
+-
+-            # Delegate to appropriate handler - THIS IS WHERE THE RETRIEVAL WORK HAPPENS
+-            if context.persona == "CWE Analyzer":
+-                pipeline_result = await self.analyzer_handler.process(
+-                    sanitized_q, context
+-                )
+-            elif context.persona == "CVE Creator":
+-                pipeline_result = await self._handle_cve_creator(sanitized_q, context)
+-            else:
+-                # Standard personas use pipeline directly
+-                pipeline_result = await self.processing_pipeline.process_user_request(
+-                    sanitized_q, context
+-                )
+-
+-            # Return everything needed to send the message later
+-            return {
+-                "pipeline_result": pipeline_result,
+-                "sanitized_query": sanitized_q,
+-                "session_id": session_id,
+-                "context": context,
+-                "is_direct_response": False,
+-            }
+-
+-        except Exception as e:
+-            logger.log_exception("Error in process_user_message_no_send", e)
+-            error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
+-            return {
+-                "response_text": error_response,
+-                "session_id": session_id,
+-                "context": self.get_user_context(session_id),
+-                "is_direct_response": True,
+-                "error": str(e),
+-            }
++        # One-pass planning/execution; no UI sending here
++        result = await self._plan_and_execute(
++            session_id=session_id,
++            message_content=message_content,
++            channel="ws",
++            message_id=message_id,
++        )
++        # Preserve legacy return shape expected by main.py
++        if result.get("is_direct_response"):
++            return {
++                "response_text": result["response_text"],
++                "session_id": result["session_id"],
++                "context": result["context"],
++                "is_direct_response": True,
++                "is_safe": result.get("is_safe", True),
++                "security_flags": result.get("security_flags", []),
++            }
++        return {
++            "pipeline_result": result["pipeline_result"],
++            "sanitized_query": result["sanitized_query"],
++            "session_id": result["session_id"],
++            "context": result["context"],
++            "is_direct_response": False,
++        }
+ 
+     async def send_message_from_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+         """
+@@ -339,132 +432,41 @@ class ConversationManager:
+         logic to the ProcessingPipeline and specialized persona handlers.
+         """
+         try:
+-            logger.info(f"Processing streaming message for session {session_id}")
+-
+-            # Get user context
+-            context = self.get_user_context(session_id)
+-
+-            # Process query and security checks
+-            processed = self.query_processor.process_with_context(
+-                message_content, context.get_session_context_for_processing()
+-            )
+-
+-            # Handle off-topic queries
+-            if processed.get("query_type") == "off_topic":
+-                off_topic_response = (
+-                    "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. "
+-                    "Your question doesn't appear to be related to cybersecurity topics. "
+-                    "I can help you with:\n\n"
+-                    "• **CWE Analysis**: Understanding specific weaknesses like CWE-79 (XSS)\n"
+-                    "• **Vulnerability Assessment**: Mapping CVEs to CWEs\n"
+-                    "• **Security Best Practices**: Prevention and mitigation strategies\n"
+-                    "• **Threat Modeling**: Risk assessment and security guidance\n\n"
+-                    "What cybersecurity topic can I help you with today?"
+-                )
+-
+-                msg = cl.Message(content=off_topic_response)
+-                await msg.send()
+-                return self._build_response_dict(
+-                    off_topic_response, session_id, msg, context
+-                )
+-
+-            # Security validation
+-            security_mode = os.getenv("SECURITY_MODE", "FLAG_ONLY").upper()
+-            if security_mode == "BLOCK" and processed.get("security_check", {}).get(
+-                "is_potentially_malicious", False
+-            ):
+-                flags = processed.get("security_check", {}).get("detected_patterns", [])
+-                fallback_response = self.input_sanitizer.generate_fallback_message(
+-                    flags, context.persona
+-                )
+-
+-                self.security_validator.log_security_event(
+-                    "unsafe_input_detected",
+-                    {
+-                        "session_id": session_id,
+-                        "security_flags": flags,
+-                        "persona": context.persona,
+-                    },
+-                )
+-
+-                msg = cl.Message(content=fallback_response)
+-                await msg.send()
+-                return self._build_response_dict(
+-                    fallback_response,
+-                    session_id,
+-                    msg,
+-                    context,
+-                    is_safe=False,
+-                    security_flags=flags,
+-                )
+-
+-            elif processed.get("security_check", {}).get(
+-                "is_potentially_malicious", False
+-            ):
+-                # In FLAG_ONLY mode, just log the event
+-                flags = processed.get("security_check", {}).get("detected_patterns", [])
+-                self.security_validator.log_security_event(
+-                    "unsafe_input_flagged",
+-                    {
+-                        "session_id": session_id,
+-                        "security_flags": flags,
+-                        "persona": context.persona,
+-                    },
+-                )
+-
+-            # Handle /exit command for analyzer modes
+-            if (
+-                hasattr(context, "analyzer_mode")
+-                and context.analyzer_mode
+-                and message_content.strip().lower() == "/exit"
+-            ):
+-                context.analyzer_mode = None
+-                from src.utils.session import set_user_context
+-
+-                set_user_context(context)
+-
+-                exit_response = "✅ **Exited analyzer mode.** You can now ask general CWE questions or start a new analysis."
+-                msg = cl.Message(content=exit_response)
+-                await msg.send()
+-                return self._build_response_dict(
+-                    exit_response, session_id, msg, context
+-                )
+-
+-            # Set file evidence if present
+-            file_ctx = cl.user_session.get("uploaded_file_context")
+-            if file_ctx and isinstance(file_ctx, str) and file_ctx.strip():
+-                context.set_evidence(file_ctx[: config.max_file_evidence_length])
+-
+-            sanitized_q = processed.get("sanitized_query", message_content)
+-
+-            # Delegate to appropriate handler
+-            if context.persona == "CWE Analyzer":
+-                pipeline_result = await self.analyzer_handler.process(
+-                    sanitized_q, context
+-                )
+-            elif context.persona == "CVE Creator":
+-                # Keep existing CVE Creator logic - could be extracted to separate handler in future
+-                pipeline_result = await self._handle_cve_creator(sanitized_q, context)
+-            else:
+-                # Standard personas use pipeline directly
+-                pipeline_result = await self.processing_pipeline.process_user_request(
+-                    sanitized_q, context
+-                )
+-
+-            # Handle mode switches (no streaming needed)
+-            if pipeline_result.metadata.get("mode_switch"):
+-                msg = cl.Message(content=pipeline_result.final_response_text)
+-                await msg.send()
+-                return self._build_response_dict_from_pipeline(
+-                    pipeline_result, session_id, msg, context
+-                )
+-
+-            # Display the complete response immediately (no fake streaming)
+-            # Architecture: LLM generates full response → Model Armor scans → Display
+-            # Fake character-by-character streaming provided no value and caused confusion
+-            # with stop button behavior (LLM generation already complete before streaming)
+-            # Feedback buttons controlled by [features.feedback] in config.toml
+-            # type defaults to 'assistant_message' which enables feedback buttons
+-            msg = cl.Message(content=pipeline_result.final_response_text)
+-            await msg.send()
+-
+-            # Update context and return
+-            context.add_conversation_entry(
+-                sanitized_q,
+-                pipeline_result.final_response_text,
+-                pipeline_result.retrieved_cwes,
+-            )
+-            context.clear_evidence()
+-
+-            return self._build_response_dict_from_pipeline(
+-                pipeline_result, session_id, msg, context
+-            )
++            # One-pass plan/execute, then render to Chainlit
++            result = await self._plan_and_execute(
++                session_id=session_id,
++                message_content=message_content,
++                channel="ws",
++                message_id=message_id,
++            )
++
++            # Direct (off-topic/security/exit)
++            if result.get("is_direct_response"):
++                msg = cl.Message(content=result["response_text"])
++                await msg.send()
++                return self._build_response_dict(
++                    result["response_text"],
++                    session_id,
++                    msg,
++                    result["context"],
++                    is_safe=result.get("is_safe", True),
++                    security_flags=result.get("security_flags", []),
++                )
++
++            pipeline_result = result["pipeline_result"]
++            # Handle mode switch banner
++            if pipeline_result.metadata.get("mode_switch"):
++                msg = cl.Message(content=pipeline_result.final_response_text)
++                await msg.send()
++                return self._build_response_dict_from_pipeline(
++                    pipeline_result, session_id, msg, result["context"]
++                )
++
++            msg = cl.Message(content=pipeline_result.final_response_text)
++            await msg.send()
++            return self._build_response_dict_from_pipeline(
++                pipeline_result, session_id, msg, result["context"]
++            )
+ 
+         except Exception as e:
+             return await self._handle_processing_error(session_id, e)
+@@ -495,67 +497,23 @@ class ConversationManager:
+ 
+         Returns:
+             Dict with response text, retrieved CWEs, chunk count, and metadata
+         """
+-        try:
+-            logger.info(f"Processing API message for session {session_id}")
+-
+-            # Get user context
+-            context = self.get_user_context(session_id)
+-
+-            # Process query and security checks
+-            processed = self.query_processor.process_with_context(
+-                message_content, context.get_session_context_for_processing()
+-            )
+-
+-            # Handle off-topic queries
+-            if processed.get("query_type") == "off_topic":
+-                off_topic_response = (
+-                    "I'm a cybersecurity assistant focused on MITRE Common Weakness Enumeration (CWE) analysis. "
+-                    "Your question doesn't appear to be related to cybersecurity topics."
+-                )
+-                return {
+-                    "response": off_topic_response,
+-                    "retrieved_cwes": [],
+-                    "chunk_count": 0,
+-                    "session_id": session_id,
+-                    "message": None,
+-                }
+-
+-            # Security validation
+-            security_mode = os.getenv("SECURITY_MODE", "FLAG_ONLY").upper()
+-            if security_mode == "BLOCK" and processed.get("security_check", {}).get(
+-                "is_potentially_malicious", False
+-            ):
+-                flags = processed.get("security_check", {}).get("detected_patterns", [])
+-                fallback_response = self.input_sanitizer.generate_fallback_message(
+-                    flags, context.persona
+-                )
+-
+-                self.security_validator.log_security_event(
+-                    "unsafe_input_detected",
+-                    {
+-                        "session_id": session_id,
+-                        "security_flags": flags,
+-                        "persona": context.persona,
+-                    },
+-                )
+-
+-                return {
+-                    "response": fallback_response,
+-                    "retrieved_cwes": [],
+-                    "chunk_count": 0,
+-                    "session_id": session_id,
+-                    "message": None,
+-                    "is_safe": False,
+-                    "security_flags": flags,
+-                }
+-
+-            elif processed.get("security_check", {}).get(
+-                "is_potentially_malicious", False
+-            ):
+-                # In FLAG_ONLY mode, just log the event
+-                flags = processed.get("security_check", {}).get("detected_patterns", [])
+-                self.security_validator.log_security_event(
+-                    "unsafe_input_flagged",
+-                    {
+-                        "session_id": session_id,
+-                        "security_flags": flags,
+-                        "persona": context.persona,
+-                    },
+-                )
+-
+-            sanitized_q = processed.get("sanitized_query", message_content)
+-
+-            # Delegate to appropriate handler
+-            if context.persona == "CWE Analyzer":
+-                pipeline_result = await self.analyzer_handler.process(
+-                    sanitized_q, context
+-                )
+-            elif context.persona == "CVE Creator":
+-                pipeline_result = await self._handle_cve_creator(sanitized_q, context)
+-            else:
+-                # Standard personas use pipeline directly
+-                pipeline_result = await self.processing_pipeline.process_user_request(
+-                    sanitized_q, context
+-                )
+-
+-            # Update context
+-            context.add_conversation_entry(
+-                sanitized_q,
+-                pipeline_result.final_response_text,
+-                pipeline_result.retrieved_cwes,
+-            )
+-            context.clear_evidence()
+-
+-            # Build response without Chainlit Message object
+-            return {
+-                "response": pipeline_result.final_response_text,
+-                "retrieved_cwes": pipeline_result.retrieved_cwes,
+-                "chunk_count": pipeline_result.chunk_count,
+-                "session_id": session_id,
+-                "message": None,
+-                "persona": context.persona,
+-                "is_low_confidence": pipeline_result.is_low_confidence,
+-            }
+-
+-        except Exception as e:
+-            logger.log_exception(
+-                f"API message processing failed for session {session_id}", e
+-            )
+-            return {
+-                "response": "I encountered an error processing your request. Please try again.",
+-                "retrieved_cwes": [],
+-                "chunk_count": 0,
+-                "session_id": session_id,
+-                "message": None,
+-                "error": str(e),
+-            }
++        result = await self._plan_and_execute(
++            session_id=session_id, message_content=message_content, channel="api"
++        )
++        # Direct path
++        if result.get("is_direct_response"):
++            # Shorter off-topic message for API parity with previous behavior
++            text = result["response_text"]
++            if "Your question doesn't appear to be related" in text:
++                text = "I'm a cybersecurity assistant focused on MITRE CWE analysis. Your question doesn't appear to be related."
++            return {
++                "response": text,
++                "retrieved_cwes": [],
++                "chunk_count": 0,
++                "session_id": result["session_id"],
++                "message": None,
++                "is_safe": result.get("is_safe", True),
++                "security_flags": result.get("security_flags", []),
++            }
++        pr = result["pipeline_result"]
++        return {
++            "response": pr.final_response_text,
++            "retrieved_cwes": pr.retrieved_cwes,
++            "chunk_count": pr.chunk_count,
++            "session_id": result["session_id"],
++            "message": None,
++            "persona": result["context"].persona,
++            "is_low_confidence": pr.is_low_confidence,
++        }
+ 
+     async def _handle_cve_creator(self, query: str, context: Any) -> "PipelineResult":
+         """Handle CVE Creator persona logic."""
+ 

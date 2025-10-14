@@ -4,7 +4,7 @@ Conversation Management - Story 2.1
 Manages conversation flow, session state, and message handling for Chainlit integration.
 """
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
 
 if TYPE_CHECKING:
     from src.processing.pipeline import PipelineResult
@@ -25,6 +25,30 @@ from src.user_context import UserContext, UserPersona
 from src.utils.session import get_user_context
 
 logger = get_secure_logger(__name__)
+
+
+class _PlanResult(TypedDict, total=False):
+    """
+    Normalized result from a single planning/execution pass.
+    Chainlit-specific message sending is intentionally excluded here.
+    """
+
+    # Direct response (off-topic, security block, /exit etc.)
+    is_direct_response: bool
+    response_text: str
+    is_safe: bool
+    security_flags: list[str]
+    error: str
+
+    # Normal pipeline path
+    pipeline_result: "PipelineResult"
+    sanitized_query: str
+    retrieved_cwes: list[str]
+    chunk_count: int
+
+    # Shared context
+    session_id: str
+    context: Any
 
 
 @dataclass

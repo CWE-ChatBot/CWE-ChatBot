@@ -233,135 +233,7 @@ Response:""",
         )
         return mapping
 
-    async def generate_response_streaming(
-        self,
-        query: str,
-        retrieved_chunks: List[Dict[str, Any]],
-        user_persona: str,
-        *,
-        user_evidence: Optional[str] = None,
-        user_preferences: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        """
-        Async generator yielding response tokens for streaming.
-
-        Includes Model Armor pre/post sanitization if enabled.
-        """
-        try:
-            logger.info(f"Generating streaming response for persona: {user_persona}")
-
-            # [1] Model Armor: Sanitize user prompt BEFORE LLM generation
-            if self.model_armor:
-                is_safe, message = await self.model_armor.sanitize_user_prompt(query)
-                if not is_safe:
-                    # BLOCKED - return generic error and stop
-                    yield message
-                    return
-
-            context = self._build_context(retrieved_chunks or [])
-            if not context and not (user_evidence and user_evidence.strip()):
-                yield self._generate_fallback_response(query, user_persona)
-                return
-
-            prompt_template = self.persona_prompts.get(
-                user_persona, self.persona_prompts["Developer"]
-            )
-
-            # Inject user preferences into prompt template
-            prompt_template = self._apply_preferences_to_prompt(
-                prompt_template, user_preferences or {}
-            )
-
-            if user_persona == "CVE Creator":
-                prompt = prompt_template.replace("{user_query}", query).replace(
-                    "{user_evidence}",
-                    user_evidence or "No additional evidence provided.",
-                )
-            else:
-                prompt = prompt_template.format(
-                    user_query=query,
-                    cwe_context=context,
-                    user_evidence=(user_evidence or "No additional evidence provided."),
-                )
-            # Allow tests to force non-stream path for stability
-            if os.getenv("E2E_NO_STREAM") == "1":
-                try:
-                    final = await self.provider.generate(prompt)
-                    final = self._clean_response(final)
-
-                    # [2] Model Armor: Sanitize model response AFTER LLM generation
-                    if self.model_armor and final and final.strip():
-                        (
-                            is_safe,
-                            message,
-                        ) = await self.model_armor.sanitize_model_response(final)
-                        if not is_safe:
-                            # BLOCKED - return generic error
-                            yield message
-                            return
-                        # Safe - proceed with original response
-                        final = message
-
-                    if final and final.strip():
-                        yield final
-                        return
-                except Exception as e2:
-                    logger.error(f"Non-stream generation failed (E2E_NO_STREAM): {e2}")
-                    raise
-            else:
-                # For streaming: buffer full response then sanitize
-                # (Model Armor requires complete response for analysis)
-                logger.info(
-                    "Streaming mode: buffering full model output to run Model Armor post-sanitization before emitting."
-                )
-                response_buffer = []
-                async for chunk_text in self.provider.generate_stream(prompt):
-                    cleaned_chunk = self._clean_response_chunk(chunk_text)
-                    if cleaned_chunk:
-                        response_buffer.append(cleaned_chunk)
-
-                # Combine full response
-                full_response = "".join(response_buffer)
-
-                # [2] Model Armor: Sanitize complete model response
-                if self.model_armor and full_response and full_response.strip():
-                    is_safe, message = await self.model_armor.sanitize_model_response(
-                        full_response
-                    )
-                    if not is_safe:
-                        # BLOCKED - return generic error instead of response
-                        yield message
-                        return
-                    # Safe - yield full response
-                    full_response = message
-
-                # Yield the (sanitized) full response
-                if full_response and full_response.strip():
-                    yield full_response
-
-        except Exception as e:
-            logger.error(f"Streaming response generation failed: {e}")
-            # Provide a contextual, non-AI fallback derived from retrieved chunks when available
-            try:
-                # Record a fallback marker for diagnostics if configured
-                self._record_llm_fallback_marker()
-                fallback = self._generate_contextual_fallback_answer(
-                    query=query,
-                    retrieved_chunks=retrieved_chunks or [],
-                    user_persona=user_persona,
-                    user_evidence=user_evidence,
-                )
-                if fallback and fallback.strip():
-                    yield fallback
-                    return
-            except Exception:
-                pass
-            # Final safety-net
-            yield self._generate_error_response(user_persona)
-
-    # removed non-streaming generate_response (streaming-only)
-
-    async def generate_response_full_once(
+    async def generate_response(
         self,
         query: str,
         retrieved_chunks: List[Dict[str, Any]],
@@ -371,8 +243,7 @@ Response:""",
         user_preferences: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
-        Non-streaming single-shot generation using the same prompt as streaming.
-        Returns a cleaned response string or empty string on failure.
+        Single-shot generation. Returns a cleaned & sanitized response string.
 
         Includes Model Armor pre/post sanitization if enabled.
         """
@@ -493,20 +364,6 @@ Response:""",
         )
 
         return final_context
-
-    def _clean_response_chunk(self, chunk: str) -> str:
-        """
-        Clean individual streaming chunk.
-
-        Args:
-            chunk: Raw chunk text
-
-        Returns:
-            Cleaned chunk string
-        """
-        # For streaming, just return the chunk as-is
-        # Don't filter out role labels in chunks as they might be split across chunks
-        return chunk
 
     def _clean_response(self, response: str) -> str:
         """

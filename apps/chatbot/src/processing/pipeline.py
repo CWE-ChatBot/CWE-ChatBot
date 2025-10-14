@@ -249,7 +249,7 @@ class ProcessingPipeline:
                 f"[DEBUG_PIPELINE] response_generator object: {self.response_generator}"
             )
             logger.info(
-                f"[DEBUG_PIPELINE] About to call generate_response_full_once with prompt length: {len(llm_prompt)}"
+                f"[DEBUG_PIPELINE] About to call generate_response with prompt length: {len(llm_prompt)}"
             )
 
             # Pass user preferences to response generator
@@ -259,7 +259,7 @@ class ProcessingPipeline:
                 "include_mitigations": user_context.include_mitigations,
             }
 
-            raw_response = await self.response_generator.generate_response_full_once(
+            raw_response = await self.response_generator.generate_response(
                 llm_prompt,
                 processed_chunks,
                 user_context.persona,

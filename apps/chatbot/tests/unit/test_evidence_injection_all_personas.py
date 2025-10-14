@@ -78,15 +78,17 @@ class DummyRG:
     def __init__(self, *_args, **_kwargs):
         pass
 
-    async def generate_response(self, query, retrieved_chunks, user_persona):
+    async def generate_response(
+        self,
+        query,
+        retrieved_chunks,
+        user_persona,
+        *,
+        user_evidence=None,
+        user_preferences=None,
+    ):
         # Simple echo to allow validation step to proceed
         return f"ok: {user_persona}: {query[:10]} ({len(retrieved_chunks)} chunks)"
-
-    async def generate_response_streaming(
-        self, query, retrieved_chunks, user_persona, *, user_evidence=None
-    ):
-        # Simulate streaming; record shape if needed
-        yield f"ok: {user_persona}: {query[:10]}"
 
 
 @pytest.mark.asyncio
@@ -141,26 +143,31 @@ async def test_evidence_pseudo_chunk_injected_for_every_persona(monkeypatch, per
                     "uploaded_file_context", "Evidence: reflected XSS in search param"
                 )
 
-                # Spy on streaming to capture retrieval and evidence passing
+                # Spy on generate_response to capture retrieval and evidence passing
                 calls = {}
 
-                async def spy_generate_response_streaming(
-                    query, retrieved_chunks, user_persona, *, user_evidence=None
+                async def spy_generate_response(
+                    query,
+                    retrieved_chunks,
+                    user_persona,
+                    *,
+                    user_evidence=None,
+                    user_preferences=None,
                 ):
                     calls["retrieved_chunks"] = list(retrieved_chunks)
                     calls["user_evidence"] = user_evidence
-                    async for t in DummyRG().generate_response_streaming(
+                    return await DummyRG().generate_response(
                         query,
                         retrieved_chunks,
                         user_persona,
                         user_evidence=user_evidence,
-                    ):
-                        yield t
+                        user_preferences=user_preferences,
+                    )
 
                 monkeypatch.setattr(
                     cm.response_generator,
-                    "generate_response_streaming",
-                    spy_generate_response_streaming,
+                    "generate_response",
+                    spy_generate_response,
                     raising=True,
                 )
 
