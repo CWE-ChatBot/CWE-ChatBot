@@ -1,12 +1,3 @@
-docs/issues
-docs/refactor
-.auditor_venv
-.pf
-.files
-apps/cwe_ingestion/cwe_embeddings_cache_shared
-apps/cwe_ingestion/cwe_vector_db_local/
-apps/cwe_ingestion/cwe_vector_db_local/
-apps/chatbot/.files/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

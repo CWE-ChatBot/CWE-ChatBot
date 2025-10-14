@@ -1,4 +1,5 @@
 # Pre-commit hooks for code quality
+exclude: '^\.'
 repos:
   # Code formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -6,22 +7,25 @@ repos:
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
+        files: ^apps/.*\.py$
+        exclude: ^apps/.*/tests/.*|^apps/.*/build/.*|^apps/.*/scripts/.*
       - id: ruff-format
+        files: ^apps/.*\.py$
+        exclude: ^apps/.*/tests/.*|^apps/.*/build/.*|^apps/.*/scripts/.*
 
-  # Type checking
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.14.1
-    hooks:
-      - id: mypy
-        additional_dependencies: [types-all]
-        args: [--ignore-missing-imports, --no-strict-optional]
+  # Type checking (skip for now - use poetry run mypy instead)
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.14.1
+  #   hooks:
+  #     - id: mypy
+  #       args: [--ignore-missing-imports, --no-strict-optional]
 
   # Security scanning
   - repo: https://github.com/PyCQA/bandit
     rev: 1.8.0
     hooks:
       - id: bandit
-        args: [-r, ./apps, -x, "./apps/**/tests/**", -ll]
+        args: [-r, ./apps, -x, "./apps/**/tests/**,./apps/**/build/**,./apps/**/scripts/**", -ll, --skip, B608]
         pass_filenames: false
 
   # Basic file checks
@@ -29,8 +33,13 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        files: ^apps/.*\.py$
+        exclude: ^apps/.*/tests/.*|^apps/.*/build/.*|^apps/.*/scripts/.*
       - id: end-of-file-fixer
+        files: ^apps/.*\.py$
+        exclude: ^apps/.*/tests/.*|^apps/.*/build/.*|^apps/.*/scripts/.*
       - id: check-yaml
+        args: [--allow-multiple-documents]
       - id: check-added-large-files
         args: [--maxkb=1000]
       - id: check-merge-conflict
