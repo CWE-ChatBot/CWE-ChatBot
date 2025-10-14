@@ -1,13 +1,10 @@
+Review n Refactor
 
-Feedback (@cl.on_feedback): 
+Security review (also use llm tool)
 
 Branding 
 
 new arch diagram showing armor, waf, vpc runner ingest pdf etc...
-
-Review n Refactor
-
-Security review (also use llm tool)
 
 
 Add BMAD Ops Persona
@@ -148,3 +145,5 @@ Content Security Policy (CSP) implemented unsafely. This includes 'unsafe-inline
 Remove unsafe-inline and data: from script-src, overly broad sources from object-src and script-src, and ensure object-src and script-src are set.
 
 redo the tests with unsafe and update
+
+Feedback (@cl.on_feedback): 
