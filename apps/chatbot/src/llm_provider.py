@@ -6,20 +6,48 @@ Falls back to offline mode if explicitly configured.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, Optional, cast
+from typing import Any, Dict, Optional, cast
+
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_random_exponential,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class LLMProvider:
-    async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
-        # Make this appear as an async generator to static type checkers
-        if TYPE_CHECKING:  # pragma: no cover
-            yield ""  # ensures AsyncGenerator return type compatibility
-        raise NotImplementedError
+def _is_transient_llm_error(e: BaseException) -> bool:
+    """Conservatively treat common network hiccups and retriable service faults as transient."""
+    transient_types = (asyncio.TimeoutError,)
+    # Avoid hard deps: rely on class names / messages if SDK types differ
+    msg = str(e).lower()
+    return isinstance(e, transient_types) or any(
+        s in msg
+        for s in (
+            "temporarily unavailable",
+            "retry",
+            "try again",
+            "deadline exceeded",
+            "unavailable",
+            "connection reset",
+            "connection aborted",
+            "timeout",
+            "dns",
+            "name resolution",
+            "502",
+            "503",
+            "504",
+        )
+    )
 
+
+class LLMProvider:
     async def generate(self, prompt: str) -> str:
         raise NotImplementedError
 
@@ -98,61 +126,54 @@ class GoogleProvider(LLMProvider):
                 ]
                 logger.info("Google default safety (string fallback): BLOCK_NONE")
 
-    async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
-        logger.debug(
-            "Starting streaming generation with safety_settings: %s", self._safety
-        )
-        try:
-            stream = await cast(Any, self._model).generate_content_async(
-                prompt,
-                generation_config=cast(Any, self._gen_cfg),
-                safety_settings=cast(Any, self._safety),
-                stream=True,
-            )
-            logger.debug("Streaming generation started successfully")
-            async for chunk in stream:
-                if getattr(chunk, "text", None):
-                    yield chunk.text
-        except Exception as e:
-            logger.error(f"Gemini generation failed with error: {e}")
-            logger.error(f"Error type: {type(e).__name__}")
-            raise e
-
     async def generate(self, prompt: str) -> str:
         logger.debug(
             "Starting non-streaming generation with safety_settings: %s", self._safety
         )
-        try:
-            resp = await cast(Any, self._model).generate_content_async(
-                prompt,
-                generation_config=cast(Any, self._gen_cfg),
-                safety_settings=cast(Any, self._safety),
-            )
-            # Log response details for debugging truncation issues
-            response_text = resp.text or ""
-            finish_reason = None
-            if getattr(resp, "candidates", None):
-                finish_reason = getattr(resp.candidates[0], "finish_reason", None)
-            # Normalize enums/ints/strings to an upper-case string for comparison
-            finish_norm = (
-                str(finish_reason).upper() if finish_reason is not None else "UNKNOWN"
-            )
-            logger.info(
-                "Gemini generation completed: %d chars, finish_reason=%s",
-                len(response_text),
-                finish_reason,
-            )
-            # Accept common STOP variants; warn on anything else (possible truncation)
-            if finish_norm not in {"STOP", "FINISH_REASON_STOP", "1"}:
-                logger.warning(
-                    "Non-normal finish_reason: %s - response may be truncated",
+        # Light retries for brief network hiccups
+        attempts = int(os.getenv("LLM_RETRY_ATTEMPTS", "3"))
+        timeout_s = float(os.getenv("LLM_REQUEST_TIMEOUT_SEC", "30"))
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(attempts),
+            wait=wait_random_exponential(
+                multiplier=0.3, max=float(os.getenv("LLM_RETRY_MAX_WAIT", "2.5"))
+            ),
+            retry=retry_if_exception(_is_transient_llm_error)
+            & (~retry_if_exception_type(asyncio.CancelledError)),
+            reraise=True,
+        ):
+            with attempt:
+                resp = await asyncio.wait_for(
+                    cast(Any, self._model).generate_content_async(
+                        prompt,
+                        generation_config=cast(Any, self._gen_cfg),
+                        safety_settings=cast(Any, self._safety),
+                    ),
+                    timeout=timeout_s,
+                )
+                # Log response details for debugging truncation issues
+                response_text = resp.text or ""
+                finish_reason = None
+                if getattr(resp, "candidates", None):
+                    finish_reason = getattr(resp.candidates[0], "finish_reason", None)
+                # Normalize enums/ints/strings to an upper-case string for comparison
+                finish_norm = (
+                    str(finish_reason).upper()
+                    if finish_reason is not None
+                    else "UNKNOWN"
+                )
+                logger.info(
+                    "Gemini generation completed: %d chars, finish_reason=%s",
+                    len(response_text),
                     finish_reason,
                 )
-            return response_text
-        except Exception as e:
-            logger.error(f"Gemini generation failed with error: {e}")
-            logger.error(f"Error type: {type(e).__name__}")
-            raise e
+                # Accept common STOP variants; warn on anything else (possible truncation)
+                if finish_norm not in {"STOP", "FINISH_REASON_STOP", "1"}:
+                    logger.warning(
+                        "Non-normal finish_reason: %s - response may be truncated",
+                        finish_reason,
+                    )
+                return response_text
 
 
 class VertexProvider(LLMProvider):
@@ -228,54 +249,38 @@ class VertexProvider(LLMProvider):
                 self._safety = None
                 logger.warning("VertexProvider using Vertex AI default safety settings")
 
-    async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
-        logger.debug(
-            "Vertex starting streaming generation with safety_settings: %s",
-            self._safety,
-        )
-        try:
-            # Use async method with stream=True
-            stream = await cast(Any, self._model).generate_content_async(
-                prompt,
-                generation_config=cast(Any, self._gen_cfg),
-                safety_settings=cast(Any, self._safety),
-                stream=True,
-            )
-            logger.debug("Vertex streaming generation started successfully")
-            async for chunk in stream:
-                if getattr(chunk, "text", None):
-                    yield chunk.text
-        except Exception as e:
-            logger.error(f"Vertex AI streaming generation failed with error: {e}")
-            logger.error(f"Error type: {type(e).__name__}")
-            raise e
-
     async def generate(self, prompt: str) -> str:
         logger.debug(
             "Vertex starting non-streaming generation with safety_settings: %s",
             self._safety,
         )
-        try:
-            # Use async method
-            resp = await cast(Any, self._model).generate_content_async(
-                prompt,
-                generation_config=cast(Any, self._gen_cfg),
-                safety_settings=cast(Any, self._safety),
-            )
-            logger.debug("Vertex non-streaming generation completed successfully")
-            return resp.text or ""
-        except Exception as e:
-            logger.error(f"Vertex AI generation failed with error: {e}")
-            logger.error(f"Error type: {type(e).__name__}")
-            raise e
+        attempts = int(os.getenv("LLM_RETRY_ATTEMPTS", "3"))
+        timeout_s = float(os.getenv("LLM_REQUEST_TIMEOUT_SEC", "30"))
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(attempts),
+            wait=wait_random_exponential(
+                multiplier=0.3, max=float(os.getenv("LLM_RETRY_MAX_WAIT", "2.5"))
+            ),
+            retry=retry_if_exception(_is_transient_llm_error)
+            & (~retry_if_exception_type(asyncio.CancelledError)),
+            reraise=True,
+        ):
+            with attempt:
+                resp = await asyncio.wait_for(
+                    cast(Any, self._model).generate_content_async(
+                        prompt,
+                        generation_config=cast(Any, self._gen_cfg),
+                        safety_settings=cast(Any, self._safety),
+                    ),
+                    timeout=timeout_s,
+                )
+                logger.debug("Vertex non-streaming generation completed successfully")
+                return resp.text or ""
 
 
 class OfflineProvider(LLMProvider):
     def __init__(self, persona: str | None = None) -> None:
         self._persona = persona or "Assistant"
-
-    async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
-        yield f"[offline-mode] {self._persona} response preview for: " + prompt[:120]
 
     async def generate(self, prompt: str) -> str:
         return f"[offline-mode] {self._persona} response for: " + prompt[:120]

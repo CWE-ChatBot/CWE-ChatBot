@@ -5,8 +5,16 @@ Integrates with existing production hybrid retrieval system from Story 1.5.
 """
 
 import asyncio
+import errno
 import os
 from typing import Any, Dict, List, Literal, Optional, TypedDict
+
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_random_exponential,
+)
 
 from src.processing.query_processor import QueryProcessor
 from src.security.secure_logging import get_secure_logger
@@ -34,6 +42,46 @@ except Exception:  # fallback to legacy repo layout/env var
         raise
 
 logger = get_secure_logger(__name__)
+
+
+def _is_transient_db_error(e: BaseException) -> bool:
+    msg = str(e).lower()
+    try:
+        import psycopg
+
+        if isinstance(e, (psycopg.OperationalError, psycopg.InterfaceError)):
+            return True
+    except Exception:
+        pass
+    # SQLAlchemy wrapper case
+    try:
+        from sqlalchemy.exc import DBAPIError, OperationalError
+
+        if isinstance(e, (OperationalError, DBAPIError)):
+            return True
+    except Exception:
+        pass
+    # Generic network-y signals
+    if isinstance(e, OSError) and getattr(e, "errno", None) in {
+        errno.ECONNRESET,
+        errno.ETIMEDOUT,
+        errno.EHOSTUNREACH,
+        errno.ECONNABORTED,
+    }:
+        return True
+    return any(
+        s in msg
+        for s in (
+            "could not connect",
+            "connection refused",
+            "connection reset",
+            "server closed the connection",
+            "timeout",
+            "deadlock detected",
+            "terminating connection",
+            "too many connections",
+        )
+    )
 
 
 class Recommendation(TypedDict):
@@ -210,7 +258,23 @@ class CWEQueryHandler:
 
             # Execute hybrid search using Story 1.5 production system
             db_start = time.time()
-            results = await asyncio.to_thread(self.store.query_hybrid, **query_params)
+            # Light retries for transient DB hiccups; keep total worst-case small
+            attempts = int(os.getenv("DB_RETRY_ATTEMPTS", "3"))
+            timeout_s = float(os.getenv("DB_QUERY_TIMEOUT_SEC", "20"))
+            async for attempt in AsyncRetrying(
+                stop=stop_after_attempt(attempts),
+                wait=wait_random_exponential(
+                    multiplier=0.3, max=float(os.getenv("DB_RETRY_MAX_WAIT", "2.0"))
+                ),
+                retry=retry_if_exception(_is_transient_db_error),
+                reraise=True,
+            ):
+                with attempt:
+                    # Run the blocking call on a worker thread, but bound by an async timeout
+                    results = await asyncio.wait_for(
+                        asyncio.to_thread(self.store.query_hybrid, **query_params),
+                        timeout=timeout_s,
+                    )
             db_time = (time.time() - db_start) * 1000
 
             total_time = (time.time() - query_start) * 1000
