@@ -114,9 +114,9 @@ class CWEFilter:
             for rec in excess_recommendations:
                 cwe_id = rec.get("cwe_id", "").upper()
                 filtered_out.append(rec)
-                filter_reasons[
-                    cwe_id
-                ] = f"exceeded_max_limit_{self.max_recommendations}"
+                filter_reasons[cwe_id] = (
+                    f"exceeded_max_limit_{self.max_recommendations}"
+                )
 
             filtered_recommendations = capped_recommendations
             logger.debug(

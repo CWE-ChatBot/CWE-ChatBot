@@ -185,7 +185,12 @@ def is_user_authenticated() -> bool:
 
 def initialize_components() -> bool:
     """Initialize all Story 2.1 chatbot components with error handling."""
-    global conversation_manager, input_sanitizer, security_validator, file_processor, _init_ok
+    global \
+        conversation_manager, \
+        input_sanitizer, \
+        security_validator, \
+        file_processor, \
+        _init_ok
 
     # Log initialization attempt
     logger.debug("initialize_components() called")

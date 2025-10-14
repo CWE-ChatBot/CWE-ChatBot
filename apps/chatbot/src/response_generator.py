@@ -653,14 +653,4 @@ Response:""",
             # Do not let diagnostics interfere with normal operation
             pass
 
-    def _format_cve_creator(self, text: str) -> str:
-        """
-        Legacy helper retained for compatibility with tests.
-        Replace [segments] with **bold** unless part of a markdown link.
-        """
-        try:
-            return re.sub(r"\[([^\[\]]+)\](?!\()", r"**\1**", text)
-        except Exception:
-            return text
-
     # Removed persona-specific formatting; rely on persona templates only

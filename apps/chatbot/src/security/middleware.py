@@ -157,15 +157,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         # Add security headers to response
         response.headers["Content-Security-Policy"] = _build_csp()
-        response.headers[
-            "Strict-Transport-Security"
-        ] = f"max-age={HSTS_MAX_AGE}; includeSubDomains; preload"
+        response.headers["Strict-Transport-Security"] = (
+            f"max-age={HSTS_MAX_AGE}; includeSubDomains; preload"
+        )
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers[
-            "Permissions-Policy"
-        ] = "geolocation=(), microphone=(), camera=(), usb=()"
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), microphone=(), camera=(), usb=()"
+        )
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"

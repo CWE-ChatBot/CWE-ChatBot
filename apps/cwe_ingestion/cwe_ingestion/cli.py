@@ -527,7 +527,9 @@ def ingest_multi(
         targets_list = deduplicated_multi
         # ---------------------------------------------------------------
 
-        click.echo(f"🎯 Multi-database ingestion configured for {len(targets)} targets:")
+        click.echo(
+            f"🎯 Multi-database ingestion configured for {len(targets)} targets:"
+        )
         for target in targets:
             storage_mode = "chunked" if target.use_chunked else "single-row"
             click.echo(f"   • {target.name}: {target.description} ({storage_mode})")
