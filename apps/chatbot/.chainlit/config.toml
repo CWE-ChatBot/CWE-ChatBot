@@ -19,8 +19,16 @@ persist_user_env = false
 # Set to true to show API keys as ***, false to show them as plain text
 mask_user_env = false
 
-# Authorized origins
-allow_origins = ["*"]
+# SECURITY: CORS Configuration (aligned with main.py CORSMiddleware)
+# Must match PUBLIC_ORIGIN environment variable to avoid conflicting CORS policies
+# For production: PUBLIC_ORIGIN=https://cwe.crashedmind.com
+# For local dev: PUBLIC_ORIGIN=http://localhost:8080
+# Note: With allow_credentials=true, allow_origins=["*"] is invalid per CORS spec
+[server.cors]
+allow_origins = []  # Managed by main.py CORSMiddleware using PUBLIC_ORIGIN env var
+allow_credentials = true
+allow_methods = ["GET", "POST", "OPTIONS"]
+allow_headers = ["Authorization", "Content-Type", "X-Requested-With"]
 
 [features]
 # Process and display HTML in messages. This can be a security risk (see https://stackoverflow.com/questions/19603097/why-is-it-dangerous-to-render-user-generated-html-or-javascript)
