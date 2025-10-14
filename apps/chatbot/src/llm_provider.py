@@ -130,17 +130,23 @@ class GoogleProvider(LLMProvider):
             )
             # Log response details for debugging truncation issues
             response_text = resp.text or ""
-            finish_reason = getattr(
-                resp.candidates[0] if resp.candidates else None,
-                "finish_reason",
-                "UNKNOWN",
+            finish_reason = None
+            if getattr(resp, "candidates", None):
+                finish_reason = getattr(resp.candidates[0], "finish_reason", None)
+            # Normalize enums/ints/strings to an upper-case string for comparison
+            finish_norm = (
+                str(finish_reason).upper() if finish_reason is not None else "UNKNOWN"
             )
             logger.info(
-                f"Gemini generation completed: {len(response_text)} chars, finish_reason={finish_reason}"
+                "Gemini generation completed: %d chars, finish_reason=%s",
+                len(response_text),
+                finish_reason,
             )
-            if finish_reason not in ["STOP", 1]:  # STOP=1 is normal completion
+            # Accept common STOP variants; warn on anything else (possible truncation)
+            if finish_norm not in {"STOP", "FINISH_REASON_STOP", "1"}:
                 logger.warning(
-                    f"Non-normal finish_reason: {finish_reason} - response may be truncated"
+                    "Non-normal finish_reason: %s - response may be truncated",
+                    finish_reason,
                 )
             return response_text
         except Exception as e:
