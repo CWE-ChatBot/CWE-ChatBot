@@ -19,6 +19,8 @@ from tenacity import (
     wait_random_exponential,
 )
 
+from src.observability import get_correlation_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -127,8 +129,11 @@ class GoogleProvider(LLMProvider):
                 logger.info("Google default safety (string fallback): BLOCK_NONE")
 
     async def generate(self, prompt: str) -> str:
+        correlation_id = get_correlation_id()
         logger.debug(
-            "Starting non-streaming generation with safety_settings: %s", self._safety
+            "Starting non-streaming generation with safety_settings: %s",
+            self._safety,
+            extra={"correlation_id": correlation_id},
         )
         # Light retries for brief network hiccups
         attempts = int(os.getenv("LLM_RETRY_ATTEMPTS", "3"))
@@ -143,37 +148,72 @@ class GoogleProvider(LLMProvider):
             reraise=True,
         ):
             with attempt:
-                resp = await asyncio.wait_for(
-                    cast(Any, self._model).generate_content_async(
-                        prompt,
-                        generation_config=cast(Any, self._gen_cfg),
-                        safety_settings=cast(Any, self._safety),
-                    ),
-                    timeout=timeout_s,
-                )
-                # Log response details for debugging truncation issues
-                response_text = resp.text or ""
-                finish_reason = None
-                if getattr(resp, "candidates", None):
-                    finish_reason = getattr(resp.candidates[0], "finish_reason", None)
-                # Normalize enums/ints/strings to an upper-case string for comparison
-                finish_norm = (
-                    str(finish_reason).upper()
-                    if finish_reason is not None
-                    else "UNKNOWN"
-                )
+                attempt_num = attempt.retry_state.attempt_number
                 logger.info(
-                    "Gemini generation completed: %d chars, finish_reason=%s",
-                    len(response_text),
-                    finish_reason,
+                    "LLM request attempt %d/%d",
+                    attempt_num,
+                    attempts,
+                    extra={
+                        "correlation_id": correlation_id,
+                        "attempt_number": attempt_num,
+                        "max_attempts": attempts,
+                    },
                 )
-                # Accept common STOP variants; warn on anything else (possible truncation)
-                if finish_norm not in {"STOP", "FINISH_REASON_STOP", "1"}:
-                    logger.warning(
-                        "Non-normal finish_reason: %s - response may be truncated",
-                        finish_reason,
+                try:
+                    resp = await asyncio.wait_for(
+                        cast(Any, self._model).generate_content_async(
+                            prompt,
+                            generation_config=cast(Any, self._gen_cfg),
+                            safety_settings=cast(Any, self._safety),
+                        ),
+                        timeout=timeout_s,
                     )
-                return response_text
+                    # Log response details for debugging truncation issues
+                    response_text = resp.text or ""
+                    finish_reason = None
+                    if getattr(resp, "candidates", None):
+                        finish_reason = getattr(
+                            resp.candidates[0], "finish_reason", None
+                        )
+                    # Normalize enums/ints/strings to an upper-case string for comparison
+                    finish_norm = (
+                        str(finish_reason).upper()
+                        if finish_reason is not None
+                        else "UNKNOWN"
+                    )
+                    logger.info(
+                        "Gemini generation completed: %d chars, finish_reason=%s",
+                        len(response_text),
+                        finish_reason,
+                        extra={
+                            "correlation_id": correlation_id,
+                            "attempt_number": attempt_num,
+                            "response_length": len(response_text),
+                        },
+                    )
+                    # Accept common STOP variants; warn on anything else (possible truncation)
+                    if finish_norm not in {"STOP", "FINISH_REASON_STOP", "1"}:
+                        logger.warning(
+                            "Non-normal finish_reason: %s - response may be truncated",
+                            finish_reason,
+                            extra={"correlation_id": correlation_id},
+                        )
+                    return response_text
+                except Exception as e:
+                    will_retry = attempt_num < attempts
+                    logger.warning(
+                        "LLM request failed on attempt %d/%d: %s",
+                        attempt_num,
+                        attempts,
+                        type(e).__name__,
+                        extra={
+                            "correlation_id": correlation_id,
+                            "attempt_number": attempt_num,
+                            "error_type": type(e).__name__,
+                            "will_retry": will_retry,
+                        },
+                    )
+                    raise
 
 
 class VertexProvider(LLMProvider):
@@ -250,6 +290,7 @@ class VertexProvider(LLMProvider):
                 logger.warning("VertexProvider using Vertex AI default safety settings")
 
     async def generate(self, prompt: str) -> str:
+        correlation_id = get_correlation_id()
         logger.debug(
             "Vertex starting non-streaming generation with safety_settings: %s",
             self._safety,
@@ -266,16 +307,52 @@ class VertexProvider(LLMProvider):
             reraise=True,
         ):
             with attempt:
-                resp = await asyncio.wait_for(
-                    cast(Any, self._model).generate_content_async(
-                        prompt,
-                        generation_config=cast(Any, self._gen_cfg),
-                        safety_settings=cast(Any, self._safety),
-                    ),
-                    timeout=timeout_s,
+                attempt_num = attempt.retry_state.attempt_number
+                logger.info(
+                    "Vertex LLM request attempt %d/%d",
+                    attempt_num,
+                    attempts,
+                    extra={
+                        "correlation_id": correlation_id,
+                        "attempt_number": attempt_num,
+                        "max_attempts": attempts,
+                    },
                 )
-                logger.debug("Vertex non-streaming generation completed successfully")
-                return resp.text or ""
+                try:
+                    resp = await asyncio.wait_for(
+                        cast(Any, self._model).generate_content_async(
+                            prompt,
+                            generation_config=cast(Any, self._gen_cfg),
+                            safety_settings=cast(Any, self._safety),
+                        ),
+                        timeout=timeout_s,
+                    )
+                    response_text = resp.text or ""
+                    logger.info(
+                        "Vertex generation completed: %d chars",
+                        len(response_text),
+                        extra={
+                            "correlation_id": correlation_id,
+                            "attempt_number": attempt_num,
+                            "response_length": len(response_text),
+                        },
+                    )
+                    return response_text
+                except Exception as e:
+                    will_retry = attempt_num < attempts
+                    logger.warning(
+                        "Vertex LLM request failed on attempt %d/%d: %s",
+                        attempt_num,
+                        attempts,
+                        type(e).__name__,
+                        extra={
+                            "correlation_id": correlation_id,
+                            "attempt_number": attempt_num,
+                            "error_type": type(e).__name__,
+                            "will_retry": will_retry,
+                        },
+                    )
+                    raise
 
 
 class OfflineProvider(LLMProvider):

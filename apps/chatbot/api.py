@@ -31,6 +31,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from src.app_config import config as app_config
 from src.conversation import ConversationManager
+from src.observability import set_correlation_id
 from src.secrets import get_test_api_key
 from src.security.secure_logging import get_secure_logger
 
@@ -368,12 +369,15 @@ async def query_cwe(request: QueryRequest):
     """
     cm = get_conversation_manager()
 
-    # Create ephemeral session for this query
+    # Create ephemeral session and correlation ID for this query
     session_id = f"api-test-{uuid.uuid4()}"
+    correlation_id = str(uuid.uuid4())
+    set_correlation_id(correlation_id)
 
     try:
         logger.info(
-            f"API query received: session={session_id}, persona={request.persona}, query='{request.query[:100]}...'"
+            f"API query received: session={session_id}, persona={request.persona}, query='{request.query[:100]}...'",
+            extra={"correlation_id": correlation_id},
         )
 
         # Update persona for this session

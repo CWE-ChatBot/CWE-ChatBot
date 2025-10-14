@@ -261,6 +261,12 @@ class CWEQueryHandler:
             # Light retries for transient DB hiccups; keep total worst-case small
             attempts = int(os.getenv("DB_RETRY_ATTEMPTS", "3"))
             timeout_s = float(os.getenv("DB_QUERY_TIMEOUT_SEC", "20"))
+
+            # Get correlation ID for request tracing
+            from src.observability import get_correlation_id
+
+            correlation_id = get_correlation_id()
+
             async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(attempts),
                 wait=wait_random_exponential(
@@ -270,11 +276,38 @@ class CWEQueryHandler:
                 reraise=True,
             ):
                 with attempt:
-                    # Run the blocking call on a worker thread, but bound by an async timeout
-                    results = await asyncio.wait_for(
-                        asyncio.to_thread(self.store.query_hybrid, **query_params),
-                        timeout=timeout_s,
+                    attempt_num = attempt.retry_state.attempt_number
+                    logger.info(
+                        "DB hybrid search attempt %d/%d",
+                        attempt_num,
+                        attempts,
+                        extra={
+                            "correlation_id": correlation_id,
+                            "attempt_number": attempt_num,
+                            "max_attempts": attempts,
+                        },
                     )
+                    try:
+                        # Run the blocking call on a worker thread, but bound by an async timeout
+                        results = await asyncio.wait_for(
+                            asyncio.to_thread(self.store.query_hybrid, **query_params),
+                            timeout=timeout_s,
+                        )
+                    except Exception as e:
+                        will_retry = attempt_num < attempts
+                        logger.warning(
+                            "DB hybrid search failed on attempt %d/%d: %s",
+                            attempt_num,
+                            attempts,
+                            type(e).__name__,
+                            extra={
+                                "correlation_id": correlation_id,
+                                "attempt_number": attempt_num,
+                                "error_type": type(e).__name__,
+                                "will_retry": will_retry,
+                            },
+                        )
+                        raise
             db_time = (time.time() - db_start) * 1000
 
             total_time = (time.time() - query_start) * 1000

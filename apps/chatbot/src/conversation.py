@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
 if TYPE_CHECKING:
     from src.processing.pipeline import PipelineResult
 import os
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -16,6 +17,7 @@ import chainlit as cl
 
 from src.app_config import config
 from src.input_security import InputSanitizer, SecurityValidator
+from src.observability import set_correlation_id
 from src.processing.pipeline import ProcessingPipeline
 from src.processing.query_processor import QueryProcessor
 from src.query_handler import CWEQueryHandler
@@ -159,8 +161,15 @@ class ConversationManager:
         Returns:
             Dict containing pipeline_result, context, and other metadata needed for sending
         """
+        # Set correlation ID for request tracing
+        correlation_id = str(uuid.uuid4())
+        set_correlation_id(correlation_id)
+
         try:
-            logger.info(f"Processing message (no send) for session {session_id}")
+            logger.info(
+                f"Processing message (no send) for session {session_id}",
+                extra={"correlation_id": correlation_id},
+            )
 
             # Get user context
             context = self.get_user_context(session_id)
@@ -376,8 +385,15 @@ class ConversationManager:
         This method now serves as a pure orchestrator, delegating complex business
         logic to the ProcessingPipeline and specialized persona handlers.
         """
+        # Set correlation ID for request tracing
+        correlation_id = str(uuid.uuid4())
+        set_correlation_id(correlation_id)
+
         try:
-            logger.info(f"Processing streaming message for session {session_id}")
+            logger.info(
+                f"Processing streaming message for session {session_id}",
+                extra={"correlation_id": correlation_id},
+            )
 
             # Get user context
             context = self.get_user_context(session_id)
@@ -537,8 +553,15 @@ class ConversationManager:
         Returns:
             Dict with response text, retrieved CWEs, chunk count, and metadata
         """
+        # Set correlation ID for request tracing
+        correlation_id = str(uuid.uuid4())
+        set_correlation_id(correlation_id)
+
         try:
-            logger.info(f"Processing API message for session {session_id}")
+            logger.info(
+                f"Processing API message for session {session_id}",
+                extra={"correlation_id": correlation_id},
+            )
 
             # Get user context
             context = self.get_user_context(session_id)
