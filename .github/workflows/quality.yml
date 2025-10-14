@@ -69,12 +69,12 @@ jobs:
       - name: Run Semgrep (generate SARIF, keep going)
         id: semgrep
         continue-on-error: true  # ensure upload happens even with findings
-        uses: returntocorp/semgrep-action@v1
+        uses: semgrep/semgrep-action@v1
         with:
           config: |
             p/python
             p/security-audit
-          generateSarif: "1"     # writes semgrep.sarif in repo root
+          sarif: semgrep.sarif
 
       - name: Upload Semgrep SARIF to Code Scanning
         uses: github/codeql-action/upload-sarif@v3

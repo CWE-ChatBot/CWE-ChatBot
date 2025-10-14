@@ -67,7 +67,8 @@ class HealthHandler(BaseHTTPRequestHandler):
 def start_health_server(port=8081, conversation_manager=None):
     """Start health check server in background thread."""
     try:
-        server = HTTPServer(("0.0.0.0", port), HealthHandler)
+        # Bind to 0.0.0.0 for Cloud Run container accessibility
+        server = HTTPServer(("0.0.0.0", port), HealthHandler)  # nosec B104
         server.conversation_manager = conversation_manager
 
         def run_server():

@@ -289,12 +289,13 @@ class CWEQueryHandler:
             with self.store._get_connection() as conn:
                 # Normalize IDs to uppercase
                 ids = [str(cid).upper() for cid in cwe_ids]
-                placeholders = ",".join(["%s"] * len(ids))
+                # Safe: placeholders are programmatically generated (%s), not user input
+                placeholders = ",".join(["%s"] * len(ids))  # nosec B608
                 # Prefer cwe_catalog if present; fallback to cwe_embeddings
                 with self.store._cursor(conn) as cur:
                     try:
                         cur.execute(
-                            f"SELECT cwe_id, name, abstraction, status FROM cwe_catalog WHERE UPPER(cwe_id) IN ({placeholders})",
+                            f"SELECT cwe_id, name, abstraction, status FROM cwe_catalog WHERE UPPER(cwe_id) IN ({placeholders})",  # nosec B608
                             ids,
                         )
                         rows = cur.fetchall()
@@ -308,7 +309,7 @@ class CWEQueryHandler:
                     except Exception:
                         # Fall back to embeddings if catalog is missing
                         cur.execute(
-                            f"SELECT cwe_id, name, abstraction, status FROM cwe_embeddings WHERE UPPER(cwe_id) IN ({placeholders})",
+                            f"SELECT cwe_id, name, abstraction, status FROM cwe_embeddings WHERE UPPER(cwe_id) IN ({placeholders})",  # nosec B608
                             ids,
                         )
                         rows = cur.fetchall()
@@ -345,12 +346,13 @@ class CWEQueryHandler:
         try:
             with self.store._get_connection() as conn:
                 ids = [str(cid).upper() for cid in cwe_ids]
-                placeholders = ",".join(["%s"] * len(ids))
+                # Safe: placeholders are programmatically generated (%s), not user input
+                placeholders = ",".join(["%s"] * len(ids))  # nosec B608
                 sql = f"""
                     SELECT cwe_id, mapping_label, COALESCE(notes, '')
                       FROM cwe_policy_labels
                      WHERE UPPER(cwe_id) IN ({placeholders})
-                """
+                """  # nosec B608
                 with self.store._cursor(conn) as cur:
                     try:
                         cur.execute(sql, ids)
