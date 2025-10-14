@@ -37,9 +37,14 @@ def _build_url_from_env() -> URL:
     pwd = os.environ["DB_PASSWORD"].strip()  # Always strip newline/whitespace
     sslmode = os.getenv("DB_SSLMODE", "require")
 
-    # Log sanity checks (no secrets leaked)
+    # Log params without any password footprint
     logger.info(
-        f"DB connect params: host={host}:{port}, db={db}, user={user}, sslmode={sslmode}, pw_len={len(pwd)}, tail={repr(pwd[-2:]) if len(pwd) >= 2 else repr(pwd)}"
+        "DB connect params: host=%s:%s, db=%s, user=%s, sslmode=%s",
+        host,
+        port,
+        db,
+        user,
+        sslmode,
     )
 
     return URL.create(
@@ -119,9 +124,9 @@ def engine() -> Any:
     # Note: Planner hints (enable_seqscan, hnsw.ef_search, etc.) are now applied
     # via transaction-scoped SET LOCAL in pg_chunk_store.py for better control
 
-    # Warm the pool if enabled (default: true)
-    if os.getenv("DB_WARM_POOL", "true").lower() == "true":
-        warm_pool(eng, size=3)
+    # Warm the pool iff explicitly enabled (opt-in; safer for serverless)
+    if os.getenv("DB_WARM_POOL", "false").lower() == "true":
+        warm_pool(eng, size=int(os.getenv("DB_WARM_POOL_SIZE", "3")))
 
     return eng
 
@@ -132,9 +137,14 @@ def close() -> None:
 
     Call this during graceful shutdown to clean up database connections.
     """
-    # Clear the lru_cache to get the actual engine instance
-    eng = engine.__wrapped__()
+    try:
+        # Get the cached instance instead of constructing a new one
+        eng = engine()
+    except Exception:
+        eng = None
     if eng is not None:
         logger.info("Disposing database engine and closing all connections")
-        eng.dispose()
-        engine.cache_clear()
+        try:
+            eng.dispose()
+        finally:
+            engine.cache_clear()
