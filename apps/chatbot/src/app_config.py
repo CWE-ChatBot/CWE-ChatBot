@@ -19,6 +19,7 @@ For production deployment:
 - Non-sensitive config set via gcloud run deploy --set-env-vars
 - See SECRETS.md for Secret Manager architecture
 """
+
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional

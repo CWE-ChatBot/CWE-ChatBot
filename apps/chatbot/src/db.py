@@ -3,6 +3,7 @@
 Direct Private IP connection to Cloud SQL for production Cloud Run deployment.
 Uses psycopg v3 with connection pooling and password authentication.
 """
+
 import logging
 import os
 from functools import lru_cache

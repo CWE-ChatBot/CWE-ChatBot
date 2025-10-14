@@ -4,6 +4,7 @@ Secret Manager integration for CWE ChatBot.
 Retrieves secrets from Google Cloud Secret Manager at runtime.
 Falls back to environment variables for local development.
 """
+
 import os
 from functools import lru_cache
 from typing import Optional

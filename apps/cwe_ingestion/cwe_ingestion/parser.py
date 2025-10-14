@@ -3,6 +3,7 @@
 Secure CWE XML parser module.
 Extracts comprehensive data and maps it to Pydantic models.
 """
+
 import logging
 from typing import List, Optional
 from xml.etree.ElementTree import (

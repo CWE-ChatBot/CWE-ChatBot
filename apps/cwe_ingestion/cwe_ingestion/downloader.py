@@ -3,6 +3,7 @@
 Secure CWE data downloader module.
 Handles downloading and extracting CWE data from MITRE.
 """
+
 import logging
 import zipfile
 from pathlib import Path

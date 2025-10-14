@@ -1,5 +1,6 @@
 # apps/cwe_ingestion/models.py
 """Pydantic models for CWE data structures based on the comprehensive CWE XML schema."""
+
 from typing import Any, Dict, List, Optional, TypedDict
 
 from pydantic import BaseModel

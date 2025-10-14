@@ -3,6 +3,7 @@
 Persistent embedding cache for CWE corpus ingestion.
 Prevents re-generation of expensive embeddings on failures.
 """
+
 import hashlib
 import json
 import logging
@@ -67,7 +68,7 @@ class EmbeddingCache:
         else:
             # For single embeddings: original format
             key_data = f"{cwe_id}_{embedder_type}_{model_name}"
-        return hashlib.md5(key_data.encode()).hexdigest()
+        return hashlib.md5(key_data.encode()).hexdigest()  # nosec B324 - MD5 used for cache key generation, not cryptographic security
 
     def _get_cache_filename(self, cache_key: str, cwe_id: Optional[str] = None) -> Path:
         """
@@ -184,7 +185,7 @@ class EmbeddingCache:
 
         try:
             with open(cache_file, "rb") as f:
-                cache_data = pickle.load(f)
+                cache_data = pickle.load(f)  # nosec B301 - Loading trusted local cache files only, not untrusted data
 
             # Restore numpy array from list
             if "embedding" in cache_data["cwe_data"]:

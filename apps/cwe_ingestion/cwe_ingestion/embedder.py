@@ -8,6 +8,7 @@ Embedding providers for CWE ingestion.
 Local sentence-transformers support has been removed to simplify the stack
 and align all embeddings to 3072 dimensions used in production (pgvector).
 """
+
 import asyncio
 import logging
 import os
@@ -361,7 +362,7 @@ class GeminiEmbedder:
         ]
 
         def embed_with_retry(
-            args: Tuple[int, str]
+            args: Tuple[int, str],
         ) -> Tuple[int, np.ndarray, Optional[Exception]]:
             index, text = args
             max_retries = 3

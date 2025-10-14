@@ -3,6 +3,7 @@
 Multi-database CWE ingestion pipeline for cost-effective embedding generation.
 Generates embeddings once and distributes to multiple PostgreSQL databases.
 """
+
 import logging
 import shutil
 import tempfile
@@ -382,7 +383,9 @@ class MultiDatabaseCWEPipeline:
                     stored = vector_store.store_chunks(data_to_store)
                 else:
                     stored = vector_store.store_batch(data_to_store)
-                logger.info(f"✅ {target.name}: Stored {stored} {storage_type} records.")
+                logger.info(
+                    f"✅ {target.name}: Stored {stored} {storage_type} records."
+                )
 
                 # Verify the storage
                 stats = vector_store.get_collection_stats()

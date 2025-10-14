@@ -10,6 +10,7 @@ Security Features:
 - Protected at edge via Cloud Functions IAM / HTTPS LB (no inline token validation here)
 - No content logging (metadata only)
 """
+
 import io
 import json
 import logging

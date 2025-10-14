@@ -2,6 +2,7 @@
 """
 Helper script for creating Google Cloud SQL connection URLs and testing IAM authentication.
 """
+
 import os
 import sys
 

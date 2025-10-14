@@ -2,6 +2,7 @@
 """
 PostgreSQL-only CWE ingestion pipeline (single-row or chunked) with optional Gemini embeddings.
 """
+
 import logging
 import shutil
 import tempfile

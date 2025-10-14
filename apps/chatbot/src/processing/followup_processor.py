@@ -24,7 +24,9 @@ class FollowupIntent:
     """Data class for follow-up intent detection results."""
 
     is_followup: bool
-    intent_type: str  # 'tell_more', 'consequences', 'children', 'examples', 'related', etc.
+    intent_type: (
+        str  # 'tell_more', 'consequences', 'children', 'examples', 'related', etc.
+    )
     confidence: float
     matched_patterns: List[str]
     extracted_entities: Dict[str, Any]
