@@ -14,7 +14,7 @@ This unified approach combines what would traditionally be separate backend and 
 | July 23, 2025 | 2.0 | Integrated security agent's findings (WAF, AI Guardrails, DoS Protection, Enhanced Logging). | Winston (Architect) |
 | July 30, 2025 | 2.1 | Aligned architecture with OWASP Securing Agentic Applications guide Version 1.0 July 28, 2025; defined Key Components (KCs) and added Runtime Hardening section. | Chris (Security Agent) |
 | Oct 15, 2025 | 2.2 | Updated architecture to reflect implemented Ephemeral PDF Processing via isolated Cloud Function and private networking for Cloud SQL. Consolidated database strategy to use PostgreSQL with pgvector. | Gemini |
-| Oct 15, 2025 | 2.3 | Integrated Story 2.4 Enterprise AI Security: Google Model Armor (primary), Meta Llama Guard (secondary), legacy sanitizer (fallback); clarified Global HTTP(S) Load Balancer + Cloud Armor policies and traffic flow; aligned with LLM_GUARDRAILS.md. | Gemini |
+| Oct 15, 2025 | 2.3 | Integrated Story 2.4 Enterprise AI Security: Google Model Armor (pre/post) with legacy sanitizer support; clarified Global HTTP(S) Load Balancer + Cloud Armor policies and traffic flow; aligned with LLM_GUARDRAILS.md. | Gemini |
 
 ## **High Level Architecture**
 
@@ -92,7 +92,7 @@ C1: Container: A container diagram shows the high-level technology choices, how 
             Container(api, "Backend", "Chainlit/LangChain")
             ContainerDb(db, "Database", "PostgreSQL + pgvector")
             Container(log, "Logging", "Cloud Logging")
-            Container(guardrails, "Guardrails", "LlamaFirewall")
+            Container(guardrails, "Guardrails", "Model Armor")
             Container(auth, "Authentication", "ChainLit + OAuth")
             Container(session_mgmt, "Session Management", "ChainLit Session Management")
             Container(cwe_corpus, "CWE Corpus", "Hybrid RAG")
@@ -139,7 +139,6 @@ graph TD
             BackendAPI[Chainlit Backend]
             subgraph "AI Security Pipeline (Pre/Post LLM Sanitization)"
                 ModelArmor[Google Model Armor<br/>(Pre + Post)]
-                LlamaGuard[Meta Llama Guard<br/>(Pre + Post)]
             end
         end
         
@@ -161,14 +160,11 @@ graph TD
         WebUI -- Queries / File Uploads --> BackendAPI
         
         BackendAPI -- Pre-LLM sanitization --> ModelArmor
-        BackendAPI -- Pre-LLM sanitization --> LlamaGuard
 
         BackendAPI -- Executes RAG & Manages State --> Database
         BackendAPI -- Generates Response --> LLM
         LLM -- Post-LLM sanitization --> ModelArmor
-        LLM -- Post-LLM sanitization --> LlamaGuard
         ModelArmor -- Returns verdict/transform --> BackendAPI
-        LlamaGuard -- Returns verdict/transform --> BackendAPI
         BackendAPI -- HTTPS + OIDC Auth --> PDFWorker
     end
 
@@ -195,7 +191,6 @@ graph TD
     style DataIngestion fill:#FFF9C4,stroke:#FFEB3B,stroke-width:2px
     style LLM fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
     style ModelArmor fill:#E1BEE7,stroke:#9C27B0,stroke-width:2px
-    style LlamaGuard fill:#E1BEE7,stroke:#9C27B0,stroke-width:2px
     style DeploymentFlexibility fill:#F5F5F5,stroke:#9E9E9E,stroke-width:2px,stroke-dasharray: 5 5
     style SelfHost fill:#FFFACD,stroke:#FFD700,stroke-width:2px
     style UserNetwork fill:#FFDAB9,stroke:#FF8C00,stroke-width:2px
@@ -203,7 +198,7 @@ graph TD
 
 ## Enterprise AI Security (Story 2.4)
 
-This section codifies the security enhancements from Story 2.4: Enterprise AI Security Enhancement with Google Model Armor and Llama Guard, adding a defense-in-depth AI security pipeline and clarifying network edge protections.
+This section codifies the security enhancements from Story 2.4: Enterprise AI Security Enhancement with Google Model Armor and clarifies network edge protections.
 
 ### AI Security Pipeline
 
@@ -212,18 +207,14 @@ This section codifies the security enhancements from Story 2.4: Enterprise AI Se
   - Applies on both input (pre-LLM) and output (post-LLM) sanitization.
   - Target latency budget: <200 ms added per request typical (see LLM_GUARDRAILS.md for current measurements); async invocation with backpressure-aware timeouts.
   - Feature flag `MODEL_ARMOR_ENABLED` gates rollout; fail-closed on guard errors with generic user messaging; graceful degradation strategy documented in LLM_GUARDRAILS.md.
-- Secondary: Meta Llama Guard
-  - Content policy enforcement with role-aware prompts and safety categories (e.g., harassment, self-harm, violence, adult).
-  - Runs in parallel with Model Armor; supports batch mode for throughput where applicable.
-  - Toggled by `LLAMA_GUARD_ENABLED`; configurable sensitivity per user role.
 - Tertiary: Legacy Sanitizer (fallback)
-  - Domain-specific checks as last resort and for emergency bypass.
-  - Used as tie-breaker during disagreement or when upstream services fail.
+  - InputSanitizer runs during query preprocessing (flag-only by default); can be configured stricter with `SECURITY_MODE=BLOCK` and `ENABLE_STRICT_SANITIZATION=true`.
+  - Serves as emergency fallback when Model Armor is disabled.
 
 ### Processing Flow and Decisioning
 
-- Parallel evaluation: Model Armor and Llama Guard run concurrently for minimal added latency.
-- Consensus: Majority vote across available results (e.g., 2-of-3 when legacy tie-breaker is needed) determines allow/transform/block.
+- Pre- and post-LLM sanitization: Model Armor runs before generation and after generation; post-LLM sanitization blocks unsafe content before display.
+- Legacy checks: InputSanitizer flags possible prompt/command injection patterns without mutating semantics; blocking is opt-in via env flags.
 - Output handling: When unsafe, redact or transform with rationale; log decision, categories, confidence, and applied transformations. For streaming, post-sanitization buffers server-side to prevent unsafe tokens mid-stream (see LLM_GUARDRAILS.md).
 - Circuit breakers: Trip on repeated upstream failures; automatically fall back to remaining layers. Retries are bounded and jittered.
 - Observability: Structured audit logs for every decision, Prometheus/OpenTelemetry metrics (rates, latency, categories), and dashboards.
@@ -236,6 +227,7 @@ This section codifies the security enhancements from Story 2.4: Enterprise AI Se
   - Per-IP and per-identity rate limiting (S-1.1) with burst/sustained thresholds tuned to app SLOs.
   - IP reputation, geo-based controls, and custom rules for chatbot-specific abuse patterns.
 - Request flow: User → Global LB → Cloud Armor policy evaluation → Cloud Run (Chainlit) → AI Security Pipeline → RAG/LLM.
+- Service-to-service: Backend calls PDF Worker over HTTPS with OIDC service-to-service authentication (no static secrets), per Ephemeral PDF workflow.
 - Budget controls: Quota and budget alerts for upstream AI services; align with cost SLOs and escalate on anomaly.
 
 ### Rollout and Resilience
@@ -263,7 +255,7 @@ The following architectural and design patterns will guide the detailed implemen
   * **Serverless First (for Cloud Deployment):** Leveraging GCP Cloud Run and potentially Cloud Functions for compute, aligning with NFR2 (Automatic Scaling) and cost-efficiency.
   * **Retrieval Augmented Generation (RAG):** This is the core pattern for leveraging LLMs to provide factual, up-to-date, and hallucination-minimized responses by grounding them in the external CWE corpus data (NFR6).
   * **Component-Based UI:** Utilizing Chainlit's inherent component-based structure for the UI, supporting modularity and reusability.
-  * **Repository Pattern:** For abstracting data access logic to both the Vector Database and the Traditional Database, promoting testability and database independence (NFR5).
+  * **Repository Pattern:** For abstracting data access logic within PostgreSQL (relational + pgvector), promoting testability and storage independence (NFR5).
   * **API-Driven Microservices (Logical):** Even if initially deployed as a single Chainlit application, components like NLP/AI processing or data ingestion will be designed with clear API boundaries, allowing for future extraction into separate microservices if needed (aligning with NFR41).
   * **Data-Centric Design:** Emphasizing efficient data modeling and access for both the structured application data and the unstructured CWE knowledge base.
   * **Configuration-Driven AI:** Allowing configurable LLM endpoints and API keys (FR28, FR29) rather than hardcoding, for flexibility and user control.
@@ -275,7 +267,7 @@ This section is the definitive record of the technologies and their specific ver
 ### Cloud Infrastructure
 
   * **Provider:** Google Cloud Platform (GCP)
-  * **Key Services:** Cloud Run, Cloud SQL (PostgreSQL), Managed Vector Database (e.g., Pinecone/Weaviate), Vertex AI (optional for LLM/Embeddings).
+  * **Key Services:** Cloud Run, Cloud SQL (PostgreSQL + pgvector), Vertex AI (optional for LLM/Embeddings).
   * **Deployment Regions:** To be determined based on user base distribution and data residency requirements, prioritizing low latency and compliance.
 
 ### Technology Stack Table
@@ -302,8 +294,7 @@ This section is the definitive record of the technologies and their specific ver
 | **Logging** | Google Cloud Logging | N/A | Centralized logging for application events and errors (NFR11, NFR40). | Provides scalable log aggregation and analysis for debugging and auditing. |
 | **CSS Framework** | Tailwind CSS | 3.x | Utility-first CSS framework for efficient styling and theming of Chainlit components and custom UI elements. | **Chainlit fully supports Tailwind CSS, with its UI (including the copilot) rewritten using Shadcn/Tailwind. This allows easy customization of the chatbot's look and feel directly with Tailwind classes and CSS variables, providing a high degree of control.** |
 | **IaC Tool** | Terraform | Latest Stable | Manages and provisions cloud infrastructure resources on GCP. | Provides version-controlled, declarative infrastructure management, promoting consistency and repeatability in deployments. |
-| **AI & Prompt Security** | Google Model Armor | N/A | Primary defense against prompt injection, jailbreaking, and content safety violations. | Enterprise-grade, AI-powered threat detection that adapts to new attack patterns. |
-| **AI & Prompt Security** | Meta Llama Guard | N/A | Secondary defense for content policy enforcement and context-aware risk assessment. | Provides a defense-in-depth layer with a different AI model, catching edge cases missed by the primary defense. |
+| **AI & Prompt Security** | Google Model Armor | N/A | Pre- and post-LLM sanitization for prompt injection, jailbreaks, and content safety. | Enterprise-grade, AI-powered threat detection that adapts to new attack patterns. |
 
 ## Data Models
 
@@ -510,7 +501,7 @@ graph TD
     }
     ```
 
-### CWE\_Embedding (Conceptual model for Vector Database)
+### CWE\_Embedding (Conceptual model for pgvector in PostgreSQL)
 
   * **Purpose:** To store the vector embeddings and essential metadata of CWE entries, optimized for semantic search and Retrieval Augmented Generation (RAG). This is the core knowledge base for the chatbot's intelligence.
   * **Key Attributes:**
@@ -521,7 +512,7 @@ graph TD
       * `full_text`: Text (The original or pre-processed full text of the CWE entry from which the embedding was derived; used for RAG context)
       * `version`: String (CWE version from MITRE this embedding corresponds to, NFR18)
       * `last_updated`: Timestamp (When this specific CWE entry was last updated in our database)
-  * **Relationships:** None directly in the Vector Database itself, but linked conceptually to messages via `cwe_ids_suggested`.
+  * **Relationships:** Stored alongside application data in PostgreSQL; linked conceptually to messages via `cwe_ids_suggested`.
   * **TypeScript Interface:**
     ```typescript
     interface CweEmbedding {
@@ -584,7 +575,7 @@ This section illustrates key system workflows using sequence diagrams, highlight
 ### User Query and RAG-based Response Generation
 
   * **Purpose:** To detail the full interaction flow from a user submitting a query to the ChatBot generating an intelligent, context-aware response using the Retrieval Augmented Generation (RAG) process.
-  * **Key Components Involved:** User, Chatbot Application (Chainlit Core), NLP/AI Service, Vector Database, LLM/Embedding Model.
+  * **Key Components Involved:** User, Chatbot Application (Chainlit Core), NLP/AI Service, PostgreSQL (pgvector), LLM/Embedding Model.
   * **Clarifies Architectural Decisions:** This flow demonstrates the interaction between the core Chainlit app, the logical NLP/AI service, the vector database for retrieval, and the LLM for generation. It also highlights the RAG pattern.
 
 #### Sequence Diagram
@@ -594,7 +585,7 @@ sequenceDiagram
     participant U as User
     participant CA as Chatbot Application Chainlit Core
     participant NAI as NLP/AI Service
-    participant VDB as Vector Database
+    participant PG as PostgreSQL (pgvector)
     participant LLM as LLM/Embedding Model
 
     U->>CA: 1. Enters Query e.g. How to prevent XSS?
@@ -605,10 +596,10 @@ sequenceDiagram
     activate LLM
     LLM-->>NAI: 4. Provide Query Embedding
     deactivate LLM
-    NAI->>VDB: 5. Search Vector DB for relevant CWEs FR2
-    activate VDB
-    VDB-->>NAI: 6. Return Top N relevant CWE chunks
-    deactivate VDB
+    NAI->>PG: 5. Search pgvector for relevant CWEs FR2
+    activate PG
+    PG-->>NAI: 6. Return Top N relevant CWE chunks
+    deactivate PG
     NAI->>LLM: 7. Formulate Prompt Query + Relevant CWE Chunks for RAG
     activate LLM
     LLM-->>NAI: 8. Generate Contextual Response
@@ -818,7 +809,7 @@ components:
 
 ## Database Schema
 
-This section translates the conceptual data models into concrete database schemas, considering the selected database types (PostgreSQL for structured data and a Vector Database for embeddings). It includes definitions for tables, indexes, constraints, and relationships.
+This section translates the conceptual data models into concrete database schemas, using PostgreSQL for both structured data and embeddings via pgvector. It includes definitions for tables, indexes, constraints, and relationships.
 
 ### Traditional Database Schema (PostgreSQL DDL)
 
@@ -892,9 +883,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON public.messages (timestamp)
   * **Indexing:** Basic indexes are added for common lookup fields (`user_id`, `session_id`, `conversation_id`, `timestamp`) to optimize query performance.
   * **Traceability:** `cwe_ids_suggested` and `llm_model_used` attributes support tracking chatbot performance and BYO LLM usage.
 
-### Vector Database Conceptual Schema (e.g., Pinecone)
+### Vector Index Conceptual Schema (pgvector in PostgreSQL)
 
-For the Vector Database, the structure is optimized for high-dimensional vector search. The exact implementation will depend on the chosen provider (e.g., Pinecone, Weaviate, Qdrant), but the conceptual model for each stored item (`vector` or `record`) will typically include:
+In this implementation, embeddings are stored and queried using the `pgvector` extension in PostgreSQL (single datastore). The following conceptual model maps to relational tables with a vector column; the concepts also apply if a managed vector DB were adopted in the future:
 
   * **Index Definition:** An index will be configured with a specific vector `dimension` (matching the output size of our chosen embedding model), and a `metric type` (e.g., cosine similarity for text embeddings).
   * **Vector Object Structure (per CWE entry):**
@@ -908,7 +899,7 @@ For the Vector Database, the structure is optimized for high-dimensional vector 
           * `version`: String (CWE version from MITRE this embedding corresponds to, NFR18)
           * `last_updated`: Timestamp (When this specific CWE entry was last updated in our database)
 
-**Rationale for Vector Database Schema:**
+**Rationale for Vector Index Schema (pgvector):**
 
   * **Optimized for Search:** Focuses on the core components needed for efficient vector similarity search.
   * **RAG Support:** The `full_text` in metadata is crucial for passing relevant context to the LLM during RAG.
@@ -916,7 +907,7 @@ For the Vector Database, the structure is optimized for high-dimensional vector 
 
 **Security Considerations:**
 
-* **CRITICAL:** The Vector Database, which provides context for the RAG process, **MUST** only be populated with public, non-sensitive data (e.g., the official CWE corpus). This is a fundamental control to prevent the leakage of confidential information to user-configured BYO LLM endpoints, as identified in threat **I-4**.
+* **CRITICAL:** The vector index (pgvector), which provides context for the RAG process, **MUST** only be populated with public, non-sensitive data (e.g., the official CWE corpus). This is a fundamental control to prevent the leakage of confidential information to user-configured BYO LLM endpoints, as identified in threat **I-4**.
 
 ## REST API Spec
 
@@ -1236,7 +1227,7 @@ We will adhere to a **Serverless-first approach** where feasible, primarily util
 
 Our strategy involves a hybrid approach, combining a traditional relational database for structured application data with a specialized vector database for efficient semantic search of the CWE corpus.
 
-  * **Schema Design:** The detailed SQL DDL for PostgreSQL (`users`, `conversations`, `messages` tables) and the conceptual schema for the Vector Database (CWE embeddings) are defined in the dedicated [Database Schema](https://www.google.com/search?q=%23database-schema) section.
+  * **Schema Design:** The detailed SQL DDL for PostgreSQL (`users`, `conversations`, `messages` tables) and the conceptual schema for the embeddings vector index (pgvector) are defined in the dedicated [Database Schema](https://www.google.com/search?q=%23database-schema) section.
   * **Data Access Layer (Repository Pattern):** All direct database interactions will be abstracted behind a Repository Pattern (NFR5). This provides a clean interface for services, promotes testability, and allows for potential future changes in the underlying database technology with minimal impact on business logic.
     ```python
     # Example: packages/shared/data_access/cwe_repository.py
@@ -1446,8 +1437,6 @@ Environment variables are used to manage sensitive information and configuration
       * `GEMINI_API_KEY=...` (Required for Gemini embeddings/LLM in current deployment)
       * `GCP_PROJECT_ID=your-gcp-project-id`
       * `PG_CONN_STRING=postgresql://user:pass@localhost:5432/cwe_chatbot_db` (Local PostgreSQL connection string)
-      * `VECTOR_DB_API_KEY=your-vector-db-api-key` (If using managed service like Pinecone)
-      * `VECTOR_DB_ENVIRONMENT=your-vector-db-env`
       * `OAUTH_GOOGLE_CLIENT_ID=your-google-client-id` (For Google OAuth)
       * `OAUTH_GOOGLE_CLIENT_SECRET=your-google-client-secret`
       * `OAUTH_GITHUB_CLIENT_ID=your-github-client-id` (For GitHub OAuth)
@@ -1550,7 +1539,7 @@ Specific patterns will be applied for different categories of errors to ensure c
 
   * **External API Errors (e.g., LLM APIs, OAuth Providers):**
       * **Retry Policy:** An **exponential backoff with jitter** strategy will be implemented for transient errors (e.g., network issues, temporary service unavailability, rate limits) when calling external APIs (NFR10).
-      * **Circuit Breaker:** For critical external dependencies (e.g., primary LLM provider, Vector Database), a **Circuit Breaker pattern** will be implemented to prevent cascading failures during sustained outages (NFR38).
+      * **Circuit Breaker:** For critical external dependencies (e.g., primary LLM provider) and the database layer, a **Circuit Breaker pattern** will be implemented to prevent cascading failures during sustained outages (NFR38).
       * **Timeout Configuration:** Strict and appropriate timeouts will be applied to all outgoing external API calls to prevent indefinite hanging and resource exhaustion.
       * **Error Translation:** External API-specific error codes and messages will be translated into standardized internal error responses (e.g., `LlmApiError`, `OAuthError`) before propagation.
   * **Business Logic Errors:**
@@ -1622,7 +1611,6 @@ This section defines the mandatory security requirements for AI and human develo
 A multi-layered, defense-in-depth strategy is implemented to secure the AI and LLM interactions, moving from simple static rules to an enterprise-grade AI security pipeline.
 
 *   **Primary Defense (Google Model Armor):** All user input is first processed by Google Cloud's Model Armor. It provides robust, real-time detection of prompt injection, jailbreaking attempts, and harmful content. It serves as the first line of defense.
-*   **Secondary Defense (Meta Llama Guard):** As a second layer, Meta's Llama Guard is used to perform further content safety validation. Using a different model provides a diverse perspective to catch threats or policy violations that might be missed by the primary defense.
 *   **Output Validation:** All responses from the LLM are also scanned by this pipeline before being sent to the user. This prevents the leaking of confidential system prompts, sensitive data, or the generation of harmful content (**I-2**).
 *   **Untrusted BYO Endpoints:** All user-configured BYO LLM endpoints are treated as untrusted external services. Responses are sanitized through the security pipeline, and network requests are made through a sandboxed egress proxy (**S-3**, **I-4**).
 *   **LLM Tooling Permissions:** If/when the LLM is granted access to internal tools, a strict, user-permission-based authorization model must be implemented to prevent abuse (**E-2**).
@@ -1653,7 +1641,7 @@ A multi-layered, defense-in-depth strategy is implemented to secure the AI and L
 
 ### Data Protection
 
-  * **Encryption at Rest:** All sensitive data stored in the Traditional Database (PostgreSQL) and the Vector Database (Pinecone/managed service) will be encrypted at rest, leveraging the cloud provider's managed encryption capabilities.
+  * **Encryption at Rest:** All sensitive data stored in PostgreSQL (including pgvector embeddings) will be encrypted at rest, leveraging the cloud provider's managed encryption capabilities.
   * **Encryption in Transit:** All data transmission will be encrypted using HTTPS/TLS (NFR4).
   * **Private Networking:** In production, the Cloud SQL database is configured with a **private IP only** and is not exposed to the public internet. The Cloud Run application connects to it securely and efficiently through a **VPC Connector**, ensuring all database traffic remains within Google Cloud's private network.
   * **PII Handling:** User login ID, email, and credentials are classified as PII (NFR33) and will be handled in full compliance with **GDPR requirements**. This includes data minimization, secure storage, access restrictions, and defined data retention policies (NFR39).
