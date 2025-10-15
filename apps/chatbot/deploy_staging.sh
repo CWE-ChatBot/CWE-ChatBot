@@ -2,10 +2,10 @@
 # Staging deployment script for CWE ChatBot with Chainlit data layer
 # Tests new features without affecting production
 #
-# Secure-by-default: private ingress, IAM-gated, optional test bypass in hybrid mode
+# Secure-by-default: private ingress, IAM-gated, OAuth-only authentication
 # Deploys:
 # 1. PDF Worker (secure, service-account-only access)
-# 2. CWE ChatBot Staging (OAuth + hybrid auth for testing)
+# 2. CWE ChatBot Staging (OAuth-only, same as production)
 
 set -euo pipefail
 
@@ -22,10 +22,13 @@ SERVICE="cwe-chatbot-staging"
 PDF_WORKER_SERVICE="pdf-worker-staging"
 CHATBOT_SA="cwe-chatbot-run-sa@${PROJECT}.iam.gserviceaccount.com"
 
+# OAuth-only staging (no API key bypass - same auth as production)
+API_AUTH_MODE="${API_AUTH_MODE:-oauth}"   # oauth|hybrid (use oauth for production parity)
+
 # Exposure and access control
 EXPOSURE_MODE="${EXPOSURE_MODE:-private}"  # private|public
 # Optional: grant a specific principal access to staging when private
-# e.g. TESTER_PRINCIPAL='user:alice@example.com' or 'group:devs@example.com'
+# e.g. TESTER_PRINCIPAL='user:alice@example.com' or 'group:devs@example.com' or 'serviceAccount:ci@PROJECT.iam.gserviceaccount.com'
 TESTER_PRINCIPAL="${TESTER_PRINCIPAL:-}"
 # Use VPC connector if needed
 VPC_CONNECTOR="${VPC_CONNECTOR:-run-us-central1}"
@@ -103,7 +106,7 @@ print_info "PDF worker security: ONLY $CHATBOT_SA can invoke (no public access)"
 echo ""
 print_info "Step 2/2: Deploying ChatBot Staging"
 
-print_info "Ingress/auth: ${INGRESS_FLAG#*=}, ${ALLOW_FLAG}"
+print_info "Ingress/auth: ${INGRESS_FLAG#*=}, ${ALLOW_FLAG}; API_AUTH_MODE=${API_AUTH_MODE}"
 
 print_info "Building chatbot image..."
 gcloud builds submit --config=apps/chatbot/cloudbuild.yaml --suppress-logs --quiet
@@ -127,8 +130,8 @@ gcloud run deploy "$SERVICE" \
     --timeout=300 \
     $ALLOW_FLAG \
     --execution-environment=gen2 \
-    --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,ENABLE_OAUTH=true,AUTH_MODE=hybrid,API_AUTH_MODE=hybrid,CHAINLIT_URL=https://staging-cwe.crashedmind.com,PUBLIC_ORIGIN=https://staging-cwe.crashedmind.com,CSP_MODE=strict,PDF_WORKER_URL=${PDF_WORKER_URL},CLOUD_SQL_CONNECTION_NAME=cwechatbot:us-central1:cwe-postgres-prod" \
-    --update-secrets="GEMINI_API_KEY=gemini-api-key:latest,DB_PASSWORD=db-password-app-user:latest,CHAINLIT_AUTH_SECRET=chainlit-auth-secret:latest,TEST_API_KEY=test-api-key:latest,OAUTH_GOOGLE_CLIENT_ID=oauth-google-client-id:latest,OAUTH_GOOGLE_CLIENT_SECRET=oauth-google-client-secret:latest,OAUTH_GITHUB_CLIENT_ID=oauth-github-client-id:latest,OAUTH_GITHUB_CLIENT_SECRET=oauth-github-client-secret:latest" \
+    --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,ENABLE_OAUTH=true,AUTH_MODE=oauth,API_AUTH_MODE=${API_AUTH_MODE},CHAINLIT_URL=https://staging-cwe.crashedmind.com,PUBLIC_ORIGIN=https://staging-cwe.crashedmind.com,CSP_MODE=strict,PDF_WORKER_URL=${PDF_WORKER_URL},CLOUD_SQL_CONNECTION_NAME=cwechatbot:us-central1:cwe-postgres-prod" \
+    --update-secrets="GEMINI_API_KEY=gemini-api-key:latest,DB_PASSWORD=db-password-app-user:latest,CHAINLIT_AUTH_SECRET=chainlit-auth-secret:latest,OAUTH_GOOGLE_CLIENT_ID=oauth-google-client-id:latest,OAUTH_GOOGLE_CLIENT_SECRET=oauth-google-client-secret:latest,OAUTH_GITHUB_CLIENT_ID=oauth-github-client-id:latest,OAUTH_GITHUB_CLIENT_SECRET=oauth-github-client-secret:latest" \
     --quiet
 
 STAGING_URL=$(gcloud run services describe "$SERVICE" --region="$REGION" --format='value(status.url)')
@@ -158,7 +161,8 @@ echo ""
 print_warn "SECURITY SUMMARY:"
 echo "   - ChatBot ingress: ${INGRESS_FLAG#*=}, auth: ${ALLOW_FLAG}"
 echo "   - PDF Worker: private (service-account-only, no unauthenticated access)"
-echo "   - App auth mode: API_AUTH_MODE=hybrid (OAuth Bearer OR secure test key in staging)"
+echo "   - App auth mode: AUTH_MODE=oauth, API_AUTH_MODE=${API_AUTH_MODE}"
+echo "   - Authentication: OAuth-only (Google/GitHub Bearer tokens, same as production)"
 if [[ "$EXPOSURE_MODE" == "public" ]]; then
   echo "   ⚠️  PUBLIC MODE - Front with HTTPS LB + Cloud Armor for DDoS protection"
 else
@@ -169,6 +173,12 @@ else
     echo "   ℹ️  To grant access: TESTER_PRINCIPAL='user:you@example.com' ./deploy_staging.sh"
   fi
 fi
+echo ""
+print_warn "ACCESS NOTES:"
+echo "   - Service is private; only IAM invokers (and their tokens) can reach it"
+echo "   - App is OAuth-only (API_AUTH_MODE=${API_AUTH_MODE}). Use Google/GitHub tokens for API calls"
+echo "   - For browser: Grant roles/run.invoker → OAuth login (Google/GitHub)"
+echo "   - For headless/API: Mint OAuth device-flow token → Authorization: Bearer <token>"
 echo ""
 print_info "Test the staging environment before promoting to production"
 echo ""
