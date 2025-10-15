@@ -93,7 +93,7 @@ This section defines the core data models and entities that will underpin the CW
     }
     ```
 
-## CWE\_Embedding (Conceptual model for Vector Database)
+## CWE_Embedding (Conceptual model for pgvector in PostgreSQL)
 
   * **Purpose:** To store the vector embeddings and essential metadata of CWE entries, optimized for semantic search and Retrieval Augmented Generation (RAG). This is the core knowledge base for the chatbot's intelligence.
   * **Key Attributes:**
@@ -104,7 +104,7 @@ This section defines the core data models and entities that will underpin the CW
       * `full_text`: Text (The original or pre-processed full text of the CWE entry from which the embedding was derived; used for RAG context)
       * `version`: String (CWE version from MITRE this embedding corresponds to, NFR18)
       * `last_updated`: Timestamp (When this specific CWE entry was last updated in our database)
-  * **Relationships:** None directly in the Vector Database itself, but linked conceptually to messages via `cwe_ids_suggested`.
+  * **Relationships:** Stored alongside application data in PostgreSQL; linked conceptually to messages via `cwe_ids_suggested`.
   * **TypeScript Interface:**
     ```typescript
     interface CweEmbedding {

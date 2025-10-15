@@ -1,6 +1,6 @@
 # Database Schema
 
-This section translates the conceptual data models into concrete database schemas, considering the selected database types (PostgreSQL for structured data and a Vector Database for embeddings). It includes definitions for tables, indexes, constraints, and relationships.
+This section translates the conceptual data models into concrete database schemas using **PostgreSQL for both structured data and embeddings via pgvector**. It includes definitions for tables, indexes, constraints, and relationships.
 
 ## Traditional Database Schema (PostgreSQL DDL)
 
@@ -74,14 +74,14 @@ CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON public.messages (timestamp)
   * **Indexing:** Basic indexes are added for common lookup fields (`user_id`, `session_id`, `conversation_id`, `timestamp`) to optimize query performance.
   * **Traceability:** `cwe_ids_suggested` and `llm_model_used` attributes support tracking chatbot performance and BYO LLM usage.
 
-## Vector Database Conceptual Schema (e.g., Pinecone)
+## Vector Index Conceptual Schema (pgvector in PostgreSQL)
 
-For the Vector Database, the structure is optimized for high-dimensional vector search. The exact implementation will depend on the chosen provider (e.g., Pinecone, Weaviate, Qdrant), but the conceptual model for each stored item (`vector` or `record`) will typically include:
+Embeddings are stored and queried using the `pgvector` extension in PostgreSQL. The conceptual model for each stored CWE embedding maps to a relational row with a vector column and supporting metadata:
 
   * **Index Definition:** An index will be configured with a specific vector `dimension` (matching the output size of our chosen embedding model), and a `metric type` (e.g., cosine similarity for text embeddings).
   * **Vector Object Structure (per CWE entry):**
       * `id`: String (e.g., 'CWE-79', 'CWE-123'), serving as a unique identifier for the CWE entry in the vector database.
-      * `values`: `float[]` (the actual numerical vector embedding of the CWE text). This is the core data for similarity search.
+      * `values`: `float[]` (vector column using pgvector; numerical embedding of the CWE text). This is the core data for similarity search.
       * `metadata`: `JSONB` (or equivalent schema-less object) containing crucial CWE attributes for filtering and retrieval, enabling post-query filtering and enriching LLM prompts. This metadata will include:
           * `cwe_id`: String (Official CWE ID)
           * `name`: String (Official CWE Name)
@@ -90,7 +90,7 @@ For the Vector Database, the structure is optimized for high-dimensional vector 
           * `version`: String (CWE version from MITRE this embedding corresponds to, NFR18)
           * `last_updated`: Timestamp (When this specific CWE entry was last updated in our database)
 
-**Rationale for Vector Database Schema:**
+**Rationale for Vector Index Schema (pgvector):**
 
   * **Optimized for Search:** Focuses on the core components needed for efficient vector similarity search.
   * **RAG Support:** The `full_text` in metadata is crucial for passing relevant context to the LLM during RAG.
@@ -98,4 +98,4 @@ For the Vector Database, the structure is optimized for high-dimensional vector 
 
 **Security Considerations:**
 
-* **CRITICAL:** The Vector Database, which provides context for the RAG process, **MUST** only be populated with public, non-sensitive data (e.g., the official CWE corpus). This is a fundamental control to prevent the leakage of confidential information to user-configured BYO LLM endpoints, as identified in threat **I-4**.
+* **CRITICAL:** The vector index (pgvector), which provides context for the RAG process, **MUST** only be populated with public, non-sensitive data (e.g., the official CWE corpus). This is a fundamental control to prevent leakage of confidential information to user-configured BYO LLM endpoints, as identified in threat **I-4**.

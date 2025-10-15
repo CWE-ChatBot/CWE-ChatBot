@@ -38,7 +38,7 @@ We will adhere to a **Serverless-first approach** where feasible, primarily util
 
 Our strategy involves a hybrid approach, combining a traditional relational database for structured application data with a specialized vector database for efficient semantic search of the CWE corpus.
 
-  * **Schema Design:** The detailed SQL DDL for PostgreSQL (`users`, `conversations`, `messages` tables) and the conceptual schema for the Vector Database (CWE embeddings) are defined in the dedicated [Database Schema](https://www.google.com/search?q=%23database-schema) section.
+  * **Schema Design:** The detailed SQL DDL for PostgreSQL (`users`, `conversations`, `messages` tables) and the conceptual schema for the embeddings vector index (pgvector) are defined in the dedicated [Database Schema](https://www.google.com/search?q=%23database-schema) section.
   * **Data Access Layer (Repository Pattern):** All direct database interactions will be abstracted behind a Repository Pattern (NFR5). This provides a clean interface for services, promotes testability, and allows for potential future changes in the underlying database technology with minimal impact on business logic.
     ```python
     # Example: packages/shared/data_access/cwe_repository.py

@@ -34,7 +34,7 @@ Specific patterns will be applied for different categories of errors to ensure c
 
   * **External API Errors (e.g., LLM APIs, OAuth Providers):**
       * **Retry Policy:** An **exponential backoff with jitter** strategy will be implemented for transient errors (e.g., network issues, temporary service unavailability, rate limits) when calling external APIs (NFR10).
-      * **Circuit Breaker:** For critical external dependencies (e.g., primary LLM provider, Vector Database), a **Circuit Breaker pattern** will be implemented to prevent cascading failures during sustained outages (NFR38).
+      * **Circuit Breaker:** For critical external dependencies (e.g., primary LLM provider) and the database layer, a **Circuit Breaker pattern** will be implemented to prevent cascading failures during sustained outages (NFR38).
       * **Timeout Configuration:** Strict and appropriate timeouts will be applied to all outgoing external API calls to prevent indefinite hanging and resource exhaustion.
       * **Error Translation:** External API-specific error codes and messages will be translated into standardized internal error responses (e.g., `LlmApiError`, `OAuthError`) before propagation.
   * **Business Logic Errors:**

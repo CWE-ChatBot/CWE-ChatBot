@@ -5,7 +5,7 @@ This section is the definitive record of the technologies and their specific ver
 ## Cloud Infrastructure
 
   * **Provider:** Google Cloud Platform (GCP)
-  * **Key Services:** Cloud Run, Cloud SQL (PostgreSQL), Managed Vector Database (e.g., Pinecone/Weaviate), Vertex AI (optional for LLM/Embeddings).
+  * **Key Services:** Cloud Run, Cloud SQL (PostgreSQL + pgvector), Vertex AI (optional for LLM/Embeddings).
   * **Deployment Regions:** To be determined based on user base distribution and data residency requirements, prioritizing low latency and compliance.
 
 ## Technology Stack Table
@@ -17,8 +17,7 @@ This section is the definitive record of the technologies and their specific ver
 | **Backend Language** | Python | 3.10+ | Primary language for all backend logic, NLP/AI processing. | Aligns with Chainlit's Python-native ecosystem and leverages Python's strength and extensive libraries in AI/ML development. |
 | **Backend Framework** | Chainlit | Latest Stable (0.7.x) | Core framework for chatbot logic and backend APIs. | Simplifies full-stack deployment by integrating UI and backend logic. Provides necessary abstractions for LLM interactions. |
 | **API Style** | Chainlit Internal API / RESTful | N/A | Communication between Chainlit UI and backend, and for external microservices (if separate). | Chainlit manages much of the internal API. RESTful is standard for general microservices. |
-| **Vector Database** | Pinecone | Cloud Service | Stores and efficiently queries CWE embeddings for RAG. | Managed service simplifies operations and scaling for vector search, crucial for RAG performance (PRD Tech Assump.). Supports efficient semantic search. (Can be replaced with self-hosted like ChromaDB/Qdrant if BYO Model influences choice). |
-| **Traditional Database** | PostgreSQL | 14.x | Manages structured application data (user profiles, chat history, BYO LLM/API key configs). | Robust, open-source relational database. Cloud SQL offers managed service for ease of operations (PRD Tech Assump.). |
+| **Database** | PostgreSQL with pgvector | 14.x | Manages structured app data and stores/queries CWE embeddings for RAG. | Single datastore simplifies ops and reduces latency, pgvector provides efficient semantic search within PostgreSQL. |
 | **Cache** | Redis (Cloud Memorystore) | 6.x / Latest | In-memory data store for caching LLM responses, session context, or frequently accessed data to improve performance (NFR1). | High-performance, low-latency caching solution. Managed service simplifies deployment. |
 | **File Storage** | Google Cloud Storage | N/A | Stores raw CWE corpus data, large documents, or user-uploaded files (FR25). | Highly scalable, durable, and cost-effective object storage service. Integrates seamlessly with GCP ecosystem. |
 | **Authentication** | OAuth 2.0 / OpenID Connect (via Chainlit Hooks / GCP Identity Platform) | N/A | Manages user login, session, and role-based access using **passwordless authentication** with external providers (NFR34). Supports integration for self-hosted via enterprise IdPs. | Leverages modern, secure, and user-friendly passwordless authentication. Simplifies user onboarding. Chainlit provides built-in hooks for OAuth providers. GCP Identity Platform offers scalable managed authentication for central hosting, and facilitates integration with enterprise Identity Providers for self-hosted options. |

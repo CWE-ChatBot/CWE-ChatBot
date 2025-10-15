@@ -10,12 +10,12 @@ This section defines the mandatory security requirements for AI and human develo
 
 ## AI & Prompt Security
 
-* **Input Guardrails (Pre-LLM):** All user input must be sanitized before being sent to an LLM to detect and neutralize prompt injection patterns (**T-1**). Primary control: Google Model Armor. Secondary control: Meta Llama Guard.  
-* **Output Validation (Post-LLM):** All responses from LLMs must be scanned to prevent the leaking of confidential system prompts or instructions (**I-2**). Same two layers apply, with legacy sanitizer as tertiary fallback. For streaming, post-sanitization buffers server-side to prevent unsafe tokens reaching clients mid-stream.  
+* **Input Guardrails (Pre-LLM):** All user input must be sanitized before being sent to an LLM to detect and neutralize prompt injection patterns (**T-1**). Primary control: Google Model Armor.  
+* **Output Validation (Post-LLM):** All responses from LLMs must be scanned to prevent the leaking of confidential system prompts or instructions (**I-2**). Model Armor applies post-sanitization with legacy sanitizer as a tertiary fallback. For streaming, post-sanitization buffers server-side to prevent unsafe tokens reaching clients mid-stream.  
 * **Consensus Decisioning:** Majority vote across available layers determines allow/transform/block; disagreements invoke the legacy sanitizer as a tie-breaker. Unsafe outputs are transformed/redacted with rationale and logged.  
 * **Resilience:** Circuit breakers protect against upstream AI guard failures; bounded retries with jitter; graceful degradation to remaining layers.  
 * **Observability:** Structured audit logs include decision, categories, confidence, policy/version, and timing; CRITICAL severity for blocks; stable payload hashes only (no raw payload). Metrics exported for rate, latency, error, and category distributions.  
-* **Feature Flags & Roles:** Rollout controlled via `MODEL_ARMOR_ENABLED` and `LLAMA_GUARD_ENABLED`. Sensitivity and policy templates are role-aware (admin, analyst, viewer).  
+* **Feature Flags & Roles:** Rollout controlled via `MODEL_ARMOR_ENABLED`. Sensitivity and policy templates are role-aware (admin, analyst, viewer).  
 * **Untrusted BYO Endpoints:** All user-configured BYO LLM endpoints are treated as untrusted external services. Requests route through a sandboxed egress proxy where applicable; all I/O passes through the AI security pipeline (**S-3**, **I-4**).  
 * **LLM Tooling Permissions:** If/when the LLM is granted access to internal tools, a strict, user-permission-based authorization model must be implemented to prevent abuse (**E-2**).
 
@@ -64,7 +64,7 @@ This section defines the mandatory security requirements for AI and human develo
 
 ## Data Protection
 
-  * **Encryption at Rest:** All sensitive data stored in the Traditional Database (PostgreSQL) and the Vector Database (Pinecone/managed service) will be encrypted at rest, leveraging the cloud provider's managed encryption capabilities.
+  * **Encryption at Rest:** All sensitive data stored in PostgreSQL (including pgvector embeddings) will be encrypted at rest, leveraging the cloud provider's managed encryption capabilities.
   * **Encryption in Transit:** All data transmission will be encrypted using HTTPS/TLS (NFR4).
   * **PII Handling:** User login ID, email, and credentials are classified as PII (NFR33) and will be handled in full compliance with **GDPR requirements**. This includes data minimization, secure storage, access restrictions, and defined data retention policies (NFR39).
   * **Logging Restrictions:** No PII, sensitive user queries, or confidential code snippets shall be logged in plain text. Logging will adhere to data minimization principles (NFR33).

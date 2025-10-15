@@ -2,7 +2,7 @@
 
 ## **Technical Summary**
 
-The CWE ChatBot will be architected as a **Python-based conversational AI application**, primarily leveraging **Chainlit** for its integrated web UI and core backend logic. Deployed on **Google Cloud Platform (GCP) Cloud Run** and protected by **Google Cloud Armor (WAF)**, this full-stack solution will interact with a managed **Vector Database** (e.g., Pinecone/Weaviate) for efficient Retrieval Augmented Generation (RAG) against the CWE corpus, and a **PostgreSQL database (Cloud SQL)** for structured application data. The architecture emphasizes modularity through logical microservices, secure data handling, and supports both centralized hosting and self-hosting options. This design directly supports the PRD's goals for efficient, accurate, and role-based CWE interaction, as well as the "Bring Your Own Key/Model" requirements.
+The CWE ChatBot is a **Python-based conversational AI application**, leveraging **Chainlit** for its integrated web UI and backend logic. Deployed on **Google Cloud Platform (GCP) Cloud Run** and protected by **Google Cloud Armor (WAF)**, it uses a single **PostgreSQL (Cloud SQL) database with pgvector** for both structured app data and RAG embeddings over the CWE corpus. The architecture emphasizes modularity, secure data handling, and supports both centralized hosting and self-hosting options, aligning with PRD goals and BYO model/key.
 
 ## **Platform and Infrastructure Choice**
 
@@ -10,9 +10,8 @@ The CWE ChatBot will be architected as a **Python-based conversational AI applic
   \* Key Services:  
       \* Cloud Run: For deploying the containerized Chainlit application, providing automatic scaling and a serverless execution model (aligning with NFR2).  
       \* Cloud Armor: As a Web Application Firewall (WAF) to protect the public-facing Cloud Run endpoint from common web attacks and DDoS.  
-      \* Cloud SQL (PostgreSQL): For managing structured application data (e.g., user profiles, chat history, BYO LLM/API key configurations).  
-      \* Managed Vector Database (e.g., Pinecone, Weaviate, or self-hosted via GCP Kubernetes Engine): For storing and efficiently querying CWE embeddings for RAG.  
-      \* Vertex AI (Optional/BYO LLM): For managed Large Language Model and embedding services, if not leveraging user-provided external LLMs or self-hosted models.  
+      \* Cloud SQL (PostgreSQL + pgvector): Manages structured application data and stores/queries CWE embeddings for RAG in one datastore.  
+      \* Vertex AI (Optional/BYO LLM): For managed Large Language Model and embedding services, if not leveraging user-provided external LLMs or self-hosted models.  
   \* Deployment Regions: To be determined based on user base distribution and data residency requirements, prioritizing low latency and compliance.  
   \* Rationale: GCP offers a robust suite of serverless and managed services that align with our cost-efficiency, scalability, and security NFRs. Cloud Run is ideal for Chainlit deployments, and its ecosystem supports flexible database and AI integrations.
 
@@ -70,13 +69,14 @@ C1: Container: A container diagram shows the high-level technology choices, how 
 
         Boundary(chatbot, "CWE Chatbot") {
             Container(web_app, "Frontend", "ChainLit")
-            Container(api, "Backend", "LangChain")
-            ContainerDb(db, "Persistent Storage", "LangChain")
-            Container(log, "Logging", "ChainLit")
-            Container(guardrails, "Guardrails", "LlamaFirewall")
-            Container(auth, "Authentication", "ChainLit Authentication")
+            Container(api, "Backend", "Chainlit")
+            ContainerDb(db, "Database", "PostgreSQL + pgvector")
+            Container(log, "Logging", "Cloud Logging")
+            Container(guardrails, "Guardrails", "Model Armor")
+            Container(auth, "Authentication", "OAuth/OIDC")
             Container(session_mgmt, "Session Management", "ChainLit Session Management")
             Container(cwe_corpus, "CWE Corpus", "Hybrid RAG")
+            Container(pdf_worker, "PDF Worker", "Cloud Function", "Isolated PDF processing")
         }
 
         Boundary(external, "CWE List and Guidance") {
@@ -90,12 +90,12 @@ C1: Container: A container diagram shows the high-level technology choices, how 
     UpdateLayoutConfig(2,2)
     
     Rel(web_app, api, "Sends requests to")
-    Rel(web_app, api, "Sends requests to")    
     Rel(api, db, "Reads from and writes to")
     Rel(api, log, "Logs events to")
-    Rel(api, guardrails, "Validates responses with")
+    Rel(api, guardrails, "Pre/Post sanitization")
     Rel(api, auth, "Verifies user identity via")
     Rel(api, session_mgmt, "Manages sessions via")
+    Rel(api, pdf_worker, "Sends PDF via HTTPS/OIDC")
     Rel(cwe_corpus, cwe_list, "Fetches CWE definitions from")
     Rel(cwe_corpus, cwe_rcm, "Fetches guidance from")
 
@@ -117,8 +117,7 @@ graph TD
             BackendAPI[Chainlit Backend]
         end
         subgraph "KC4 - Memory"
-            VectorDB[Vector Database - RAG]
-            TraditionalDB[Traditional DB PostgreSQL - App Data]
+            SQLDB[Cloud SQL for PostgreSQL + pgvector]
         end
         subgraph "KC6 - Operational Environment"
              DataIngestion[Data Ingestion Pipeline]
@@ -128,9 +127,10 @@ graph TD
         User -- HTTPS --> WAF
         WAF -- Forwards valid traffic --> WebUI
         WebUI -- Queries --> BackendAPI
-        BackendAPI -- Executes RAG --> VectorDB
+        BackendAPI -- Executes RAG --> SQLDB
         BackendAPI -- Generates Response --> LLM
-        BackendAPI -- Manages State --> TraditionalDB
+        BackendAPI -- Manages State --> SQLDB
+        BackendAPI -- HTTPS + OIDC Auth --> PDFWorker
     end
 
     subgraph "External Sources (Part of KC6)"
@@ -138,8 +138,7 @@ graph TD
     end
 
     CWE_Data --> DataIngestion
-    DataIngestion -- Stores Embeddings --> VectorDB
-    DataIngestion -- Stores Metadata --> TraditionalDB
+    DataIngestion -- Stores Embeddings & Metadata --> SQLDB
 
     subgraph DeploymentFlexibility [Deployment Flexibility NFR41]
         Direction[Centralized Cloud Hosting] --and/or--> SelfHost[Self-Hosted Option]
@@ -151,8 +150,7 @@ graph TD
     style WebUI fill:#E0F7FA,stroke:#00BCD4,stroke-width:2px
     style BackendAPI fill:#DCEDC8,stroke:#8BC34A,stroke-width:2px
     style NLP_AI fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
-    style VectorDB fill:#BBDEFB,stroke:#2196F3,stroke-width:2px
-    style TraditionalDB fill:#CFD8DC,stroke:#607D8B,stroke-width:2px
+    style SQLDB fill:#BBDEFB,stroke:#2196F3,stroke-width:2px
     style CWE_Data fill:#F0F4C3,stroke:#CDDC39,stroke-width:2px
     style DataIngestion fill:#FFF9C4,stroke:#FFEB3B,stroke-width:2px
     style LLM fill:#D1C4E9,stroke:#673AB7,stroke-width:2px

@@ -39,7 +39,7 @@ Environment variables are used to manage sensitive information and configuration
       * `GEMINI_API_KEY=...` (Required for embeddings/LLM in current architecture)
       * `GCP_PROJECT_ID=your-gcp-project-id`
       * `PG_CONN_STRING=postgresql://user:pass@localhost:5432/cwe_chatbot_db` (Local PostgreSQL connection string)
-      * `VECTOR_DB_API_KEY=your-vector-db-api-key` (If using managed service like Pinecone)
+      
       * `VECTOR_DB_ENVIRONMENT=your-vector-db-env`
       * `OAUTH_GOOGLE_CLIENT_ID=your-google-client-id` (For Google OAuth)
       * `OAUTH_GOOGLE_CLIENT_SECRET=your-google-client-secret`
