@@ -13,6 +13,8 @@ This unified approach combines what would traditionally be separate backend and 
 | July 18, 2025 | 1.0 | Initial Architecture Draft | Winston (Architect) |
 | July 23, 2025 | 2.0 | Integrated security agent's findings (WAF, AI Guardrails, DoS Protection, Enhanced Logging). | Winston (Architect) |
 | July 30, 2025 | 2.1 | Aligned architecture with OWASP Securing Agentic Applications guide Version 1.0 July 28, 2025; defined Key Components (KCs) and added Runtime Hardening section. | Chris (Security Agent) |
+| Oct 15, 2025 | 2.2 | Updated architecture to reflect implemented Ephemeral PDF Processing via isolated Cloud Function and private networking for Cloud SQL. Consolidated database strategy to use PostgreSQL with pgvector. | Gemini |
+| Oct 15, 2025 | 2.3 | Integrated Story 2.4 Enterprise AI Security: Google Model Armor (primary), Meta Llama Guard (secondary), legacy sanitizer (fallback); clarified Global HTTP(S) Load Balancer + Cloud Armor policies and traffic flow; aligned with LLM_GUARDRAILS.md. | Gemini |
 
 ## **High Level Architecture**
 
@@ -22,7 +24,7 @@ This unified approach combines what would traditionally be separate backend and 
 
 ### **Technical Summary**
 
-The CWE ChatBot will be architected as a **Python-based conversational AI application**, primarily leveraging **Chainlit** for its integrated web UI and core backend logic. Deployed on **Google Cloud Platform (GCP) Cloud Run** and protected by **Google Cloud Armor (WAF)**, this full-stack solution will interact with a managed **Vector Database** (e.g., Pinecone/Weaviate) for efficient Retrieval Augmented Generation (RAG) against the CWE corpus, and a **PostgreSQL database (Cloud SQL)** for structured application data. The architecture emphasizes modularity through logical microservices, secure data handling, and supports both centralized hosting and self-hosting options. This design directly supports the PRD's goals for efficient, accurate, and role-based CWE interaction, as well as the "Bring Your Own Key/Model" requirements.
+The CWE ChatBot will be architected as a **Python-based conversational AI application**, primarily leveraging **Chainlit** for its integrated web UI and core backend logic. Deployed on **Google Cloud Platform (GCP) Cloud Run** and protected by **Google Cloud Armor (WAF)**, this full-stack solution will interact with a **PostgreSQL database (Cloud SQL)** for both structured application data and, using the `pgvector` extension, for efficient Retrieval Augmented Generation (RAG) against the CWE corpus. The architecture emphasizes modularity through logical microservices, secure data handling, and supports both centralized hosting and self-hosting options. This design directly supports the PRD's goals for efficient, accurate, and role-based CWE interaction, as well as the "Bring Your Own Key/Model" requirements.
 
 ### **Platform and Infrastructure Choice**
 
@@ -30,8 +32,7 @@ The CWE ChatBot will be architected as a **Python-based conversational AI applic
   \* Key Services:  
       \* Cloud Run: For deploying the containerized Chainlit application, providing automatic scaling and a serverless execution model (aligning with NFR2).  
       \* Cloud Armor: As a Web Application Firewall (WAF) to protect the public-facing Cloud Run endpoint from common web attacks and DDoS.  
-      \* Cloud SQL (PostgreSQL): For managing structured application data (e.g., user profiles, chat history, BYO LLM/API key configurations).  
-      \* Managed Vector Database (e.g., Pinecone, Weaviate, or self-hosted via GCP Kubernetes Engine): For storing and efficiently querying CWE embeddings for RAG.  
+      \* Cloud SQL (PostgreSQL with `pgvector` extension): For managing structured application data and for storing and efficiently querying CWE embeddings for RAG.  
       \* Vertex AI (Optional/BYO LLM): For managed Large Language Model and embedding services, if not leveraging user-provided external LLMs or self-hosted models.  
   \* Deployment Regions: To be determined based on user base distribution and data residency requirements, prioritizing low latency and compliance.  
   \* Rationale: GCP offers a robust suite of serverless and managed services that align with our cost-efficiency, scalability, and security NFRs. Cloud Run is ideal for Chainlit deployments, and its ecosystem supports flexible database and AI integrations.
@@ -86,17 +87,16 @@ C1: Container: A container diagram shows the high-level technology choices, how 
     Enterprise_Boundary(system, "CWE Chatbot System") {
         Person(userA, "CWE ChatBot User", "A user of the CWE Chatbot")
 
-
-
         Boundary(chatbot, "CWE Chatbot") {
             Container(web_app, "Frontend", "ChainLit")
-            Container(api, "Backend", "LangChain")
-            ContainerDb(db, "Persistent Storage", "LangChain")
-            Container(log, "Logging", "ChainLit")
+            Container(api, "Backend", "Chainlit/LangChain")
+            ContainerDb(db, "Database", "PostgreSQL + pgvector")
+            Container(log, "Logging", "Cloud Logging")
             Container(guardrails, "Guardrails", "LlamaFirewall")
-            Container(auth, "Authentication", "ChainLit Authentication")
+            Container(auth, "Authentication", "ChainLit + OAuth")
             Container(session_mgmt, "Session Management", "ChainLit Session Management")
             Container(cwe_corpus, "CWE Corpus", "Hybrid RAG")
+            Container(pdf_worker, "PDF Worker", "Cloud Function", "Isolated PDF processing")
         }
 
         Boundary(external, "CWE List and Guidance") {
@@ -110,12 +110,12 @@ C1: Container: A container diagram shows the high-level technology choices, how 
     UpdateLayoutConfig(2,2)
     
     Rel(web_app, api, "Sends requests to")
-    Rel(web_app, api, "Sends requests to")    
     Rel(api, db, "Reads from and writes to")
     Rel(api, log, "Logs events to")
     Rel(api, guardrails, "Validates responses with")
     Rel(api, auth, "Verifies user identity via")
     Rel(api, session_mgmt, "Manages sessions via")
+    Rel(api, pdf_worker, "Sends PDF for processing via HTTPS/OIDC")
     Rel(cwe_corpus, cwe_list, "Fetches CWE definitions from")
     Rel(cwe_corpus, cwe_rcm, "Fetches guidance from")
 
@@ -131,26 +131,45 @@ graph TD
     end
 
     subgraph "Google Cloud Platform (GCP)"
-        WAF[Google Cloud Armor - WAF]
+        LB[Global Load Balancer]
+        WAF[Google Cloud Armor]
+        
         subgraph "Chainlit Application on Cloud Run (KC2 - Orchestration)"
             WebUI[Chainlit Web UI]
             BackendAPI[Chainlit Backend]
+            subgraph "AI Security Pipeline (Pre/Post LLM Sanitization)"
+                ModelArmor[Google Model Armor<br/>(Pre + Post)]
+                LlamaGuard[Meta Llama Guard<br/>(Pre + Post)]
+            end
         end
+        
+        subgraph "Isolated Services"
+            PDFWorker[PDF Worker<br>Cloud Function]
+        end
+
         subgraph "KC4 - Memory"
-            VectorDB[Vector Database - RAG]
-            TraditionalDB[Traditional DB PostgreSQL - App Data]
+            Database[Cloud SQL for PostgreSQL <br> (App Data + Vector Store)]
         end
         subgraph "KC6 - Operational Environment"
              DataIngestion[Data Ingestion Pipeline]
              LLM["KC1 - LLM / Embedding Model (BYO)"]
         end
 
-        User -- HTTPS --> WAF
-        WAF -- Forwards valid traffic --> WebUI
-        WebUI -- Queries --> BackendAPI
-        BackendAPI -- Executes RAG --> VectorDB
+        User -- HTTPS --> LB
+        WAF -- Attaches to --> LB
+        LB -- Forwards valid traffic --> WebUI
+        WebUI -- Queries / File Uploads --> BackendAPI
+        
+        BackendAPI -- Pre-LLM sanitization --> ModelArmor
+        BackendAPI -- Pre-LLM sanitization --> LlamaGuard
+
+        BackendAPI -- Executes RAG & Manages State --> Database
         BackendAPI -- Generates Response --> LLM
-        BackendAPI -- Manages State --> TraditionalDB
+        LLM -- Post-LLM sanitization --> ModelArmor
+        LLM -- Post-LLM sanitization --> LlamaGuard
+        ModelArmor -- Returns verdict/transform --> BackendAPI
+        LlamaGuard -- Returns verdict/transform --> BackendAPI
+        BackendAPI -- HTTPS + OIDC Auth --> PDFWorker
     end
 
     subgraph "External Sources (Part of KC6)"
@@ -158,8 +177,7 @@ graph TD
     end
 
     CWE_Data --> DataIngestion
-    DataIngestion -- Stores Embeddings --> VectorDB
-    DataIngestion -- Stores Metadata --> TraditionalDB
+    DataIngestion -- Stores Embeddings & Metadata --> Database
 
     subgraph DeploymentFlexibility [Deployment Flexibility NFR41]
         Direction[Centralized Cloud Hosting] --and/or--> SelfHost[Self-Hosted Option]
@@ -167,20 +185,76 @@ graph TD
     end
 
     style User fill:#FFF,stroke:#333,stroke-width:2px
+    style LB fill:#D1C4E9,stroke:#673AB7,stroke-width:2px
     style WAF fill:#FFCDD2,stroke:#D32F2F,stroke-width:2px
     style WebUI fill:#E0F7FA,stroke:#00BCD4,stroke-width:2px
     style BackendAPI fill:#DCEDC8,stroke:#8BC34A,stroke-width:2px
-    style NLP_AI fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
-    style VectorDB fill:#BBDEFB,stroke:#2196F3,stroke-width:2px
-    style TraditionalDB fill:#CFD8DC,stroke:#607D8B,stroke-width:2px
+    style PDFWorker fill:#FFD180,stroke:#FFAB40,stroke-width:2px
+    style Database fill:#BBDEFB,stroke:#2196F3,stroke-width:2px
     style CWE_Data fill:#F0F4C3,stroke:#CDDC39,stroke-width:2px
     style DataIngestion fill:#FFF9C4,stroke:#FFEB3B,stroke-width:2px
-    style LLM fill:#D1C4E9,stroke:#673AB7,stroke-width:2px
+    style LLM fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
+    style ModelArmor fill:#E1BEE7,stroke:#9C27B0,stroke-width:2px
+    style LlamaGuard fill:#E1BEE7,stroke:#9C27B0,stroke-width:2px
     style DeploymentFlexibility fill:#F5F5F5,stroke:#9E9E9E,stroke-width:2px,stroke-dasharray: 5 5
     style SelfHost fill:#FFFACD,stroke:#FFD700,stroke-width:2px
     style UserNetwork fill:#FFDAB9,stroke:#FF8C00,stroke-width:2px
-
 ```
+
+## Enterprise AI Security (Story 2.4)
+
+This section codifies the security enhancements from Story 2.4: Enterprise AI Security Enhancement with Google Model Armor and Llama Guard, adding a defense-in-depth AI security pipeline and clarifying network edge protections.
+
+### AI Security Pipeline
+
+- Primary: Google Model Armor
+  - Prompt injection and jailbreak detection, content safety classification, real-time threat analysis.
+  - Applies on both input (pre-LLM) and output (post-LLM) sanitization.
+  - Target latency budget: <200 ms added per request typical (see LLM_GUARDRAILS.md for current measurements); async invocation with backpressure-aware timeouts.
+  - Feature flag `MODEL_ARMOR_ENABLED` gates rollout; fail-closed on guard errors with generic user messaging; graceful degradation strategy documented in LLM_GUARDRAILS.md.
+- Secondary: Meta Llama Guard
+  - Content policy enforcement with role-aware prompts and safety categories (e.g., harassment, self-harm, violence, adult).
+  - Runs in parallel with Model Armor; supports batch mode for throughput where applicable.
+  - Toggled by `LLAMA_GUARD_ENABLED`; configurable sensitivity per user role.
+- Tertiary: Legacy Sanitizer (fallback)
+  - Domain-specific checks as last resort and for emergency bypass.
+  - Used as tie-breaker during disagreement or when upstream services fail.
+
+### Processing Flow and Decisioning
+
+- Parallel evaluation: Model Armor and Llama Guard run concurrently for minimal added latency.
+- Consensus: Majority vote across available results (e.g., 2-of-3 when legacy tie-breaker is needed) determines allow/transform/block.
+- Output handling: When unsafe, redact or transform with rationale; log decision, categories, confidence, and applied transformations. For streaming, post-sanitization buffers server-side to prevent unsafe tokens mid-stream (see LLM_GUARDRAILS.md).
+- Circuit breakers: Trip on repeated upstream failures; automatically fall back to remaining layers. Retries are bounded and jittered.
+- Observability: Structured audit logs for every decision, Prometheus/OpenTelemetry metrics (rates, latency, categories), and dashboards.
+
+### Traffic Entry, Load Balancer, and WAF
+
+- Global HTTP(S) Load Balancer fronts Cloud Run; all user traffic terminates TLS at the LB.
+- Cloud Armor policy attaches to the LB:
+  - WAF managed rulesets for common web threats and L7 DDoS mitigation.
+  - Per-IP and per-identity rate limiting (S-1.1) with burst/sustained thresholds tuned to app SLOs.
+  - IP reputation, geo-based controls, and custom rules for chatbot-specific abuse patterns.
+- Request flow: User → Global LB → Cloud Armor policy evaluation → Cloud Run (Chainlit) → AI Security Pipeline → RAG/LLM.
+- Budget controls: Quota and budget alerts for upstream AI services; align with cost SLOs and escalate on anomaly.
+
+### Rollout and Resilience
+
+- Feature flags per layer with gradual rollout (percentage- and cohort-based) and instant rollback.
+- Performance and A/B evaluation comparing old vs new pipeline for false positives/negatives and utility.
+- Compliance: 100% auditable trail of decisions and policy versions; role-based sensitivity configuration.
+
+### Guardrails Configuration (Model Armor)
+
+- Endpoint pattern: `modelarmor.{location}.rep.googleapis.com` (regional)
+- IAM: Grant `roles/modelarmor.user` to service accounts invoking sanitize APIs
+- Policy template: e.g., `projects/<project>/locations/<region>/templates/llm-guardrails-default`
+- Env flag: `MODEL_ARMOR_ENABLED=true` to activate pre/post sanitization
+- Fail-closed: Block on errors/timeouts; return generic, non-oracular error messages to avoid attack feedback
+- Active shields: Prompt Injection & Jailbreak, Responsible AI (RAI), Sensitive Data Protection (SDP/DLP), Malicious URIs, CSAM
+- Audit logging: CRITICAL severity for blocks; privacy-preserving stable payload hash (no raw payload); metrics exported for allow/block rates and latency
+
+References: docs/LLM_GUARDRAILS.md, docs/stories/2.4.Enterprise-AI-Security-Enhancement.md, docs/stories/S2/S-2.LLM-Input-Output-Guardrails.md, docs/stories/S-1.1-Load-Balancer-Cloud-Armor.md.
 
 ### Architectural and Design Patterns
 
@@ -213,8 +287,9 @@ This section is the definitive record of the technologies and their specific ver
 | **Backend Language** | Python | 3.10+ | Primary language for all backend logic, NLP/AI processing. | Aligns with Chainlit's Python-native ecosystem and leverages Python's strength and extensive libraries in AI/ML development. |
 | **Backend Framework** | Chainlit | Latest Stable (0.7.x) | Core framework for chatbot logic and backend APIs. | Simplifies full-stack deployment by integrating UI and backend logic. Provides necessary abstractions for LLM interactions. |
 | **API Style** | Chainlit Internal API / RESTful | N/A | Communication between Chainlit UI and backend, and for external microservices (if separate). | Chainlit manages much of the internal API. RESTful is standard for general microservices. |
-| **Vector Database** | Pinecone | Cloud Service | Stores and efficiently queries CWE embeddings for RAG. | Managed service simplifies operations and scaling for vector search, crucial for RAG performance (PRD Tech Assump.). Supports efficient semantic search. (Can be replaced with self-hosted like ChromaDB/Qdrant if BYO Model influences choice). |
-| **Traditional Database** | PostgreSQL | 14.x | Manages structured application data (user profiles, chat history, BYO LLM/API key configs). | Robust, open-source relational database. Cloud SQL offers managed service for ease of operations (PRD Tech Assump.). |
+| **Database** | PostgreSQL with pgvector | 14.x | Manages structured application data (user profiles, chat history) and stores/queries CWE embeddings for RAG. | Robust, open-source relational database. Using `pgvector` extension consolidates data stores, simplifying the architecture and operations. Cloud SQL offers a managed service for ease of operations. |
+| **Isolated Compute** | Google Cloud Functions | v2 | Provides an isolated, serverless environment for security-sensitive tasks like PDF processing. | Enables compute isolation for handling potentially malicious files, minimizing the attack surface of the main application. Scales to zero. |
+| **PDF Processing** | pypdf | Latest | Python library for parsing and extracting text from PDF files within the isolated PDF Worker. | A standard and well-maintained library for PDF manipulation in Python. |
 | **Cache** | Redis (Cloud Memorystore) | 6.x / Latest | In-memory data store for caching LLM responses, session context, or frequently accessed data to improve performance (NFR1). | High-performance, low-latency caching solution. Managed service simplifies deployment. |
 | **File Storage** | Google Cloud Storage | N/A | Stores raw CWE corpus data, large documents, or user-uploaded files (FR25). | Highly scalable, durable, and cost-effective object storage service. Integrates seamlessly with GCP ecosystem. |
 | **Authentication** | OAuth 2.0 / OpenID Connect (via Chainlit Hooks / GCP Identity Platform) | N/A | Manages user login, session, and role-based access using **passwordless authentication** with external providers (NFR34). Supports integration for self-hosted via enterprise IdPs. | Leverages modern, secure, and user-friendly passwordless authentication. Simplifies user onboarding. Chainlit provides built-in hooks for OAuth providers. GCP Identity Platform offers scalable managed authentication for central hosting, and facilitates integration with enterprise Identity Providers for self-hosted options. |
@@ -227,6 +302,8 @@ This section is the definitive record of the technologies and their specific ver
 | **Logging** | Google Cloud Logging | N/A | Centralized logging for application events and errors (NFR11, NFR40). | Provides scalable log aggregation and analysis for debugging and auditing. |
 | **CSS Framework** | Tailwind CSS | 3.x | Utility-first CSS framework for efficient styling and theming of Chainlit components and custom UI elements. | **Chainlit fully supports Tailwind CSS, with its UI (including the copilot) rewritten using Shadcn/Tailwind. This allows easy customization of the chatbot's look and feel directly with Tailwind classes and CSS variables, providing a high degree of control.** |
 | **IaC Tool** | Terraform | Latest Stable | Manages and provisions cloud infrastructure resources on GCP. | Provides version-controlled, declarative infrastructure management, promoting consistency and repeatability in deployments. |
+| **AI & Prompt Security** | Google Model Armor | N/A | Primary defense against prompt injection, jailbreaking, and content safety violations. | Enterprise-grade, AI-powered threat detection that adapts to new attack patterns. |
+| **AI & Prompt Security** | Meta Llama Guard | N/A | Secondary defense for content policy enforcement and context-aware risk assessment. | Provides a defense-in-depth layer with a different AI model, catching edge cases missed by the primary defense. |
 
 ## Data Models
 
@@ -543,6 +620,43 @@ sequenceDiagram
 ```
 
 **Rationale for Sequence Diagram:** This diagram clearly visualizes the multi-step process of an AI-powered conversational response. It maps how the user's query travels through the system, gets enriched with relevant data from the vector database (RAG), interacts with the LLM, and finally delivers a tailored answer back to the user. It explicitly ties into the FRs and NFRs related to NLU, retrieval, response generation, and hallucination mitigation.
+
+### Ephemeral PDF Processing Workflow
+
+  * **Purpose:** To illustrate the secure, isolated process for handling user-uploaded PDF files. This workflow ensures that potentially malicious files are processed in a sandboxed environment, separate from the main application, to minimize security risks.
+  * **Key Components Involved:** User, Chatbot Application (Chainlit Core), PDF Worker (Cloud Function).
+  * **Clarifies Architectural Decisions:** This flow highlights the security-first principle of compute isolation for untrusted file processing. It shows the service-to-service authentication using OIDC and the ephemeral nature of the extracted data, which is only stored in the user's session memory.
+
+#### Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant CA as Chatbot Application (Cloud Run)
+    participant PW as PDF Worker (Cloud Function)
+    participant GCP as Google Cloud IAM & Metadata
+
+    U->>CA: 1. Uploads PDF file via UI
+    activate CA
+    CA->>CA: 2. Validate file type (magic bytes) and size
+    CA->>GCP: 3. Request OIDC token for PDF Worker audience
+    activate GCP
+    GCP-->>CA: 4. Return short-lived JWT
+    deactivate GCP
+    CA->>PW: 5. Send PDF bytes via HTTPS + OIDC Auth Header
+    activate PW
+    PW->>GCP: 6. (Implicit) Cloud Run validates JWT with GCP IAM
+    activate GCP
+    GCP-->>PW: 7. (Implicit) OK, authenticated
+    deactivate GCP
+    PW->>PW: 8. Parse PDF, extract text, apply limits
+    PW-->>CA: 9. Return extracted text as JSON
+    deactivate PW
+    CA->>CA: 10. Store extracted text in ephemeral user session
+    CA->>U: 11. Confirm file processing to user
+    deactivate CA
+    Note right of CA: Extracted text is now available in session<br>for the next RAG query.
+```
 
 ## REST API Spec
 
@@ -1093,9 +1207,8 @@ We will adhere to a **Serverless-first approach** where feasible, primarily util
 
   * **Function/Service Organization:** Within the monorepo, logical services will be organized into distinct Python modules or packages, fostering clear separation of concerns.
       * `apps/chatbot/`: Contains the main Chainlit application, which orchestrates calls to other logical services.
-      * `services/nlp_ai/`: Encapsulates NLP/AI processing logic, RAG implementation, and LLM interactions. This could be deployed as part of the main Chainlit app initially or as a separate Cloud Run service for dedicated scaling.
-      * `services/cwe_ingestion/`: Houses the data ingestion pipeline, deployed as a Cloud Function for scheduled runs or a separate Cloud Run service for on-demand processing.
-      * `services/user_auth/`: Manages user authentication and authorization logic, integrated via Chainlit hooks or as a dedicated internal microservice.
+      * `services/cwe_data_ingestion/`: Houses the data ingestion pipeline, deployed as a Cloud Function for scheduled runs or a separate Cloud Run service for on-demand processing.
+      * `services/pdf_worker/` (Logical): A dedicated, isolated service for processing PDF files. Deployed as a **Google Cloud Function**, it receives PDF files from the main application, extracts text using the `pypdf` library, and returns the content. It is designed with a minimal attack surface: it has no database access, no secret access, and no network egress beyond responding to the main application. This compute isolation is a critical security control.
       * `packages/shared/`: Contains common data models (e.g., User, Conversation), utilities, and API interface definitions to be shared across all services.
   * **Function/Service Template (Conceptual Python Module):** This illustrates how a reusable backend service module might be structured, demonstrating its independence from the main Chainlit app's direct request handling.
     ```python
@@ -1150,7 +1263,7 @@ Our strategy involves a hybrid approach, combining a traditional relational data
 
 Authentication will be **passwordless** using OAuth 2.0 / OpenID Connect. Authorization will be role-based, ensuring secure access control (NFR34).
 
-  * **Auth Flow Diagram (Mermaid):** This sequence illustrates the user authentication flow via an external OAuth provider.
+  * **User Authentication Flow (OAuth):** This sequence illustrates the user authentication flow via an external OAuth provider.
     ```mermaid
     sequenceDiagram
         participant U as User
@@ -1176,6 +1289,14 @@ Authentication will be **passwordless** using OAuth 2.0 / OpenID Connect. Author
         deactivate CA
         UI->>CA: 12. Subsequent Authenticated Requests with Token
     ```
+  * **Service-to-Service Authentication (OIDC):** Secure communication between the main Chatbot Application (Cloud Run) and the PDF Worker (Cloud Function) is achieved using OIDC ID tokens. This avoids the need for static API keys.
+    - **Flow:**
+        1. The Chainlit Application requests an OIDC token from the GCP metadata server, with the `audience` set to the PDF Worker's URL.
+        2. GCP mints a short-lived, signed JWT, specific to the service account of the Chainlit app and the PDF worker audience.
+        3. The Chainlit Application sends the PDF data to the worker in an HTTPS request, including the JWT in the `Authorization: Bearer` header.
+        4. The PDF Worker (a Cloud Function) is configured to only accept authenticated requests. GCP automatically validates the JWT's signature, expiration, and audience before invoking the function.
+        5. An IAM policy ensures that only the Chainlit application's service account has the `roles/run.invoker` permission on the PDF Worker.
+
   * **Middleware/Guards:** Authentication and authorization checks will be enforced at the API entry points of relevant services. Chainlit's built-in authentication hooks will be utilized to protect conversational endpoints. For separately deployed microservices (if applicable), standard Python web framework middleware will apply.
     ```python
     # Example: Conceptual Authentication Middleware/Decorator
@@ -1489,18 +1610,22 @@ These are non-negotiable rules specifically highlighted to prevent common pitfal
 
 This section defines the mandatory security requirements for AI and human developers, focusing on implementation-specific rules, referencing security tools from the Tech Stack, and defining clear patterns for common scenarios. These rules directly impact code generation.
 
-### Input Validation
+### Input Validation and Compute Isolation
 
   * **Validation Library:** Python libraries such as [Pydantic](https://pydantic-docs.helpmanual.io/) will be used for defining and validating data schemas for API requests and internal data structures, particularly within FastAPI/Chainlit endpoints.
   * **Validation Location:** Input validation shall occur at all system entry points, including API boundaries (e.g., Chainlit message handlers, custom backend endpoints) and data ingestion points (CWE Data Ingestion Service).
   * **Required Rules:** All external inputs MUST be rigorously validated (NFR8). A **whitelist approach** (explicitly allowing known safe inputs) is preferred over a blacklist approach (blocking known bad inputs). Inputs must be sanitized to prevent common web vulnerabilities like Cross-Site Scripting (XSS), SQL Injection, and Prompt Injection (NFR8).
+  * **Compute Isolation for File Processing:** To mitigate risks from potentially malicious file uploads (e.g., PDFs), file parsing is handled in a dedicated, sandboxed **Google Cloud Function (the PDF Worker)**. This isolates the process from the main application, preventing parser vulnerabilities from impacting the core system. This worker has no database or secret access and limited network egress, adhering to the principle of least privilege.
 
 ### AI & Prompt Security
 
-* **Input Guardrails:** All user input must be sanitized before being sent to an LLM to detect and neutralize prompt injection patterns (**T-1**).  
-* **Output Validation:** All responses from LLMs must be scanned to prevent the leaking of confidential system prompts or instructions (**I-2**).  
-* **Untrusted BYO Endpoints:** All user-configured BYO LLM endpoints are to be treated as untrusted external services. Responses must be sanitized, and network requests should be made through a sandboxed egress proxy (**S-3**, **I-4**).  
-* **LLM Tooling Permissions:** If/when the LLM is granted access to internal tools, a strict, user-permission-based authorization model must be implemented to prevent abuse (**E-2**).
+A multi-layered, defense-in-depth strategy is implemented to secure the AI and LLM interactions, moving from simple static rules to an enterprise-grade AI security pipeline.
+
+*   **Primary Defense (Google Model Armor):** All user input is first processed by Google Cloud's Model Armor. It provides robust, real-time detection of prompt injection, jailbreaking attempts, and harmful content. It serves as the first line of defense.
+*   **Secondary Defense (Meta Llama Guard):** As a second layer, Meta's Llama Guard is used to perform further content safety validation. Using a different model provides a diverse perspective to catch threats or policy violations that might be missed by the primary defense.
+*   **Output Validation:** All responses from the LLM are also scanned by this pipeline before being sent to the user. This prevents the leaking of confidential system prompts, sensitive data, or the generation of harmful content (**I-2**).
+*   **Untrusted BYO Endpoints:** All user-configured BYO LLM endpoints are treated as untrusted external services. Responses are sanitized through the security pipeline, and network requests are made through a sandboxed egress proxy (**S-3**, **I-4**).
+*   **LLM Tooling Permissions:** If/when the LLM is granted access to internal tools, a strict, user-permission-based authorization model must be implemented to prevent abuse (**E-2**).
   
 ### Authentication & Authorization
 
@@ -1530,6 +1655,7 @@ This section defines the mandatory security requirements for AI and human develo
 
   * **Encryption at Rest:** All sensitive data stored in the Traditional Database (PostgreSQL) and the Vector Database (Pinecone/managed service) will be encrypted at rest, leveraging the cloud provider's managed encryption capabilities.
   * **Encryption in Transit:** All data transmission will be encrypted using HTTPS/TLS (NFR4).
+  * **Private Networking:** In production, the Cloud SQL database is configured with a **private IP only** and is not exposed to the public internet. The Cloud Run application connects to it securely and efficiently through a **VPC Connector**, ensuring all database traffic remains within Google Cloud's private network.
   * **PII Handling:** User login ID, email, and credentials are classified as PII (NFR33) and will be handled in full compliance with **GDPR requirements**. This includes data minimization, secure storage, access restrictions, and defined data retention policies (NFR39).
   * **Logging Restrictions:** No PII, sensitive user queries, or confidential code snippets shall be logged in plain text. Logging will adhere to data minimization principles (NFR33).
 

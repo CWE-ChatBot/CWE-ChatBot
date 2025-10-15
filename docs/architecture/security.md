@@ -10,10 +10,33 @@ This section defines the mandatory security requirements for AI and human develo
 
 ## AI & Prompt Security
 
-* **Input Guardrails:** All user input must be sanitized before being sent to an LLM to detect and neutralize prompt injection patterns (**T-1**).  
-* **Output Validation:** All responses from LLMs must be scanned to prevent the leaking of confidential system prompts or instructions (**I-2**).  
-* **Untrusted BYO Endpoints:** All user-configured BYO LLM endpoints are to be treated as untrusted external services. Responses must be sanitized, and network requests should be made through a sandboxed egress proxy (**S-3**, **I-4**).  
+* **Input Guardrails (Pre-LLM):** All user input must be sanitized before being sent to an LLM to detect and neutralize prompt injection patterns (**T-1**). Primary control: Google Model Armor. Secondary control: Meta Llama Guard.  
+* **Output Validation (Post-LLM):** All responses from LLMs must be scanned to prevent the leaking of confidential system prompts or instructions (**I-2**). Same two layers apply, with legacy sanitizer as tertiary fallback. For streaming, post-sanitization buffers server-side to prevent unsafe tokens reaching clients mid-stream.  
+* **Consensus Decisioning:** Majority vote across available layers determines allow/transform/block; disagreements invoke the legacy sanitizer as a tie-breaker. Unsafe outputs are transformed/redacted with rationale and logged.  
+* **Resilience:** Circuit breakers protect against upstream AI guard failures; bounded retries with jitter; graceful degradation to remaining layers.  
+* **Observability:** Structured audit logs include decision, categories, confidence, policy/version, and timing; CRITICAL severity for blocks; stable payload hashes only (no raw payload). Metrics exported for rate, latency, error, and category distributions.  
+* **Feature Flags & Roles:** Rollout controlled via `MODEL_ARMOR_ENABLED` and `LLAMA_GUARD_ENABLED`. Sensitivity and policy templates are role-aware (admin, analyst, viewer).  
+* **Untrusted BYO Endpoints:** All user-configured BYO LLM endpoints are treated as untrusted external services. Requests route through a sandboxed egress proxy where applicable; all I/O passes through the AI security pipeline (**S-3**, **I-4**).  
 * **LLM Tooling Permissions:** If/when the LLM is granted access to internal tools, a strict, user-permission-based authorization model must be implemented to prevent abuse (**E-2**).
+
+## Network Edge Protections (LB/WAF)
+
+* **Global HTTP(S) Load Balancer:** Terminates TLS and fronts Cloud Run; enforces HTTPS-only traffic paths.  
+* **Cloud Armor Policies:**
+  * Managed rulesets for common web threats and L7 DDoS protections.
+  * Per-IP and per-identity rate limiting per S-1.1, tuned to app SLOs (burst/sustained).  
+  * IP reputation and geo-based controls; custom rules for chatbot-specific abuse patterns.  
+  * Logging and preview mode usage for safe rollout of new protections.  
+* **Request Flow:** User → Global LB → Cloud Armor evaluation → Cloud Run (Chainlit) → AI Security Pipeline → RAG/LLM → Post-LLM sanitization.  
+* **Budget & Quotas:** Quota/budget alerts on upstream AI guardrails; anomaly detection and escalation paths defined.
+
+## Model Armor Configuration Summary
+
+* **Endpoint:** `modelarmor.{location}.rep.googleapis.com` (regional; required)
+* **IAM:** `roles/modelarmor.user` granted to service accounts
+* **Template:** `projects/<project>/locations/<region>/templates/llm-guardrails-default`
+* **Toggle:** `MODEL_ARMOR_ENABLED=true`
+* **Behavior:** Fail-closed on errors/timeouts; generic user messaging; see docs/LLM_GUARDRAILS.md for latency profile and runbooks.
   
 ## Authentication & Authorization
 
@@ -72,4 +95,3 @@ To protect the production environment, the following runtime hardening principle
       * Dynamic Application Security Testing (DAST)
       * LLM-based Security Reviews
       * Manual Penetration Testing
-
