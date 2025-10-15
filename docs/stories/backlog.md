@@ -1,9 +1,12 @@
-dependabot yaml file
-
-
 Review n Refactor
 
 Security review (also use llm tool)
+
+### 3.2 LOW - Markdown Sanitization Not Implemented (VUL-LOW-001)
+
+dependabot yaml file
+
+
 
 Branding 
 
