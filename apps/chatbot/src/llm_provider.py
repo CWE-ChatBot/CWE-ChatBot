@@ -14,7 +14,6 @@ from typing import Any, Dict, Optional, cast
 from tenacity import (
     AsyncRetrying,
     retry_if_exception,
-    retry_if_exception_type,
     stop_after_attempt,
     wait_random_exponential,
 )
@@ -143,8 +142,7 @@ class GoogleProvider(LLMProvider):
             wait=wait_random_exponential(
                 multiplier=0.3, max=float(os.getenv("LLM_RETRY_MAX_WAIT", "2.5"))
             ),
-            retry=retry_if_exception(_is_transient_llm_error)
-            & (~retry_if_exception_type(asyncio.CancelledError)),
+            retry=retry_if_exception(_is_transient_llm_error),
             reraise=True,
         ):
             with attempt:
@@ -302,8 +300,7 @@ class VertexProvider(LLMProvider):
             wait=wait_random_exponential(
                 multiplier=0.3, max=float(os.getenv("LLM_RETRY_MAX_WAIT", "2.5"))
             ),
-            retry=retry_if_exception(_is_transient_llm_error)
-            & (~retry_if_exception_type(asyncio.CancelledError)),
+            retry=retry_if_exception(_is_transient_llm_error),
             reraise=True,
         ):
             with attempt:

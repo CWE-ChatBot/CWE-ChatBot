@@ -22,8 +22,7 @@ SERVICE="cwe-chatbot-staging"
 PDF_WORKER_SERVICE="pdf-worker-staging"
 CHATBOT_SA="cwe-chatbot-run-sa@${PROJECT}.iam.gserviceaccount.com"
 
-# OAuth-only staging (no API key bypass - same auth as production)
-API_AUTH_MODE="${API_AUTH_MODE:-oauth}"   # oauth|hybrid (use oauth for production parity)
+# OAuth-only staging (production parity - no API key, no hybrid mode)
 
 # Exposure and access control
 EXPOSURE_MODE="${EXPOSURE_MODE:-private}"  # private|public
@@ -106,7 +105,7 @@ print_info "PDF worker security: ONLY $CHATBOT_SA can invoke (no public access)"
 echo ""
 print_info "Step 2/2: Deploying ChatBot Staging"
 
-print_info "Ingress/auth: ${INGRESS_FLAG#*=}, ${ALLOW_FLAG}; API_AUTH_MODE=${API_AUTH_MODE}"
+print_info "Ingress/auth: ${INGRESS_FLAG#*=}, ${ALLOW_FLAG}; OAuth-only (no API key)"
 
 print_info "Building chatbot image..."
 gcloud builds submit --config=apps/chatbot/cloudbuild.yaml --suppress-logs --quiet
@@ -130,7 +129,7 @@ gcloud run deploy "$SERVICE" \
     --timeout=300 \
     $ALLOW_FLAG \
     --execution-environment=gen2 \
-    --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,ENABLE_OAUTH=true,AUTH_MODE=oauth,API_AUTH_MODE=${API_AUTH_MODE},CHAINLIT_URL=https://staging-cwe.crashedmind.com,PUBLIC_ORIGIN=https://staging-cwe.crashedmind.com,CSP_MODE=strict,PDF_WORKER_URL=${PDF_WORKER_URL},CLOUD_SQL_CONNECTION_NAME=cwechatbot:us-central1:cwe-postgres-prod" \
+    --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},DB_HOST=10.43.0.3,DB_PORT=5432,DB_NAME=postgres,DB_USER=app_user,DB_SSLMODE=require,ENABLE_OAUTH=true,AUTH_MODE=oauth,CHAINLIT_URL=https://staging-cwe.crashedmind.com,PUBLIC_ORIGIN=https://staging-cwe.crashedmind.com,CSP_MODE=strict,PDF_WORKER_URL=${PDF_WORKER_URL},CLOUD_SQL_CONNECTION_NAME=cwechatbot:us-central1:cwe-postgres-prod" \
     --update-secrets="GEMINI_API_KEY=gemini-api-key:latest,DB_PASSWORD=db-password-app-user:latest,CHAINLIT_AUTH_SECRET=chainlit-auth-secret:latest,OAUTH_GOOGLE_CLIENT_ID=oauth-google-client-id:latest,OAUTH_GOOGLE_CLIENT_SECRET=oauth-google-client-secret:latest,OAUTH_GITHUB_CLIENT_ID=oauth-github-client-id:latest,OAUTH_GITHUB_CLIENT_SECRET=oauth-github-client-secret:latest" \
     --quiet
 
@@ -156,13 +155,13 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 print_info "PDF Worker:  $PDF_WORKER_URL"
 print_info "             🔒 Service account access only (no public access)"
 print_info "ChatBot:     $STAGING_URL"
-print_info "             🔐 OAuth (Google/GitHub) + hybrid test-login"
+print_info "             🔐 OAuth-only (Google/GitHub) - production parity"
 echo ""
 print_warn "SECURITY SUMMARY:"
 echo "   - ChatBot ingress: ${INGRESS_FLAG#*=}, auth: ${ALLOW_FLAG}"
 echo "   - PDF Worker: private (service-account-only, no unauthenticated access)"
-echo "   - App auth mode: AUTH_MODE=oauth, API_AUTH_MODE=${API_AUTH_MODE}"
-echo "   - Authentication: OAuth-only (Google/GitHub Bearer tokens, same as production)"
+echo "   - App auth mode: AUTH_MODE=oauth (OAuth-only, no API key, no hybrid mode)"
+echo "   - Authentication: OAuth-only (Google/GitHub Bearer tokens) - same as production"
 if [[ "$EXPOSURE_MODE" == "public" ]]; then
   echo "   ⚠️  PUBLIC MODE - Front with HTTPS LB + Cloud Armor for DDoS protection"
 else
@@ -176,9 +175,33 @@ fi
 echo ""
 print_warn "ACCESS NOTES:"
 echo "   - Service is private; only IAM invokers (and their tokens) can reach it"
-echo "   - App is OAuth-only (API_AUTH_MODE=${API_AUTH_MODE}). Use Google/GitHub tokens for API calls"
+echo "   - App is OAuth-only. Use Google/GitHub tokens for all access (browser and API)"
 echo "   - For browser: Grant roles/run.invoker → OAuth login (Google/GitHub)"
-echo "   - For headless/API: Mint OAuth device-flow token → Authorization: Bearer <token>"
+echo "   - For API: Use OAuth Bearer token → Authorization: Bearer <token>"
 echo ""
 print_info "Test the staging environment before promoting to production"
+
+# ============================================================================
+# Optional: Run Integration Tests
+# ============================================================================
+if [[ "${RUN_TESTS:-false}" == "true" ]]; then
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Running Integration Tests"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  # Export environment for test scripts
+  export STAGING_URL="https://staging-cwe.crashedmind.com"
+  export PROJECT="$PROJECT"
+  export REGION="$REGION"
+
+  # Run staging integration test suite
+  if ./tests/integration/run_staging_tests.sh; then
+    print_info "All integration tests passed"
+  else
+    print_error "Integration tests failed"
+    exit 1
+  fi
+fi
+
 echo ""

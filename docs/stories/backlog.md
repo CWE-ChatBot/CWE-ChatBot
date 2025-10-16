@@ -1,21 +1,27 @@
-Review n Refactor
-
-Security review (also use llm tool)
-
-### 3.2 LOW - Markdown Sanitization Not Implemented (VUL-LOW-001)
 
 dependabot yaml file
 
+web scanner https://cloud.google.com/security-command-center/docs/how-to-web-security-scanner-custom-scans
 
+garak
+https://github.com/NVIDIA/garak/issues/1125
+https://github.com/NVIDIA/garak/pull/1379
+
+
+### 3.2 LOW - Markdown Sanitization Not Implemented (VUL-LOW-001)
+
+
+
+Security review (also use llm tool)
 
 Branding 
 
-new arch diagram showing armor, waf, vpc runner ingest pdf etc...
 
 
 Add BMAD Ops Persona
 BMAD codex and gemini - security review
 Define and Detail BYO model 
+
 
 run BMAD vuln agent - 6
 
@@ -153,3 +159,10 @@ Remove unsafe-inline and data: from script-src, overly broad sources from object
 redo the tests with unsafe and update
 
 Feedback (@cl.on_feedback): 
+
+Review n Refactor
+
+new arch diagram showing armor, waf, vpc runner ingest pdf etc...
+
+deploy securely
+wire up the mitigations
