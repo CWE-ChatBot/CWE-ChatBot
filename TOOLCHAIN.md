@@ -1,10 +1,10 @@
-# Python Toolchain
+# Development Toolchain
 
-This document describes the Python development toolchain used in the CWE ChatBot project, including versions and configurations.
+This document describes the complete development toolchain used in the CWE ChatBot project, including Python tools, browser debugging tools, and security testing tools.
 
 ## Overview
 
-The project uses a modern Python toolchain optimized for code quality, type safety, and developer productivity:
+The project uses a modern development toolchain optimized for code quality, type safety, security, and developer productivity:
 
 ### Development Tools
 
@@ -579,3 +579,435 @@ poetry add --group dev types-requests
 - [ ] Add pre-commit hooks
 - [ ] Configure CI/CD pipeline with quality checks
 - [ ] Document project-specific Ruff/Mypy rules
+
+---
+
+## Browser Development Tools
+
+### Chrome DevTools
+
+**Purpose**: Browser-based debugging, performance analysis, and security testing
+
+**Why Chrome DevTools**:
+- Built into Chrome/Chromium browsers
+- Real-time debugging of web applications
+- Performance profiling and optimization
+- Security issue detection (CSP, HTTPS, etc.)
+- Network traffic analysis
+- Industry-standard for web development
+
+**Key Features**:
+
+#### 1. **Console**
+- JavaScript errors and warnings
+- Console.log() output
+- Interactive JavaScript REPL
+- Filter by log level (error, warning, info, debug)
+
+**Usage**:
+```
+Open DevTools: F12 or Ctrl+Shift+I (Windows/Linux), Cmd+Option+I (Mac)
+Navigate to: Console tab
+```
+
+**Common Use Cases**:
+- Debug JavaScript errors in Chainlit UI
+- Test JavaScript snippets interactively
+- Monitor API call responses
+- Check for authentication errors
+
+---
+
+#### 2. **Network Tab**
+
+**Purpose**: Monitor all HTTP/HTTPS network requests, responses, and timing
+
+**Key Information**:
+- Request/response headers
+- Request payload and response body
+- HTTP status codes (200, 404, 500, etc.)
+- Request timing (TTFB, download time, total time)
+- Resource size and compression
+- WebSocket connections
+
+**Usage**:
+```
+Open DevTools → Network tab
+Reload page to capture requests
+Click any request to see details:
+  - Headers (request/response)
+  - Preview (formatted response)
+  - Response (raw response body)
+  - Timing (waterfall chart)
+```
+
+**Common Debugging Scenarios**:
+
+**CSP (Content Security Policy) Violations**:
+```
+Symptom: Resources fail to load (fonts, stylesheets, scripts)
+Network Tab: Shows failed requests (status 0 or blocked)
+Console: Shows CSP violation errors
+
+Example Error:
+"Refused to load the stylesheet 'https://fonts.googleapis.com/css2?family=Inter'
+because it violates the following Content Security Policy directive:
+"style-src 'self'"
+
+Fix: Update CSP middleware to allow external sources:
+style-src 'self' https://fonts.googleapis.com https://cdn.jsdelivr.net;
+```
+
+**CORS (Cross-Origin Resource Sharing) Errors**:
+```
+Symptom: API calls fail from browser
+Network Tab: Request shows (failed) or (blocked)
+Console: "CORS policy: No 'Access-Control-Allow-Origin' header"
+
+Fix: Update backend to include CORS headers:
+Access-Control-Allow-Origin: https://cwe.crashedmind.com
+```
+
+**Authentication Failures**:
+```
+Symptom: 401 Unauthorized or 403 Forbidden responses
+Network Tab: Check request headers for Authorization/Cookie
+Response tab: Check error message body
+
+Fix: Verify OAuth token is being sent, check session expiry
+```
+
+**Slow Requests**:
+```
+Network Tab → Timing column: Shows request duration
+Click request → Timing tab: See breakdown:
+  - Queueing: Time waiting for available connection
+  - DNS Lookup: Domain resolution time
+  - Initial connection: TCP handshake + TLS
+  - Waiting (TTFB): Server processing time ← Often the bottleneck
+  - Content Download: Transfer time
+
+Optimization targets:
+- TTFB > 1s: Optimize backend processing
+- Content Download > 1s: Enable compression, reduce payload size
+```
+
+**Filter Options**:
+- Type: XHR, JS, CSS, Img, Media, Font, Doc, WS (WebSocket), etc.
+- Domain: Filter by specific domain
+- Status: Filter by HTTP status code
+
+---
+
+#### 3. **Application Tab**
+
+**Purpose**: Inspect storage, cookies, cache, and service workers
+
+**Key Features**:
+- **Cookies**: View, edit, delete cookies
+- **Local Storage**: Key-value storage
+- **Session Storage**: Session-scoped storage
+- **Cache Storage**: Service worker caches
+- **IndexedDB**: Client-side database
+
+**Usage**:
+```
+Open DevTools → Application tab
+Expand "Cookies" → Select domain
+View/edit/delete cookies
+Check Storage quota and usage
+```
+
+**Common Use Cases**:
+- Verify OAuth session cookies are set
+- Check token expiration timestamps
+- Clear storage to test fresh session
+- Inspect cached resources
+
+---
+
+#### 4. **Security Tab**
+
+**Purpose**: Verify HTTPS configuration and certificate validity
+
+**Key Information**:
+- Certificate details (issuer, expiry, validity)
+- HTTPS connection security
+- Mixed content warnings
+- Certificate transparency logs
+
+**Usage**:
+```
+Open DevTools → Security tab
+Click "View certificate" for details
+Check for mixed content warnings
+```
+
+**Common Issues**:
+- **Mixed Content**: HTTPS page loading HTTP resources (blocked by browser)
+- **Invalid Certificate**: Self-signed or expired cert
+- **Weak Cipher**: Outdated TLS protocol or cipher suite
+
+---
+
+#### 5. **Lighthouse**
+
+**Purpose**: Automated auditing for performance, accessibility, SEO, and best practices
+
+**Categories**:
+1. **Performance**: Page load speed, metrics (FCP, LCP, TBT, CLS)
+2. **Accessibility**: ARIA roles, color contrast, keyboard navigation
+3. **Best Practices**: HTTPS, CSP, console errors, deprecated APIs
+4. **SEO**: Meta tags, viewport, crawlability
+5. **Progressive Web App (PWA)**: Manifest, service worker, offline support
+
+**Usage**:
+```
+Open DevTools → Lighthouse tab
+Select categories to audit:
+  ☑ Performance
+  ☑ Accessibility
+  ☑ Best Practices
+  ☑ SEO
+Select device: Mobile or Desktop
+Click "Analyze page load"
+```
+
+**Key Metrics**:
+
+**Performance Metrics**:
+- **FCP (First Contentful Paint)**: Time to first text/image (Target: <1.8s)
+- **LCP (Largest Contentful Paint)**: Time to largest element (Target: <2.5s)
+- **TBT (Total Blocking Time)**: Main thread blocking time (Target: <200ms)
+- **CLS (Cumulative Layout Shift)**: Visual stability (Target: <0.1)
+- **Speed Index**: How quickly content is visually populated (Target: <3.4s)
+
+**Best Practices Checks**:
+- ✅ Uses HTTPS
+- ✅ No browser errors logged to console
+- ✅ Images have explicit width and height
+- ✅ Links to cross-origin destinations are safe
+- ✅ Avoids deprecated APIs
+- ⚠️ Content Security Policy (CSP) configured
+- ⚠️ No mixed content warnings
+
+**Accessibility Checks**:
+- ✅ All images have alt text
+- ✅ Color contrast meets WCAG AA standards
+- ✅ Form elements have associated labels
+- ✅ ARIA roles used correctly
+- ✅ Keyboard navigation works
+
+**CSP Validation in Lighthouse**:
+```
+Best Practices → Security section:
+- "Content Security Policy" check
+- Shows if CSP header is missing or too permissive
+- Recommends strict CSP for XSS prevention
+
+Example Recommendation:
+"No CSP found in enforcement mode"
+Fix: Add CSP header via middleware or meta tag
+```
+
+**Using Lighthouse for Debugging**:
+
+**Scenario: Slow Page Load**
+```
+Lighthouse → Performance audit
+Check diagnostics:
+  - "Avoid enormous network payloads" → Reduce bundle size
+  - "Serve images in next-gen formats" → Use WebP instead of PNG
+  - "Reduce unused JavaScript" → Code splitting
+  - "Minimize main-thread work" → Optimize JavaScript execution
+```
+
+**Scenario: CSP Blocking Resources**
+```
+Lighthouse → Best Practices → Security
+Check: "Content Security Policy"
+If failing:
+  1. Open Console tab for specific violation errors
+  2. Open Network tab to see blocked requests
+  3. Update CSP directives to allow legitimate sources
+```
+
+**Scenario: Accessibility Issues**
+```
+Lighthouse → Accessibility audit
+Shows specific violations:
+  - "Image elements do not have [alt] attributes"
+  - "Background and foreground colors do not have sufficient contrast"
+Click each issue for:
+  - Failing elements
+  - How to fix
+  - Learn more link (WCAG guidelines)
+```
+
+**Lighthouse CLI (Automated Testing)**:
+```bash
+# Install Lighthouse CLI
+npm install -g lighthouse
+
+# Run audit and generate HTML report
+lighthouse https://cwe.crashedmind.com \
+  --output html \
+  --output-path ./lighthouse-report.html \
+  --chrome-flags="--headless"
+
+# Run specific categories
+lighthouse https://cwe.crashedmind.com \
+  --only-categories=performance,accessibility \
+  --output json \
+  --output-path ./lighthouse.json
+
+# CI/CD integration
+lighthouse https://staging-cwe.crashedmind.com \
+  --preset=desktop \
+  --quiet \
+  --chrome-flags="--headless" \
+  | grep "Performance score" # Fail if score < 90
+```
+
+**Lighthouse in CI/CD**:
+```yaml
+# .github/workflows/lighthouse.yml
+name: Lighthouse Audit
+
+on: [pull_request]
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Lighthouse
+        uses: treosh/lighthouse-ci-action@v9
+        with:
+          urls: |
+            https://staging-cwe.crashedmind.com
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+```
+
+---
+
+#### 6. **Sources Tab** (Debugging JavaScript)
+
+**Purpose**: Set breakpoints, step through code, inspect variables
+
+**Usage**:
+```
+Open DevTools → Sources tab
+Navigate to JavaScript file
+Click line number to set breakpoint
+Reload page, code will pause at breakpoint
+Use controls:
+  - Step over: Execute current line
+  - Step into: Enter function call
+  - Step out: Exit current function
+  - Resume: Continue execution
+```
+
+**Common Use Cases**:
+- Debug Chainlit frontend JavaScript
+- Inspect WebSocket message handling
+- Track OAuth redirect flow
+- Debug form validation logic
+
+---
+
+### Chrome DevTools Best Practices for CWE ChatBot
+
+1. **Always check Network tab first** when debugging production issues
+2. **Use Lighthouse** before major releases to catch regressions
+3. **Monitor Console** for CSP violations and JavaScript errors
+4. **Verify CSP headers** in Network → Response Headers
+5. **Test on mobile** using Device Toolbar (Ctrl+Shift+M)
+6. **Use "Preserve log"** in Network tab to keep requests across page navigations
+7. **Enable "Disable cache"** when debugging to avoid stale resources
+
+### Common Production Debugging Workflow
+
+```
+1. User reports: "Page not loading" or "Feature broken"
+
+2. Open Chrome DevTools (F12)
+
+3. Check Console tab:
+   - Any red errors? → JavaScript exception
+   - CSP violations? → Update CSP middleware
+   - Network errors? → Proceed to Network tab
+
+4. Check Network tab:
+   - Any failed requests (red)? → Check status code
+   - 401/403? → Authentication issue
+   - 500/502/503? → Backend error
+   - 0 or (blocked)? → CSP or CORS issue
+   - Slow requests (>2s)? → Performance issue
+
+5. Check specific request details:
+   - Headers tab: Verify correct CSP, CORS, cookies sent
+   - Preview/Response: See actual response body
+   - Timing: Identify bottleneck (TTFB vs download)
+
+6. Check Application tab:
+   - Cookies: Verify session cookie present and valid
+   - Storage: Check if data persists correctly
+
+7. Run Lighthouse audit:
+   - Identify performance regressions
+   - Check accessibility issues
+   - Verify security best practices
+
+8. Fix issue, deploy, verify in Network/Console tabs
+```
+
+### Chrome DevTools Resources
+
+- **Official Documentation**: https://developer.chrome.com/docs/devtools/
+- **Network Tab Guide**: https://developer.chrome.com/docs/devtools/network/
+- **Lighthouse Documentation**: https://developer.chrome.com/docs/lighthouse/
+- **CSP Reference**: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+- **Performance Metrics**: https://web.dev/metrics/
+
+---
+
+## Security Testing Tools
+
+### Semgrep (Static Analysis)
+
+Already documented in Development Tools section above. Key for security-focused code scanning.
+
+### OWASP ZAP (Dynamic Analysis)
+
+**Purpose**: Web application security scanner for finding vulnerabilities
+
+**Key Features**:
+- Automated vulnerability scanning
+- Active and passive scanning modes
+- API security testing
+- Authentication testing
+- OWASP Top 10 coverage
+
+**Usage**:
+```bash
+# Run ZAP baseline scan (passive)
+docker run -t owasp/zap2docker-stable zap-baseline.py \
+  -t https://cwe.crashedmind.com \
+  -r zap-report.html
+
+# Run full scan (active)
+docker run -t owasp/zap2docker-stable zap-full-scan.py \
+  -t https://staging-cwe.crashedmind.com \
+  -r zap-full-report.html
+```
+
+### Browser Security Headers Checker
+
+Use Chrome DevTools Network tab to verify security headers:
+- `Content-Security-Policy`
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Strict-Transport-Security: max-age=31536000`
+- `Referrer-Policy: strict-origin-when-cross-origin`
