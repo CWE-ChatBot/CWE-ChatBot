@@ -52,15 +52,15 @@ class CorrelationIDFilter(logging.Filter):
         """
         # Check if record has correlation_id in extra fields
         if hasattr(record, "correlation_id"):
-            cid = record.correlation_id
+            cid = record.correlation_id  # type: ignore[attr-defined]
 
             # Validate correlation ID format
             if not isinstance(cid, str):
                 # Non-string correlation ID (should never happen)
-                record.correlation_id = "INVALID_TYPE"
+                record.correlation_id = "INVALID_TYPE"  # type: ignore[attr-defined]
             elif not UUID_PATTERN.match(cid):
                 # Invalid UUID format - sanitize to prevent injection
-                record.correlation_id = "INVALID_FORMAT"
+                record.correlation_id = "INVALID_FORMAT"  # type: ignore[attr-defined]
 
         # Always return True to allow the log record through
         return True

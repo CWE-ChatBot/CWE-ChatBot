@@ -37,9 +37,9 @@ def get_secret(
     # Try Secret Manager first if in GCP
     if in_gcp and project_id:
         try:
-            from google.cloud import secretmanager
+            from google.cloud import secretmanager  # type: ignore[import-not-found]
 
-            client = secretmanager.SecretManagerServiceClient()
+            client = secretmanager.SecretManagerServiceClient()  # type: ignore[attr-defined]
             name = f"projects/{project_id}/secrets/{secret_id}/versions/{version}"
             response = client.access_secret_version(request={"name": name})
             return str(response.payload.data.decode("UTF-8").strip())

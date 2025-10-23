@@ -212,6 +212,8 @@ class GoogleProvider(LLMProvider):
                         },
                     )
                     raise
+        # Unreachable: AsyncRetrying with reraise=True will always raise if all retries fail
+        raise RuntimeError("All retry attempts exhausted")  # pragma: no cover
 
 
 class VertexProvider(LLMProvider):
@@ -350,6 +352,8 @@ class VertexProvider(LLMProvider):
                         },
                     )
                     raise
+        # Unreachable: AsyncRetrying with reraise=True will always raise if all retries fail
+        raise RuntimeError("All retry attempts exhausted")  # pragma: no cover
 
 
 class OfflineProvider(LLMProvider):

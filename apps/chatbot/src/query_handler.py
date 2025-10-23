@@ -36,8 +36,8 @@ except Exception:  # fallback to legacy repo layout/env var
     ingestion_path = os.getenv("CWE_INGESTION_PATH")
     if ingestion_path and os.path.isdir(ingestion_path):
         sys.path.insert(0, ingestion_path)
-        from embedder import GeminiEmbedder
-        from pg_chunk_store import PostgresChunkStore
+        from embedder import GeminiEmbedder  # type: ignore[import-not-found]
+        from pg_chunk_store import PostgresChunkStore  # type: ignore[import-not-found]
     else:  # pragma: no cover
         raise
 
@@ -143,12 +143,12 @@ class CWEQueryHandler:
                 )
                 self.store = PostgresChunkStore(
                     dims=3072, engine=engine, skip_schema_init=skip_schema
-                )
+                )  # pyright: ignore[reportCallIssue]
             else:
                 logger.info("Using psycopg with database URL")
                 self.store = PostgresChunkStore(
                     dims=3072, database_url=database_url, skip_schema_init=skip_schema
-                )
+                )  # pyright: ignore[reportCallIssue]
 
             self.embedder = GeminiEmbedder(api_key=gemini_api_key)
 
@@ -267,6 +267,7 @@ class CWEQueryHandler:
 
             correlation_id = get_correlation_id()
 
+            results: list = []  # Initialize to satisfy type checker
             async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(attempts),
                 wait=wait_random_exponential(
@@ -383,13 +384,13 @@ class CWEQueryHandler:
         if not cwe_ids:
             return meta
         try:
-            with self.store._get_connection() as conn:
+            with self.store._get_connection() as conn:  # type: ignore[attr-defined]
                 # Normalize IDs to uppercase
                 ids = [str(cid).upper() for cid in cwe_ids]
                 # Safe: placeholders are programmatically generated (%s), not user input
                 placeholders = ",".join(["%s"] * len(ids))  # nosec B608
                 # Prefer cwe_catalog if present; fallback to cwe_embeddings
-                with self.store._cursor(conn) as cur:
+                with self.store._cursor(conn) as cur:  # type: ignore[attr-defined]
                     try:
                         cur.execute(
                             f"SELECT cwe_id, name, abstraction, status FROM cwe_catalog WHERE UPPER(cwe_id) IN ({placeholders})",  # nosec B608
@@ -441,7 +442,7 @@ class CWEQueryHandler:
         if not cwe_ids:
             return labels
         try:
-            with self.store._get_connection() as conn:
+            with self.store._get_connection() as conn:  # type: ignore[attr-defined]
                 ids = [str(cid).upper() for cid in cwe_ids]
                 # Safe: placeholders are programmatically generated (%s), not user input
                 placeholders = ",".join(["%s"] * len(ids))  # nosec B608
@@ -450,7 +451,7 @@ class CWEQueryHandler:
                       FROM cwe_policy_labels
                      WHERE UPPER(cwe_id) IN ({placeholders})
                 """  # nosec B608
-                with self.store._cursor(conn) as cur:
+                with self.store._cursor(conn) as cur:  # type: ignore[attr-defined]
                     try:
                         cur.execute(sql, ids)
                         for cwe_id, mapping_label, notes in cur.fetchall():
@@ -505,8 +506,8 @@ class CWEQueryHandler:
         """
         rows: List[Dict[str, Any]] = []
         try:
-            with self.store._get_connection() as conn:
-                with self.store._cursor(conn) as cur:
+            with self.store._get_connection() as conn:  # type: ignore[attr-defined]
+                with self.store._cursor(conn) as cur:  # type: ignore[attr-defined]
                     cur.execute(
                         """
                         SELECT id, cwe_id, section, section_rank, name, full_text
