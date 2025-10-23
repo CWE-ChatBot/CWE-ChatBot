@@ -135,9 +135,15 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          pip-audit -r requirements.txt --format sarif --output pip-audit.sarif --progress-spinner off --vulnerability-service osv --ignore-vuln GHSA-wj6h-64fc-37mp
+
+          # First run with human-readable output to see what's found
+          echo "Running pip-audit to check for vulnerabilities..."
+          pip-audit -r requirements.txt --progress-spinner off --vulnerability-service osv --ignore-vuln GHSA-wj6h-64fc-37mp
           EXIT_CODE=$?
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+          # Then generate SARIF for Code Scanning
+          pip-audit -r requirements.txt --format sarif --output pip-audit.sarif --progress-spinner off --vulnerability-service osv --ignore-vuln GHSA-wj6h-64fc-37mp || true
 
           # Check if SARIF file was created
           if [ -f pip-audit.sarif ]; then
