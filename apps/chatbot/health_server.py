@@ -36,7 +36,7 @@ class HealthHandler(BaseHTTPRequestHandler):
 
             # If we can access the conversation manager, get detailed health
             if HEALTH_CHECK_AVAILABLE and hasattr(self.server, "conversation_manager"):
-                cm = self.server.conversation_manager
+                cm = self.server.conversation_manager  # type: ignore[attr-defined]
                 if cm:
                     health_data.update(cm.get_system_health())
 
@@ -69,7 +69,7 @@ def start_health_server(port=8081, conversation_manager=None):
     try:
         # Bind to 0.0.0.0 for Cloud Run container accessibility
         server = HTTPServer(("0.0.0.0", port), HealthHandler)  # nosec B104
-        server.conversation_manager = conversation_manager
+        server.conversation_manager = conversation_manager  # type: ignore[attr-defined]
 
         def run_server():
             print(f"Health server starting on port {port}")

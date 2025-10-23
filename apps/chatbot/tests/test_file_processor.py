@@ -149,5 +149,5 @@ class TestInitialization:
         assert processor.max_file_size_bytes == 10 * 1024 * 1024
         assert processor.max_output_chars == 1_000_000
         assert processor.pdf_worker_timeout == 55
-        assert processor.min_printable_ratio == 0.9
+        assert processor.min_printable_ratio == 0.85
         assert processor.max_line_length == 2 * 1024 * 1024

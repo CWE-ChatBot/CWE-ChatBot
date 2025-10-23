@@ -16,7 +16,7 @@ import asyncio
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import chainlit as cl
 
@@ -34,13 +34,16 @@ try:
     HAS_HTTPX = True
 except ImportError:
     HAS_HTTPX = False
+    if not TYPE_CHECKING:
+        httpx = None  # type: ignore[assignment]
 
 try:
-    import chardet
+    import chardet  # pyright: ignore[reportMissingImports]
 
     HAS_CHARDET = True
 except ImportError:
     HAS_CHARDET = False
+    chardet = None  # type: ignore[assignment,unused-ignore]
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +57,8 @@ _httpx_client: Optional["httpx.Client"] = None
 
 def _get_httpx_client() -> "httpx.Client":
     """Get or create shared HTTP client with connection pooling and HTTP/2 support."""
+    import httpx  # Import here to ensure it's available in this scope
+
     global _httpx_client
     if _httpx_client is None:
         if not HAS_HTTPX:
@@ -198,6 +203,8 @@ class FileProcessor:
         Raises:
             ValueError: With error code for user-friendly messages
         """
+        import httpx  # Import here to ensure it's available in this scope
+
         # Get shared HTTP client (connection pooling)
         client = _get_httpx_client()
 
@@ -315,6 +322,8 @@ class FileProcessor:
         except UnicodeDecodeError:
             # Fallback: try chardet detection once (AC3)
             if HAS_CHARDET:
+                import chardet  # pyright: ignore[reportMissingImports]  # Import here to ensure it's available
+
                 detected = chardet.detect(content)
                 if detected["confidence"] < 0.8:
                     raise ValueError("decoding_failed")
