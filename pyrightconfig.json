@@ -1,0 +1,23 @@
+{
+  "include": [
+    "apps/chatbot/src",
+    "shared",
+    "apps/cwe_ingestion/cwe_ingestion"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "dist",
+    "build",
+    "apps/chatbot/tests",
+    "apps/cwe_ingestion/tests",
+    "apps/cwe_ingestion/scripts",
+    "tests",
+    "scripts"
+  ],
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "basic"
+}
