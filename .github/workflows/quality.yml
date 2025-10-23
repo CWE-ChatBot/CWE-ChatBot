@@ -57,9 +57,27 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - run: python -m pip install --upgrade pip pipx
-      - run: pipx install pyright
-      - run: pyright
+
+      - name: Install Poetry
+        run: curl -sSL https://install.python-poetry.org | python3 -
+
+      - name: Ensure Poetry on PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          key: poetry-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Install pyright
+        run: python -m pip install --upgrade pip pipx && pipx install pyright
+
+      - name: Run pyright
+        run: poetry run pyright
 
   # === Semgrep -> SARIF -> Code scanning ===
   semgrep:
