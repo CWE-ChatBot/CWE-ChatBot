@@ -1,0 +1,10 @@
+{
+  "vulnerabilities": [
+    {
+      "id": "GHSA-wj6h-64fc-37mp",
+      "name": "ecdsa",
+      "reason": "Minerva timing attack on P-256 curve. Project maintainers consider side-channel attacks out of scope with no planned fix. Used only for JWT verification (not signing) via python-jose transitive dependency. Risk accepted: timing attacks require local access to signing operations which we don't expose.",
+      "expires": "2026-01-01"
+    }
+  ]
+}

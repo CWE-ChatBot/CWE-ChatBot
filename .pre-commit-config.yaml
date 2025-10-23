@@ -50,7 +50,7 @@ repos:
     hooks:
       - id: pip-audit-local
         name: pip-audit (dependency vulnerabilities)
-        entry: bash -c 'poetry export -f requirements.txt --without-hashes -o /tmp/requirements.txt && pip-audit -r /tmp/requirements.txt || true'
+        entry: bash -c 'poetry export -f requirements.txt --without-hashes -o /tmp/requirements.txt && pip-audit -r /tmp/requirements.txt --ignore-vuln GHSA-wj6h-64fc-37mp || true'
         language: system
         pass_filenames: false
         files: ^poetry\.lock$
