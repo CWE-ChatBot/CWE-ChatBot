@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .config.env_loader import load_environments
-from .secrets import (
+from .secret_manager import (
     get_chainlit_auth_secret,
     get_database_password,
     get_gemini_api_key,
