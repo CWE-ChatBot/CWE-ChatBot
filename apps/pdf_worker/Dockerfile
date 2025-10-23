@@ -1,6 +1,7 @@
 # Cloud Functions Gen2 compatible Dockerfile for PDF Worker
 # Includes libmagic system library for python-magic MIME validation
 # Security: SHA256-pinned base image, non-root user
+# checkov:skip=CKV_DOCKER_2: Cloud Functions Gen2 uses its own health checks, Docker HEALTHCHECK is not used
 
 FROM python:3.11-slim@sha256:ff8533f48e12b705fc20d339fde2ec61d0b234dd9366bab3bc84d7b70a45c8c0
 
