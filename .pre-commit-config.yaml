@@ -3,7 +3,7 @@ exclude: '^\.'
 repos:
   # Code formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    rev: v0.14.1
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
@@ -22,15 +22,33 @@ repos:
 
   # Security scanning
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.0
+    rev: 1.8.6
     hooks:
       - id: bandit
         args: [-r, ./apps, -x, "./apps/**/tests/**,./apps/**/build/**,./apps/**/scripts/**", -ll, --skip, B608]
         pass_filenames: false
 
+  # Semgrep - Advanced security scanning
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.89.0
+    hooks:
+      - id: semgrep
+        args: ['--config=p/python', '--config=p/security-audit', '--exclude=**/tests/**', '--exclude=**/scripts/**', '--error', '--skip-unknown-extensions']
+        pass_filenames: false
+
+  # pip-audit - Dependency vulnerability scanning
+  - repo: local
+    hooks:
+      - id: pip-audit-local
+        name: pip-audit (dependency vulnerabilities)
+        entry: bash -c 'poetry export -f requirements.txt --without-hashes -o /tmp/requirements.txt && pip-audit -r /tmp/requirements.txt || true'
+        language: system
+        pass_filenames: false
+        files: ^poetry\.lock$
+
   # Basic file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
         files: ^apps/.*\.py$
