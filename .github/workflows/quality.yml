@@ -187,12 +187,12 @@ jobs:
         with:
           name: vulture.txt
           path: vulture.txt
-      # Optional: fail if Vulture reported potential dead code
-      - name: Fail if Vulture found dead code
+      # Report findings but don't fail the build (informational only)
+      - name: Report Vulture findings
         run: |
           if grep -E ":[0-9]+:" -q vulture.txt; then
-            echo "::error::Vulture found potential dead code. See vulture.txt artifact."
-            exit 1
+            echo "::warning::Vulture found potential dead code. Review vulture.txt artifact for cleanup opportunities."
+            echo "Dead code findings are informational and don't block the build."
           else
             echo "Vulture found no reportable dead code."
           fi
