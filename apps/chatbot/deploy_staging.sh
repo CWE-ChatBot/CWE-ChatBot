@@ -76,6 +76,7 @@ gcloud run deploy "$PDF_WORKER_SERVICE" \
     --ingress=internal-and-cloud-load-balancing \
     --memory=1Gi \
     --cpu=1 \
+    --cpu-throttling \
     --min-instances=0 \
     --max-instances=10 \
     --concurrency=10 \
@@ -123,6 +124,7 @@ gcloud run deploy "$SERVICE" \
     $INGRESS_FLAG \
     --memory=512Mi \
     --cpu=1 \
+    --cpu-throttling \
     --min-instances=0 \
     --max-instances=5 \
     --concurrency=80 \

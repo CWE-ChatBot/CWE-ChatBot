@@ -101,6 +101,7 @@ deploy_service() {
         --vpc-egress=private-ranges-only \
         --memory=512Mi \
         --cpu=1 \
+        --cpu-throttling \
         --min-instances=1 \
         --max-instances=10 \
         --concurrency=80 \
