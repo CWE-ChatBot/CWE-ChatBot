@@ -10,7 +10,9 @@ from typing import TYPE_CHECKING, List, Optional
 import defusedxml.ElementTree as ET  # noqa: N817
 
 if TYPE_CHECKING:
-    from xml.etree.ElementTree import Element
+    from xml.etree.ElementTree import (
+        Element,  # nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
+    )
 
 from .models import CWEEntry
 

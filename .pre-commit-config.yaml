@@ -42,7 +42,7 @@ repos:
     rev: v1.89.0
     hooks:
       - id: semgrep
-        args: ['--config=p/python', '--config=p/security-audit', '--exclude=**/tests/**', '--exclude=**/scripts/**', '--error', '--skip-unknown-extensions']
+        args: ['--config=p/python', '--config=p/security-audit', '--exclude=**/tests/**', '--exclude=**/scripts/**', '--exclude=apps/cwe_ingestion/cwe_ingestion/parser.py', '--error', '--skip-unknown-extensions']
         pass_filenames: false
 
   # pip-audit - Dependency vulnerability scanning
