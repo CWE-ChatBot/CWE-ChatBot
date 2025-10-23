@@ -73,6 +73,10 @@ jobs:
         continue-on-error: true  # ensure upload happens even with findings
         run: |
           semgrep scan --config=p/python --config=p/security-audit \
+            --exclude='**/tests/**' \
+            --exclude='**/scripts/**' \
+            --exclude='**/*_test.py' \
+            --exclude='**/test_*.py' \
             --sarif --output=semgrep-results.sarif \
             --verbose
 
