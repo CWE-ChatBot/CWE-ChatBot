@@ -132,14 +132,24 @@ jobs:
 
       - name: Run pip-audit (produce SARIF, capture exit code)
         id: pipaudit
+        continue-on-error: true
         run: |
           set +e
           pip-audit -r requirements.txt --format sarif --output pip-audit.sarif --progress-spinner off
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
-          # Always succeed so we can upload SARIF
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+          # Check if SARIF file was created
+          if [ -f pip-audit.sarif ]; then
+            echo "sarif_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "sarif_exists=false" >> $GITHUB_OUTPUT
+            echo "::warning::pip-audit did not generate SARIF output"
+          fi
           exit 0
 
       - name: Upload pip-audit SARIF to Code Scanning
+        if: steps.pipaudit.outputs.sarif_exists == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: pip-audit.sarif
