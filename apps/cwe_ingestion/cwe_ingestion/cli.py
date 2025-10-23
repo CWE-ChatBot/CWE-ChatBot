@@ -196,9 +196,9 @@ def query(
                 return
             for i, r in enumerate(results, 1):
                 md = r.get("metadata", {})
-                click.echo(f"{i}. {md.get('cwe_id','?')}: {md.get('name','?')}")
-                click.echo(f"   Distance: {r.get('distance','N/A')}")
-                click.echo(f"   {r.get('document','')[:180]}...\n")
+                click.echo(f"{i}. {md.get('cwe_id', '?')}: {md.get('name', '?')}")
+                click.echo(f"   Distance: {r.get('distance', 'N/A')}")
+                click.echo(f"   {r.get('document', '')[:180]}...\n")
             return
         else:
             click.echo("Vector-only query requires single-row storage (--no-chunked)")
@@ -538,7 +538,7 @@ def ingest_multi(
             click.echo(
                 f"📋 Processing {len(targets_list)} specific CWEs: {', '.join(targets_list[:5])}"
                 + (
-                    f" (and {len(targets_list)-5} more)"
+                    f" (and {len(targets_list) - 5} more)"
                     if len(targets_list) > 5
                     else ""
                 )

@@ -126,7 +126,9 @@ class CWEEmbedder:
                 embedding = await loop.run_in_executor(None, self.embed_text, text)
                 return embedding
             except Exception as e:
-                logger.warning(f"Embedding failed for text (attempt {attempt+1}): {e}")
+                logger.warning(
+                    f"Embedding failed for text (attempt {attempt + 1}): {e}"
+                )
                 if attempt == retries - 1:
                     # Return zero vector on final failure
                     return np.zeros(self.embedding_dimension, dtype=np.float32)

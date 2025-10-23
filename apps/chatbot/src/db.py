@@ -75,7 +75,7 @@ def warm_pool(engine: Any, size: int = 5) -> None:
         for i in range(size):
             conn = engine.connect()
             conns.append(conn)
-            logger.debug(f"Pre-created connection {i+1}/{size}")
+            logger.debug(f"Pre-created connection {i + 1}/{size}")
 
         # Close all connections to return them to the pool
         for conn in conns:
