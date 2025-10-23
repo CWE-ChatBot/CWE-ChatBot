@@ -5,10 +5,12 @@ Extracts comprehensive data and maps it to Pydantic models.
 """
 
 import logging
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 import defusedxml.ElementTree as ET  # noqa: N817
-from defusedxml.ElementTree import Element  # Secure XML element for type hints
+
+if TYPE_CHECKING:
+    from xml.etree.ElementTree import Element
 
 from .models import CWEEntry
 

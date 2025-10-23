@@ -172,7 +172,7 @@ class PostgresVectorStore:
         """
 
         with self.conn.cursor() as cur:
-            cur.execute(atomic_ddl)
+            cur.execute(atomic_ddl)  # type: ignore[arg-type]
         self.conn.commit()
         logger.info(f"Schema setup completed for table: {self.table}")
 
@@ -232,7 +232,7 @@ class PostgresVectorStore:
         """
         with self.conn.transaction():
             with self.conn.cursor() as cur:
-                cur.executemany(sql_stmt, rows)
+                cur.executemany(sql_stmt, rows)  # type: ignore[arg-type]
 
         # Refresh statistics after significant batch inserts for optimal query planning
         if len(rows) >= 10:  # Only for meaningful batch sizes
@@ -261,7 +261,7 @@ class PostgresVectorStore:
          LIMIT %s;
         """
         with self.conn.cursor() as cur:
-            cur.execute(sql, (query_embedding, query_embedding, n_results))
+            cur.execute(sql, (query_embedding, query_embedding, n_results))  # type: ignore[arg-type]
             rows = cur.fetchall()
         out: List[Dict] = []
         for r in rows:
@@ -347,7 +347,7 @@ class PostgresVectorStore:
             limit,
         )
         with self.conn.cursor() as cur:
-            cur.execute(sql, params)
+            cur.execute(sql, params)  # type: ignore[arg-type]
             rows = cur.fetchall()
 
         results: List[Dict] = []

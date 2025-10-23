@@ -3,9 +3,12 @@ import contextlib
 import logging
 import os
 import re
-from typing import Any, Dict, Generator, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Sequence
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
 
 psycopg: Any
 try:
@@ -19,17 +22,13 @@ except ImportError:
     HAS_PSYCOPG = False
 
 sa: Any
-Engine: Any
 try:
     import sqlalchemy as _sa
-    from sqlalchemy.engine import Engine as _Engine
 
     sa = _sa
-    Engine = _Engine
     HAS_SQLALCHEMY = True
 except ImportError:
     sa = None
-    Engine = None
     HAS_SQLALCHEMY = False
 
 logger = logging.getLogger(__name__)
@@ -254,11 +253,13 @@ class PostgresChunkStore:
             try:
                 yield self._persistent_conn
                 # Commit transaction on successful completion
-                self._persistent_conn.commit()
+                if self._persistent_conn:  # type: ignore[unreachable]
+                    self._persistent_conn.commit()
             except Exception:
                 # Rollback on error
                 try:
-                    self._persistent_conn.rollback()
+                    if self._persistent_conn:  # type: ignore[unreachable]
+                        self._persistent_conn.rollback()
                 except Exception:
                     pass
                 raise
