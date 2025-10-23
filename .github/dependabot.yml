@@ -1,0 +1,70 @@
+version: 2
+
+updates:
+  # --- Docker - Chatbot App ---
+  - package-ecosystem: "docker"
+    directory: "/apps/chatbot"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    cooldown:
+      default-days: 5
+    groups:
+      minor-and-patch:
+        update-types: [ "minor", "patch" ]
+        patterns: [ "*" ]
+      majors:
+        update-types: [ "major" ]
+        patterns: [ "*" ]
+
+  # --- Docker - PDF Worker ---
+  - package-ecosystem: "docker"
+    directory: "/apps/pdf_worker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    cooldown:
+      default-days: 5
+    groups:
+      minor-and-patch:
+        update-types: [ "minor", "patch" ]
+        patterns: [ "*" ]
+      majors:
+        update-types: [ "major" ]
+        patterns: [ "*" ]
+
+  # --- GitHub Actions ---
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    cooldown:
+      default-days: 5
+    groups:
+      minor-and-patch:
+        update-types: [ "minor", "patch" ]
+        patterns: [ "*" ]
+      majors:
+        update-types: [ "major" ]
+        patterns: [ "*" ]
+
+  # --- Python (pip / pip-compile / pipenv / poetry under the "pip" ecosystem) ---
+  - package-ecosystem: "pip"
+    directory: "/"         # path containing requirements.txt or pyproject.toml
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    cooldown:
+      default-days: 5
+    groups:
+      minor-and-patch:
+        update-types: [ "minor", "patch" ]
+        patterns: [ "*" ]
+      majors:
+        update-types: [ "major" ]
+        patterns: [ "*" ]

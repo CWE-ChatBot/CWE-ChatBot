@@ -74,12 +74,13 @@ jobs:
           config: |
             p/python
             p/security-audit
-          sarif: semgrep.sarif
+          sarif_output: semgrep-results.sarif
 
       - name: Upload Semgrep SARIF to Code Scanning
+        if: always()  # Upload even if semgrep step fails
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: semgrep.sarif
+          sarif_file: semgrep-results.sarif
       # Optionally fail the job if Semgrep found results (kept soft by default)
       # - run: exit ${{ steps.semgrep.outputs.exit_code || 0 }}
 
@@ -199,13 +200,20 @@ jobs:
         run: python -m pip install --upgrade pip checkov
 
       - name: Run Checkov (SARIF only, skip tests)
+        id: checkov
+        continue-on-error: true  # ensure upload happens even with findings
         run: |
           checkov -d . \
             --framework dockerfile,github_actions,kubernetes,helm \
             --skip-path ".git,.venv,venv,node_modules,**/tests/**" \
-            -o sarif --output-file-path checkov.sarif || true
+            -o sarif --output-file-path . || true
+          # Checkov creates a nested directory, flatten it
+          if [ -f results_sarif.sarif ]; then
+            mv results_sarif.sarif checkov-results.sarif
+          fi
 
       - name: Upload Checkov SARIF to Code Scanning
+        if: always()  # Upload even if checkov step fails
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: checkov.sarif
+          sarif_file: checkov-results.sarif
