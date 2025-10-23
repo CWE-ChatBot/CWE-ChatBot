@@ -6,11 +6,9 @@ Extracts comprehensive data and maps it to Pydantic models.
 
 import logging
 from typing import List, Optional
-from xml.etree.ElementTree import (
-    Element,  # Import Element specifically for type hinting
-)
 
 import defusedxml.ElementTree as ET  # noqa: N817
+from defusedxml.ElementTree import Element  # Secure XML element for type hints
 
 from .models import CWEEntry
 

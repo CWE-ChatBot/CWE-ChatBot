@@ -68,6 +68,7 @@ class EmbeddingCache:
         else:
             # For single embeddings: original format
             key_data = f"{cwe_id}_{embedder_type}_{model_name}"
+        # nosemgrep: python.lang.security.insecure-hash-algorithms-md5.insecure-hash-algorithm-md5
         return hashlib.md5(key_data.encode()).hexdigest()  # nosec B324 - MD5 used for cache key generation, not cryptographic security
 
     def _get_cache_filename(self, cache_key: str, cwe_id: Optional[str] = None) -> Path:
@@ -150,7 +151,8 @@ class EmbeddingCache:
 
         # Save to disk
         with open(cache_file, "wb") as f:
-            pickle.dump(cache_data, f)
+            # nosemgrep: python.lang.security.deserialization.pickle.avoid-pickle
+            pickle.dump(cache_data, f)  # Trusted local cache only, not user data
 
         # Update metadata
         self.metadata["embeddings"][cache_key] = {
@@ -185,6 +187,7 @@ class EmbeddingCache:
 
         try:
             with open(cache_file, "rb") as f:
+                # nosemgrep: python.lang.security.deserialization.pickle.avoid-pickle
                 cache_data = pickle.load(f)  # nosec B301 - Loading trusted local cache files only, not untrusted data
 
             # Restore numpy array from list
