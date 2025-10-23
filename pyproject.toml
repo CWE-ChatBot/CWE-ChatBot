@@ -41,7 +41,7 @@ pypdf2 = "^3.0.1"
 httpx = {extras = ["http2"], version = "^0.28.1"}
 google-cloud-aiplatform = "^1.119.0"
 google-cloud-modelarmor = "^0.2.8"  # For Model Armor sanitize APIs
-python-socketio = "5.14.0"
+python-socketio = "5.14.2"
 asyncpg = "^0.30.0"
 sqlalchemy = "^2.0.44"
 tenacity = "^8.2.0"  # For exponential backoff retries
