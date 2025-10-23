@@ -219,7 +219,7 @@ async def _verify_bearer_token(token: str) -> Dict[str, Any]:
             Dict[str, Any],
             jwt.decode(
                 token,
-                public_key,  # RS256 public key
+                public_key,  # type: ignore[arg-type]  # PyJWT accepts RSAPublicKey
                 algorithms=["RS256"],
                 audience=settings["audiences"],
                 issuer=settings["issuer"],
