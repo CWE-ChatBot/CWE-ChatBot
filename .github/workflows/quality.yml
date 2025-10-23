@@ -64,17 +64,17 @@ jobs:
   # === Semgrep -> SARIF -> Code scanning ===
   semgrep:
     runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
     steps:
       - uses: actions/checkout@v4
       - name: Run Semgrep (generate SARIF, keep going)
         id: semgrep
         continue-on-error: true  # ensure upload happens even with findings
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: |
-            p/python
-            p/security-audit
-          sarif_output: semgrep-results.sarif
+        run: |
+          semgrep scan --config=p/python --config=p/security-audit \
+            --sarif --output=semgrep-results.sarif \
+            --verbose
 
       - name: Upload Semgrep SARIF to Code Scanning
         if: always()  # Upload even if semgrep step fails
