@@ -21,7 +21,7 @@ from typing import List
 import pytest
 
 # Import from the LLM judge test
-from test_cwe_response_accuracy_llm_judge import (
+from .test_cwe_response_accuracy_llm_judge import (
     LLMJudge,
     MITREGroundTruth,
 )
