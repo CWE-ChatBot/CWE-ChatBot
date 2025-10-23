@@ -36,7 +36,6 @@ google-generativeai = "^0.8.0"  # For Gemini embedding model
 psycopg = {extras = ["binary"], version = "^3.2.10"}
 
 # Optional dependencies
-sentence-transformers = {version = "^2.2.2", optional = true}
 httpx = {extras = ["http2"], version = "^0.28.1"}
 google-cloud-aiplatform = "^1.119.0"
 google-cloud-modelarmor = "^0.2.8"  # For Model Armor sanitize APIs
