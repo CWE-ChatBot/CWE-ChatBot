@@ -166,8 +166,11 @@ def _validated_oidc_settings() -> Dict[str, Any]:
 
 def _rsa_key_from_jwk(jwk: Dict[str, Any]) -> rsa.RSAPublicKey:
     """Construct an RSA public key object from a JWK dict (RSA)."""
-    n_b = base64url_decode(jwk["n"])
-    e_b = base64url_decode(jwk["e"])
+    # JWK values are strings (JSON), but base64url_decode expects bytes
+    n_str = jwk["n"]
+    e_str = jwk["e"]
+    n_b = base64url_decode(n_str.encode("ascii") if isinstance(n_str, str) else n_str)
+    e_b = base64url_decode(e_str.encode("ascii") if isinstance(e_str, str) else e_str)
     n_int = int.from_bytes(n_b, "big")
     e_int = int.from_bytes(e_b, "big")
     pub_numbers = rsa.RSAPublicNumbers(e_int, n_int)
@@ -207,24 +210,32 @@ async def _verify_bearer_token(token: str) -> Dict[str, Any]:
         jwk = next((k for k in keys if k.get("kid") == kid), None)
         if not jwk:
             raise HTTPException(status_code=401, detail="Signing key not found")
-        public_key = _rsa_key_from_jwk(jwk)
+        # Keep JWKS format for python-jose (it expects JWK dict, not RSA object)
     except HTTPException:
         raise
     except Exception:
         raise HTTPException(status_code=503, detail="Unable to fetch/parse JWKS")
 
-    # Validate signature and claims
+    # Validate signature and claims using JWKS
     try:
+        # python-jose audience expects string or None, not list
+        # If multiple audiences configured, verify manually after decode
+        audience_str = (
+            settings["audiences"][0] if len(settings["audiences"]) == 1 else None
+        )
+
         claims = cast(
             Dict[str, Any],
             jwt.decode(
                 token,
-                public_key,  # type: ignore[arg-type]  # PyJWT accepts RSAPublicKey
+                jwks,  # python-jose expects JWKS dict with 'keys' array
                 algorithms=["RS256"],
-                audience=settings["audiences"],
+                audience=audience_str,  # Single audience or None
                 issuer=settings["issuer"],
                 options={
-                    "verify_aud": True,
+                    "verify_aud": (
+                        audience_str is not None
+                    ),  # Only verify if single audience
                     "verify_signature": True,
                     "require_exp": True,
                     "require_iat": False,
@@ -232,6 +243,13 @@ async def _verify_bearer_token(token: str) -> Dict[str, Any]:
                 },
             ),
         )
+
+        # Manual audience verification if multiple audiences configured
+        if audience_str is None and settings["audiences"]:
+            token_aud = claims.get("aud")
+            if token_aud not in settings["audiences"]:
+                raise JWTError("Invalid audience")
+
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
