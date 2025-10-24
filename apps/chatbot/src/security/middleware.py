@@ -43,23 +43,23 @@ def _build_csp() -> str:
     - Compatibility+ profile: no 'unsafe-inline' in script-src, but keep 'unsafe-eval'
     - Tight connect-src to self + your exact origin (no broad https:/wss:)
     - Allow external CSS/fonts for Chainlit dependencies:
-      * fonts.googleapis.com - Google Fonts (Inter font family)
-      * cdn.jsdelivr.net - KaTeX CSS for math rendering
-      * fonts.gstatic.com - Google Fonts assets
+      * cdn.jsdelivr.net - KaTeX CSS for math rendering (Chainlit internal)
+    - Fonts are now hosted locally (Inter, JetBrains Mono) for SRI compliance
     """
     https_hosts, wss_hosts = _origin_hosts()
     connect_list = " ".join(["'self'"] + https_hosts + wss_hosts)
 
     # Compatibility+ CSP (recommended for Chainlit today)
-    # Allows external CDN resources (Google Fonts, KaTeX) and necessary unsafe-* directives
+    # Allows KaTeX CDN (Chainlit internal) and necessary unsafe-* directives
+    # Fonts hosted locally per Nuclei security recommendations
     if CSP_MODE != "strict":
         img_list = " ".join(filter(None, ["'self'", "data:", IMG_EXTRA.strip()]))
         return (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "  # Chainlit requires both for React/inline scripts
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "  # Google Fonts + KaTeX CSS
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "  # KaTeX CSS (Chainlit internal)
             f"img-src {img_list}; "
-            "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "  # Google Fonts + KaTeX fonts
+            "font-src 'self' data: https://cdn.jsdelivr.net; "  # Local fonts + KaTeX fonts (Chainlit)
             f"connect-src {connect_list}; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "

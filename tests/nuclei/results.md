@@ -1,6 +1,11 @@
-Update:
-1. CAA Record added to DNS
-2. Subresource Integrity (SRI) will be addressed by locally hosting the relevant files
+Update (October 24, 2025):
+1. ✅ CAA Record added to DNS
+2. ✅ Subresource Integrity (SRI) - FIXED by locally hosting fonts
+   - Inter font family (Regular, Medium, SemiBold) now hosted at `/public/fonts/`
+   - JetBrains Mono (Regular, Medium) now hosted at `/public/fonts/`
+   - Removed Google Fonts CDN dependency from custom.css
+   - Updated CSP to remove fonts.googleapis.com and fonts.gstatic.com
+   - KaTeX CDN (cdn.jsdelivr.net) remains for Chainlit internal math rendering
 3. Missing HTTP Security Headers
    1. Clear-Site-Data will not be used. There is no logout. OAuth tokens expire.
    2. X-Permitted-Cross-Domain-Policies: This is an older header used to control how Adobe Flash content accesses data across domains. Since Flash is no longer supported, this header is generally considered low-impact.

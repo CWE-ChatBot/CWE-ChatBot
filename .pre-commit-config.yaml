@@ -43,7 +43,7 @@ repos:
       - id: trufflehog
         name: trufflehog (secrets scan)
         # scans only the files pre-commit passes (i.e., staged/changed files)
-        entry: bash -lc 'trufflehog filesystem --fail --no-update --results=verified,unknown "$@"'
+        entry: bash -lc 'trufflehog filesystem --fail --no-update --results=verified,unknown --exclude-paths .trufflehogignore "$@"'
         language: system
         types: [text]
         pass_filenames: true
