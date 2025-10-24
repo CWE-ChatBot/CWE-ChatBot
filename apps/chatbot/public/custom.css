@@ -2,46 +2,11 @@
 /* Story 3.4: Typography System, Color Palette, and Professional Branding */
 
 /* ===== TYPOGRAPHY SYSTEM ===== */
-/* Local font hosting for security (SRI compliance per Nuclei recommendations) */
-@font-face {
-  font-family: 'Inter';
-  src: url('/public/fonts/Inter-Regular.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Inter';
-  src: url('/public/fonts/Inter-Medium.ttf') format('truetype');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Inter';
-  src: url('/public/fonts/Inter-SemiBold.ttf') format('truetype');
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'JetBrains Mono';
-  src: url('/public/fonts/JetBrainsMono-Regular.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'JetBrains Mono';
-  src: url('/public/fonts/JetBrainsMono-Medium.ttf') format('truetype');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
+/* Note: Chainlit 2.8.0 injects Google Fonts (Inter) in server-generated HTML
+ * We accept this framework limitation rather than attempting local hosting
+ * which cannot override Chainlit's hardcoded font injection.
+ * See tests/nuclei/results.md for detailed analysis.
+ */
 
 /* ===== SEMANTIC COLOR SYSTEM (Shadcn/ui Inspired) ===== */
 :root {

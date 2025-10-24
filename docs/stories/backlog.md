@@ -1,20 +1,40 @@
-cloud armor rules refactor
-
-dependabot yaml file
-
-web errors
 
 
-web scanner https://cloud.google.com/security-command-center/docs/how-to-web-security-scanner-custom-scans
+DAST full oauth
+    ZAP
+    web scanner https://cloud.google.com/security-command-center/docs/how-to-web-security-scanner-custom-scans
+
+
+sonarqube quality http://127.0.0.1:9000/projects
+
+scan github actions
+
+press button twice
+
+
+
+
+https://hacksheets.medium.com/my-list-of-gcp-security-review-tools-6173d53cc58d
+
+https://github.com/prowler-cloud/prowler
+
+
+
+
+
+
 
 garak
 https://github.com/NVIDIA/garak/issues/1125
 https://github.com/NVIDIA/garak/pull/1379
 
 
+sql db iam + enc + RLS
+
 ### 3.2 LOW - Markdown Sanitization Not Implemented (VUL-LOW-001)
 
 
+gh commit lint-type-test (3.12) - support integration testing
 
 Security review (also use llm tool)
 
@@ -170,3 +190,32 @@ new arch diagram showing armor, waf, vpc runner ingest pdf etc...
 
 deploy securely
 wire up the mitigations
+
+cloud armor rules refactor
+
+cloudrun costs
+
+apps/chatbot/tests/lighthouse/cwe.crashedmind.com-20251021T120825.json
+
+
+
+dependabot yaml file
+GH action
+
+owasp zap
+
+Deployment
+    review deploy size
+
+
+remove obsolete rsa
+
+===================================================
+
+refactor chatbot
+    docs/refactor/R16/R16_unified_msg_path.md
+    docs/refactor/R16/R16_misc.md
+
+refactor pdf
+
+DONE SubResourceIntegrity per Zap, Nuclei - Chainlit framework limitation documented
