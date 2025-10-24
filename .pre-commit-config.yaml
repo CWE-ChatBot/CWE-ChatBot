@@ -37,6 +37,20 @@ repos:
         args: [-r, ./apps, -x, "./apps/tests/**,./apps/**/tests/**,./apps/**/test_*.py,./apps/**/build/**,./apps/**/scripts/**", -ll, --skip, B608]
         pass_filenames: false
 
+  # Secret scanning with trufflehog (uses installed binary)
+  - repo: local
+    hooks:
+      - id: trufflehog
+        name: trufflehog (secrets scan)
+        # scans only the files pre-commit passes (i.e., staged/changed files)
+        entry: bash -lc 'trufflehog filesystem --fail --no-update --results=verified,unknown "$@"'
+        language: system
+        types: [text]
+        pass_filenames: true
+        stages: [commit]
+        # Skip common noisy paths; adjust as needed
+        exclude: ^(apps/.*/tests/|apps/.*/build/|apps/.*/scripts/|tests/)
+
   # Semgrep - Advanced security scanning
   - repo: https://github.com/semgrep/semgrep
     rev: v1.89.0

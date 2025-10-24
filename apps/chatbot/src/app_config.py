@@ -275,10 +275,15 @@ class Config:
         ]
 
     def is_user_allowed(self, email: str) -> bool:
-        """Email allowlist check supporting full address or @domain suffix."""
+        """
+        Email allowlist check supporting full address or @domain suffix.
+
+        Security: Fail-closed policy - if no allowlist configured, deny all access.
+        This prevents accidental open access when ALLOWED_USERS is not set.
+        """
         allow = self.get_allowed_users()
         if not allow:
-            return True  # no list => allow all authenticated users
+            return False  # SECURITY: Fail-closed - deny all if no allowlist configured
         email_l = (email or "").lower()
         for rule in allow:
             if rule.startswith("@"):

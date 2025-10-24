@@ -398,6 +398,37 @@ class TestJWTVerificationFailures:
                     assert exc_info.value.status_code == 403
                     assert "User not authorized" in exc_info.value.detail
 
+    @pytest.mark.asyncio
+    async def test_fail_closed_when_no_allowlist_configured(self, test_setup):
+        """Test that authentication fails when no allowlist is configured (fail-closed security)."""
+        helper = test_setup["helper"]
+        private_key = test_setup["private_key"]
+        public_key = test_setup["public_key"]
+        settings = test_setup["settings"]
+
+        claims = {
+            "iss": "https://accounts.google.com",
+            "aud": "test-client.apps.googleusercontent.com",
+            "sub": "user-123",
+            "email": "legitimate@example.com",
+            "email_verified": True,
+            "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+            "iat": int(datetime.now(timezone.utc).timestamp()),
+        }
+
+        token = helper.create_token(private_key, claims)
+        mock_jwks = helper.create_jwks(public_key)
+
+        # Simulate empty allowlist (no users configured)
+        with patch("apps.chatbot.api._validated_oidc_settings", return_value=settings):
+            with patch("apps.chatbot.api._jwks_cache.get", new_callable=AsyncMock, return_value=mock_jwks):
+                with patch("apps.chatbot.api.app_config.get_allowed_users", return_value=[]):
+                    with pytest.raises(HTTPException) as exc_info:
+                        await _verify_bearer_token(token)
+
+                    assert exc_info.value.status_code == 403
+                    assert "User not authorized" in exc_info.value.detail
+
 
 class TestFastAPIDependency:
     """Test the FastAPI verify_oauth_token dependency."""
