@@ -63,12 +63,14 @@ async def test_cwe_analyzer_end_to_end(
         # Set persona to CWE Analyzer
         await conversation_manager.update_user_persona("test_session", "CWE Analyzer")
 
-        # Process the message
-        response = await conversation_manager.process_user_message_streaming(
+        # Process the message using two-phase approach (no streaming)
+        processing_result = await conversation_manager.process_user_message_no_send(
             session_id="test_session",
             message_content=input_text,
             message_id="test_message",
         )
+        # Complete processing and send message
+        response = await conversation_manager.send_message_from_result(processing_result)
 
         # Print actual response for debugging
         print(f"\n=== ACTUAL RESPONSE FOR INPUT {i+1} ===")

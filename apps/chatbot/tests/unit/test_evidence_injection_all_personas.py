@@ -171,10 +171,11 @@ async def test_evidence_pseudo_chunk_injected_for_every_persona(monkeypatch, per
                     raising=True,
                 )
 
-                # Execute streaming path (wrapper around core)
-                result = await cm.process_user_message_streaming(
+                # Execute two-phase processing (no streaming)
+                processing_result = await cm.process_user_message_no_send(
                     session_id, "Explain the risk of XSS", "msg-1"
                 )
+                result = await cm.send_message_from_result(processing_result)
 
                 # Ensure response returned and our spy captured retrieval and evidence
                 assert "response" in result
