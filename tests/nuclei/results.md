@@ -1,11 +1,18 @@
 Update (October 24, 2025):
 1. ✅ CAA Record added to DNS
-2. ✅ Subresource Integrity (SRI) - FIXED by locally hosting fonts
-   - Inter font family (Regular, Medium, SemiBold) now hosted at `/public/fonts/`
-   - JetBrains Mono (Regular, Medium) now hosted at `/public/fonts/`
-   - Removed Google Fonts CDN dependency from custom.css
-   - Updated CSP to remove fonts.googleapis.com and fonts.gstatic.com
-   - KaTeX CDN (cdn.jsdelivr.net) remains for Chainlit internal math rendering
+2. ⚠️ Subresource Integrity (SRI) - PARTIALLY ADDRESSED (framework limitation)
+   - ✅ Custom CSS: Inter and JetBrains Mono fonts hosted locally at `/public/fonts/`
+   - ✅ Removed Google Fonts CDN imports from our custom.css file
+   - ❌ **Chainlit Framework Limitation**: Chainlit 2.8.0 injects Google Fonts links in server-generated HTML
+     - Hardcoded in framework: `<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap">`
+     - No configuration option to disable this injection
+     - Cannot be overridden without forking Chainlit framework
+   - ❌ KaTeX CDN (cdn.jsdelivr.net) - Chainlit internal dependency for math rendering
+
+   **Mitigation Options**:
+   - Accept risk: Both Google Fonts and KaTeX are from reputable CDNs with SRI support available
+   - CSP enforcement: Can block these resources entirely (fonts fall back to system fonts)
+   - Future: Upgrade when Chainlit adds HTML template customization
 3. Missing HTTP Security Headers
    1. Clear-Site-Data will not be used. There is no logout. OAuth tokens expire.
    2. X-Permitted-Cross-Domain-Policies: This is an older header used to control how Adobe Flash content accesses data across domains. Since Flash is no longer supported, this header is generally considered low-impact.
