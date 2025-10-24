@@ -14,7 +14,6 @@ The project uses a modern development toolchain optimized for code quality, type
 | Poetry | 1.8.2 | Dependency management and packaging |
 | pip | 24.0 | Package installer (used by Poetry) |
 | Ruff | 0.6.9 | Fast linting and code formatting (Rust-based) |
-| Black | 23.12.1 | Opinionated code formatter |
 | Mypy | 1.17.1 | Static type checking |
 | Pydantic | 2.11.7 | Data validation and settings management |
 | Semgrep | Latest | Security-focused static analysis |
@@ -110,7 +109,6 @@ pydantic = "^2.11.7"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.6.9"
-black = "^23.12.1"
 mypy = "^1.17.1"
 pytest = "^7.4.4"
 ```
@@ -122,12 +120,12 @@ pytest = "^7.4.4"
 - 10-100x faster than other Python linters
 - Replaces Flake8, isort, pydocstyle, and more
 - Built-in auto-fix for many rules
-- Can also format code (alternative to Black)
+- Provides fast code formatting (canonical formatter)
 - Native type-aware linting
 
 **Key Features**:
 - Linting: Enforces code style rules
-- Formatting: Fast code formatter (Black-compatible)
+- Formatting: Fast code formatter (canonical)
 - Import sorting: Organizes imports
 - Error codes: Pyflakes (F), pycodestyle (E/W), isort (I), etc.
 
@@ -139,7 +137,7 @@ poetry run ruff check .
 # Auto-fix issues
 poetry run ruff check --fix .
 
-# Format code (alternative to Black)
+# Format code
 poetry run ruff format .
 
 # Check specific directory
@@ -170,54 +168,7 @@ ignore = [
 "tests/**/*.py" = ["S101"]  # Allow assert in tests
 ```
 
-### Black 23.12.1
-**Purpose**: Opinionated code formatter ("The Uncompromising Code Formatter")
-
-**Why Black**:
-- Zero configuration philosophy
-- Consistent formatting across projects
-- Eliminates formatting debates
-- Fast and deterministic
-- Industry standard
-
-**Key Features**:
-- Formats code to consistent style
-- Line length: 88 characters (default)
-- PEP 8 compliant with some opinions
-- Preserves AST (code semantics unchanged)
-
-**Usage**:
-```bash
-# Format code
-poetry run black .
-
-# Check without modifying
-poetry run black --check .
-
-# Format specific files
-poetry run black apps/chatbot/src/
-```
-
-**Configuration** (pyproject.toml):
-```toml
-[tool.black]
-line-length = 88
-target-version = ['py312']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # Exclude directories
-  \.git
-  | \.venv
-  | build
-  | dist
-)/
-'''
-```
-
-**Note**: Ruff's formatter can replace Black. Choose one:
-- **Black**: More mature, zero config philosophy
-- **Ruff format**: Faster, Black-compatible, integrated with linting
+ 
 
 ### Mypy 1.17.1
 **Purpose**: Static type checker for Python
@@ -333,8 +284,8 @@ settings = Settings()  # Loads from .env automatically
 Use all three tools for maximum code quality:
 
 ```bash
-# 1. Format code (Black)
-poetry run black .
+# 1. Format code (Ruff)
+poetry run ruff format .
 
 # 2. Lint and auto-fix (Ruff)
 poetry run ruff check --fix .
@@ -344,8 +295,7 @@ poetry run mypy .
 ```
 
 **Why all three?**
-- **Ruff**: Fast linting, catches common code issues, import sorting
-- **Black**: Consistent formatting (or use `ruff format` instead)
+- **Ruff**: Fast linting and formatting, catches common code issues, import sorting
 - **Mypy**: Type safety, catches type-related bugs
 
 ### 2. Alternative: Ruff-Only Formatting
@@ -377,7 +327,7 @@ set -e
 echo "Running code quality checks..."
 
 # Format
-poetry run black . || exit 1
+poetry run ruff format . || exit 1
 
 # Lint
 poetry run ruff check --fix . || exit 1
@@ -419,8 +369,8 @@ jobs:
       - name: Install dependencies
         run: poetry install
 
-      - name: Check formatting (Black)
-        run: poetry run black --check .
+      - name: Check formatting (Ruff)
+        run: poetry run ruff format --check .
 
       - name: Lint (Ruff)
         run: poetry run ruff check .
@@ -434,13 +384,47 @@ jobs:
 
 ## Development Workflow
 
+## Repository Automation & Hooks
+
+### Pre-commit Hooks
+- File: `.pre-commit-config.yaml`
+- Purpose: Runs fast checks locally before each commit to keep the codebase clean and secure.
+- Includes:
+  - Ruff lint (`ruff`) with auto-fix and `ruff-format` on staged Python files under `apps/**`.
+  - Security scanners: Bandit, Semgrep, and a pip-audit wrapper for dependency issues.
+  - Basic hygiene: trailing whitespace, EOF fixer, YAML checks, large file guard, merge conflict checks.
+- Usage:
+  - Install once: `pre-commit install`
+  - Run on all files: `pre-commit run --all-files`
+- Reference: see `.pre-commit-config.yaml` for the exact hooks and scopes.
+
+### CI Workflows
+- File: `.github/workflows/quality.yml`
+- Purpose: Enforces quality gates in CI on every push/PR (pre-commit hooks including Ruff, tests with coverage, type analysis, and security scanners).
+- Highlights:
+  - Runs `pre-commit run --all-files` (executes Ruff and other hooks).
+  - Executes `pytest` with coverage and applies a coverage gate.
+  - Separate jobs for Pyright type checking, Semgrep, pip-audit, Bandit, Vulture, and Checkov with SARIF uploads.
+- Reference: see `.github/workflows/quality.yml` for the full job matrix and steps.
+
+### Dependabot
+- Docs: `.github/workflows/dependabot.md`
+- Automation:
+  - Config: `.github/dependabot.yml` defines ecosystems and schedules for automatic dependency PRs.
+  - Auto-merge: `.github/workflows/dependabot-auto-merge.yml` auto-merges safe Dependabot PRs (minor/patch) after CI passes; major updates are labeled for manual review.
+- Purpose: Keep dependencies current and reduce supply-chain risk with minimal manual effort.
+- References:
+  - `.github/dependabot.yml`
+  - `.github/workflows/dependabot-auto-merge.yml`
+  - `.github/workflows/dependabot.md`
+
 ### Daily Development
 ```bash
 # 1. Make code changes
 vim apps/chatbot/src/secrets.py
 
 # 2. Format
-poetry run black apps/chatbot/src/secrets.py
+poetry run ruff format apps/chatbot/src/secrets.py
 
 # 3. Lint
 poetry run ruff check --fix apps/chatbot/src/secrets.py
@@ -465,16 +449,17 @@ git commit -m "Add Secret Manager integration"
   "python.linting.enabled": true,
   "python.linting.ruffEnabled": true,
   "python.linting.mypyEnabled": true,
-  "python.formatting.provider": "black",
   "editor.formatOnSave": true,
+  "editor.defaultFormatter": "charliermarsh.ruff",
   "editor.codeActionsOnSave": {
-    "source.organizeImports": true
+    "source.fixAll.ruff": true,
+    "source.organizeImports.ruff": true
   }
 }
 ```
 
 **PyCharm**:
-- Settings → Tools → Black → Enable
+- Settings → Plugins → Ruff → Enable
 - Settings → Tools → External Tools → Add Ruff
 - Settings → Python Integrated Tools → Type Checker: Mypy
 
@@ -526,13 +511,10 @@ poetry self update
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-**Ruff/Black conflict**:
+**Ruff line-length**:
 ```bash
-# Ensure line-length matches
+# Ensure line-length matches project standard
 [tool.ruff]
-line-length = 88  # Match Black's default
-
-[tool.black]
 line-length = 88
 ```
 
@@ -563,7 +545,6 @@ poetry add --group dev types-requests
 - **Python**: https://docs.python.org/3.12/
 - **Poetry**: https://python-poetry.org/docs/
 - **Ruff**: https://docs.astral.sh/ruff/
-- **Black**: https://black.readthedocs.io/
 - **Mypy**: https://mypy.readthedocs.io/
 - **Pydantic**: https://docs.pydantic.dev/
 
@@ -990,18 +971,64 @@ Already documented in Development Tools section above. Key for security-focused 
 - Authentication testing
 - OWASP Top 10 coverage
 
+See https://www.zaproxy.org/docs/docker/about/
+
+**Setup**
+```bash
+# Download and run bash in the ZAP stable docker image
+docker pull zaproxy/zap-stable
+docker run -it zaproxy/zap-stable bash
+
+# Update ZAP and install Wappalyzer and the Beta Passive Scan Rules:
+./zap.sh -cmd -addonupdate -addoninstall wappalyzer -addoninstall pscanrulesBeta
+
+```
+
 **Usage**:
 ```bash
+
+# zapit: a quick ‘reconnaissance’ scan 
+./zap.sh -cmd -zapit https://staging-cwe.crashedmind.com/
+
+
 # Run ZAP baseline scan (passive)
-docker run -t owasp/zap2docker-stable zap-baseline.py \
+docker run -t zaproxy/zap-stable zap-baseline.py \
   -t https://cwe.crashedmind.com \
   -r zap-report.html
 
 # Run full scan (active)
-docker run -t owasp/zap2docker-stable zap-full-scan.py \
+docker run -t zaproxy/zap-stable zap-full-scan.py \
   -t https://staging-cwe.crashedmind.com \
   -r zap-full-report.html
 ```
+
+### Nuclei (Template-Based DAST)
+
+**Purpose**: Fast, template-driven scanning for known patterns and misconfigurations.
+
+**Repo Location**:
+- Script: `tests/nuclei/nuclei.sh`
+- Targets: `tests/nuclei/urls.txt`
+
+**Usage**:
+```bash
+# From repository root, runs Nuclei inside Docker against URLs listed in urls.txt
+cd tests/nuclei
+./nuclei.sh
+
+# Equivalent manual invocation
+docker run --rm -u $(id -u):$(id -g) -v ./:/app/ -e HOME=/app/ projectdiscovery/nuclei \
+  -l /app/urls.txt -jsonl /app/results.jsonl
+
+
+
+# Results: ./results.jsonl (JSON Lines)
+```
+
+**Notes**:
+- Edit `tests/nuclei/urls.txt` to control targets.
+- You can add flags like `-severity critical,high` or custom templates via `-t`.
+- For CI usage, upload `results.jsonl` as an artifact or parse it to fail on severities of interest.
 
 ### Browser Security Headers Checker
 
