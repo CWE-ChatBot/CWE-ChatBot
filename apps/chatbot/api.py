@@ -232,7 +232,7 @@ async def _verify_bearer_token(token: str) -> Dict[str, Any]:
             Dict[str, Any],
             jwt.decode(
                 token,
-                jwks,  # python-jose expects JWKS dict with 'keys' array
+                jwks,  # python-jose accepts JWKS dict with 'keys' array per RFC 7517
                 algorithms=["RS256"],
                 audience=audience_str,  # Single audience or None
                 issuer=settings["issuer"],
@@ -241,6 +241,7 @@ async def _verify_bearer_token(token: str) -> Dict[str, Any]:
                         audience_str is not None
                     ),  # Only verify if single audience
                     "verify_signature": True,
+                    "verify_at_hash": False,  # We don't have access_token for validation
                     "require_exp": True,
                     "require_iat": False,
                     "require_nbf": False,
