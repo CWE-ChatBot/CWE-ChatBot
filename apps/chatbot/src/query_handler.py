@@ -387,14 +387,13 @@ class CWEQueryHandler:
             with self.store._get_connection() as conn:  # type: ignore[attr-defined]
                 # Normalize IDs to uppercase
                 ids = [str(cid).upper() for cid in cwe_ids]
-                # Safe: placeholders are programmatically generated (%s), not user input
-                placeholders = ",".join(["%s"] * len(ids))  # nosec B608
                 # Prefer cwe_catalog if present; fallback to cwe_embeddings
                 with self.store._cursor(conn) as cur:  # type: ignore[attr-defined]
                     try:
+                        # Use = ANY(%s) pattern to avoid dynamic SQL (safer than IN with placeholders)
                         cur.execute(
-                            f"SELECT cwe_id, name, abstraction, status FROM cwe_catalog WHERE UPPER(cwe_id) IN ({placeholders})",  # nosec B608
-                            ids,
+                            "SELECT cwe_id, name, abstraction, status FROM cwe_catalog WHERE UPPER(cwe_id) = ANY(%s)",
+                            (ids,),
                         )
                         rows = cur.fetchall()
                         if rows:
@@ -407,8 +406,8 @@ class CWEQueryHandler:
                     except Exception:
                         # Fall back to embeddings if catalog is missing
                         cur.execute(
-                            f"SELECT cwe_id, name, abstraction, status FROM cwe_embeddings WHERE UPPER(cwe_id) IN ({placeholders})",  # nosec B608
-                            ids,
+                            "SELECT cwe_id, name, abstraction, status FROM cwe_embeddings WHERE UPPER(cwe_id) = ANY(%s)",
+                            (ids,),
                         )
                         rows = cur.fetchall()
                         for cwe_id, name, abstraction, status in rows:
@@ -444,16 +443,15 @@ class CWEQueryHandler:
         try:
             with self.store._get_connection() as conn:  # type: ignore[attr-defined]
                 ids = [str(cid).upper() for cid in cwe_ids]
-                # Safe: placeholders are programmatically generated (%s), not user input
-                placeholders = ",".join(["%s"] * len(ids))  # nosec B608
-                sql = f"""
+                # Use = ANY(%s) pattern to avoid dynamic SQL (safer than IN with placeholders)
+                sql = """
                     SELECT cwe_id, mapping_label, COALESCE(notes, '')
                       FROM cwe_policy_labels
-                     WHERE UPPER(cwe_id) IN ({placeholders})
-                """  # nosec B608
+                     WHERE UPPER(cwe_id) = ANY(%s)
+                """
                 with self.store._cursor(conn) as cur:  # type: ignore[attr-defined]
                     try:
-                        cur.execute(sql, ids)
+                        cur.execute(sql, (ids,))
                         for cwe_id, mapping_label, notes in cur.fetchall():
                             labels[str(cwe_id).upper()] = {
                                 "mapping_label": mapping_label or "",

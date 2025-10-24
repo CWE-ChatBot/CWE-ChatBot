@@ -38,8 +38,8 @@ def _build_url_from_env() -> URL:
     pwd = os.environ["DB_PASSWORD"].strip()  # Always strip newline/whitespace
     sslmode = os.getenv("DB_SSLMODE", "require")
 
-    # Log params without any password footprint
-    logger.info(
+    # Log params at DEBUG level to reduce environment intel exposure
+    logger.debug(
         "DB connect params: host=%s:%s, db=%s, user=%s, sslmode=%s",
         host,
         port,
@@ -112,6 +112,7 @@ def engine() -> Any:
         pool_pre_ping=True,
         pool_recycle=int(os.getenv("DB_POOL_RECYCLE_SEC", "1800")),
         pool_use_lifo=os.getenv("DB_POOL_USE_LIFO", "true").lower() == "true",
+        pool_reset_on_return="rollback",  # Ensure clean connections across requests
         connect_args={"sslmode": sslmode},
         future=True,
     )

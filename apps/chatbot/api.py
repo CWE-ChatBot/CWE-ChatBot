@@ -314,10 +314,13 @@ async def verify_oauth_token(
 
 async def rate_limit_check(request: Request) -> None:
     """Dependency for rate limiting API requests."""
-    # Get client IP (handle proxy headers)
+    # Get client IP - Cloud Run sets this correctly via request.client.host
+    # X-Forwarded-For is trusted here because Cloud Run infrastructure sets it
+    # For non-Cloud Run deployments, ensure proxy/load balancer is configured correctly
     client_ip = request.client.host if request.client else "unknown"
     forwarded_for = request.headers.get("X-Forwarded-For")
     if forwarded_for:
+        # Use leftmost IP (original client) from X-Forwarded-For chain
         client_ip = forwarded_for.split(",")[0].strip()
 
     if rate_limiter.is_rate_limited(client_ip):

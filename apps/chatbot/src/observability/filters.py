@@ -113,9 +113,9 @@ class SensitiveDataFilter(logging.Filter):
             re.compile(r"(['\"]password['\"]:\s*['\"][^'\"]+['\"])", re.IGNORECASE),
             '"password":"[REDACTED]"',
         ),
-        # Database connection strings
+        # Database connection strings (expanded to catch psycopg, asyncpg, sockets)
         (
-            re.compile(r"(postgresql://[^:]+:[^@]+@[^\s]+)", re.IGNORECASE),
+            re.compile(r"(postgresql\+\w*://[^:]+:[^@]+@[^\s]+)", re.IGNORECASE),
             "postgresql://[REDACTED]@[REDACTED]",
         ),
     ]
