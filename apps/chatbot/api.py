@@ -27,11 +27,9 @@ from functools import lru_cache
 from typing import Any, Dict, Optional, Tuple, Union, cast
 
 import httpx
-from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
-from jose.utils import base64url_decode
 from pydantic import BaseModel, Field, field_validator
 from src.app_config import config as app_config
 from src.conversation import ConversationManager
@@ -166,19 +164,6 @@ def _oidc_settings() -> Dict[str, Any]:
 @lru_cache(maxsize=1)
 def _validated_oidc_settings() -> Dict[str, Any]:
     return _oidc_settings()
-
-
-def _rsa_key_from_jwk(jwk: Dict[str, Any]) -> rsa.RSAPublicKey:
-    """Construct an RSA public key object from a JWK dict (RSA)."""
-    # JWK values are strings (JSON), but base64url_decode expects bytes
-    n_str = jwk["n"]
-    e_str = jwk["e"]
-    n_b = base64url_decode(n_str.encode("ascii") if isinstance(n_str, str) else n_str)
-    e_b = base64url_decode(e_str.encode("ascii") if isinstance(e_str, str) else e_str)
-    n_int = int.from_bytes(n_b, "big")
-    e_int = int.from_bytes(e_b, "big")
-    pub_numbers = rsa.RSAPublicNumbers(e_int, n_int)
-    return pub_numbers.public_key()
 
 
 async def _verify_bearer_token(token: str) -> Dict[str, Any]:

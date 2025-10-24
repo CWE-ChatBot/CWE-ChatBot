@@ -26,7 +26,6 @@ import base64
 # Import the functions under test
 from apps.chatbot.api import (
     _oidc_settings,
-    _rsa_key_from_jwk,
     _verify_bearer_token,
     verify_oauth_token,
 )
@@ -81,37 +80,6 @@ class TestOIDCConfiguration:
 
                 with pytest.raises(RuntimeError, match="OIDC_AUDIENCE or OAUTH_GOOGLE_CLIENT_ID"):
                     _oidc_settings()
-
-
-class TestRSAKeyConstruction:
-    """Test RSA public key construction from JWK format."""
-
-    def test_rsa_key_from_jwk_roundtrip(self):
-        """Test that RSA key can be constructed from JWK and matches original."""
-        # Generate test keypair
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        public_key = private_key.public_key()
-        public_numbers = public_key.public_numbers()
-
-        # Create JWK representation
-        n_bytes = public_numbers.n.to_bytes((public_numbers.n.bit_length() + 7) // 8, "big")
-        e_bytes = public_numbers.e.to_bytes((public_numbers.e.bit_length() + 7) // 8, "big")
-
-        jwk = {
-            "kty": "RSA",
-            "kid": "test-key",
-            "use": "sig",
-            "n": base64.urlsafe_b64encode(n_bytes).decode().rstrip("="),
-            "e": base64.urlsafe_b64encode(e_bytes).decode().rstrip("="),
-        }
-
-        # Reconstruct from JWK
-        reconstructed_key = _rsa_key_from_jwk(jwk)
-        reconstructed_numbers = reconstructed_key.public_numbers()
-
-        # Verify match
-        assert reconstructed_numbers.n == public_numbers.n
-        assert reconstructed_numbers.e == public_numbers.e
 
 
 class JWTTestHelper:
