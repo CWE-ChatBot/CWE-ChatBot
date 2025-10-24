@@ -149,6 +149,36 @@ class ConversationManager:
                 self.session_contexts[session_id] = ctx
             return self.session_contexts[session_id]
 
+    async def _analyze_and_route(
+        self, message_content: str, context: UserContext
+    ) -> Dict[str, Any]:
+        """
+        R16: Unified sanitizer/security/off-topic analysis helper.
+
+        Consolidates common preprocessing logic used by all public entry points
+        (process_user_message, process_user_message_streaming, process_user_message_no_send).
+
+        Args:
+            message_content: Raw user message text
+            context: User context with session state
+
+        Returns:
+            Dict with analysis results:
+                - off_topic: bool - Whether query is off-topic
+                - security_flags: list[str] - Detected security patterns
+                - sanitized: str - Sanitized query text
+        """
+        processed = self.query_processor.process_with_context(
+            message_content, context.get_session_context_for_processing()
+        )
+        return {
+            "off_topic": processed.get("query_type") == "off_topic",
+            "security_flags": processed.get("security_check", {}).get(
+                "detected_patterns", []
+            ),
+            "sanitized": processed.get("sanitized_query", message_content),
+        }
+
     async def process_user_message_no_send(
         self, session_id: str, message_content: str, message_id: str
     ) -> Dict[str, Any]:

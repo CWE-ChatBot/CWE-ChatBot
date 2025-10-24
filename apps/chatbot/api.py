@@ -35,21 +35,25 @@ from jose.utils import base64url_decode
 from pydantic import BaseModel, Field, field_validator
 from src.app_config import config as app_config
 from src.conversation import ConversationManager
+from src.messaging.unified import MessageIn, UnifiedMessagePath
 from src.observability import set_correlation_id
 from src.security.secure_logging import get_secure_logger
 
 logger = get_secure_logger(__name__)
 
-# Global conversation manager (initialized by main.py)
+# Global conversation manager and unified message path (initialized by main.py)
 _conversation_manager: Optional[ConversationManager] = None
+_unified: Optional[UnifiedMessagePath] = None
 
 logger.info("API configured for OAuth Bearer token authentication only")
 
 
 def set_conversation_manager(cm: ConversationManager) -> None:
-    """Set the global conversation manager instance."""
-    global _conversation_manager
+    """Set the global conversation manager and initialize unified message path."""
+    global _conversation_manager, _unified
     _conversation_manager = cm
+    # R16: Initialize unified message path once CM is available
+    _unified = UnifiedMessagePath(cm)
 
 
 def get_conversation_manager() -> ConversationManager:
@@ -434,41 +438,41 @@ async def query_cwe(request_body: QueryRequest, http_request: Request) -> QueryR
     Raises:
         HTTPException: 401 if OAuth token invalid, 429 if rate limit exceeded, 503 if service unavailable
     """
+    # R16: Check unified message path is initialized
+    if _unified is None:
+        raise HTTPException(status_code=503, detail="Server not ready")
+
     cm = get_conversation_manager()
 
-    # Create ephemeral session (correlation ID already set by verify_oauth_token)
+    # Create ephemeral session and correlation ID
     session_id = f"api-oauth-{uuid.uuid4()}"
+    correlation_id = str(uuid.uuid4())
+    set_correlation_id(correlation_id)
 
     try:
-        logger.info(
-            f"API query received: session={session_id}, persona={request_body.persona}, query='{request_body.query[:100]}...'"
-        )
-
         # Update persona for this session
         await cm.update_user_persona(session_id, request_body.persona)
 
-        # Process query using ConversationManager
-        result = await cm.process_user_message(
-            session_id=session_id, message_content=request_body.query
-        )
-
-        # Extract response text (API calls return "response" key, not "message" object)
-        response_text = result.get("response", "")
-        if not response_text and result.get("message"):
-            # Fallback for WebSocket-style response (shouldn't happen but handle gracefully)
-            msg = result["message"]
-            response_text = msg.content if hasattr(msg, "content") else str(msg)
-
-        # Build response
-        response = QueryResponse(
-            response=response_text,
-            retrieved_cwes=result.get("retrieved_cwes", []),
-            chunk_count=result.get("chunk_count", 0),
+        # R16: Use unified message path for consistent preprocessing and logging
+        msg_in = MessageIn(
+            user_id=getattr(http_request.state, "user_sub", "api"),
+            user_email=getattr(http_request.state, "user_email", None),
             session_id=session_id,
+            persona=request_body.persona,
+            text=request_body.query,
+            correlation_id=correlation_id,
+            transport="rest",
+            metadata={"source": "rest_api"},
         )
 
-        logger.info(
-            f"API query completed: session={session_id}, retrieved_cwes={len(response.retrieved_cwes)}, chunks={response.chunk_count}"
+        result = await _unified.process(msg_in)
+
+        # Build response from unified message output
+        response = QueryResponse(
+            response=result.text,
+            retrieved_cwes=[],  # TODO: Extract from result.citations if available
+            chunk_count=0,  # TODO: Extract from result.citations if available
+            session_id=session_id,
         )
 
         # Schedule session cleanup after response is sent

@@ -105,6 +105,11 @@ class Config:
     enable_strict_sanitization: bool = (
         os.getenv("ENABLE_STRICT_SANITIZATION", "true").lower() == "true"
     )
+    # R16: Unified message path configuration
+    max_user_chars: int = int(os.getenv("MAX_USER_CHARS", "8000"))
+    safety_enable_basic: bool = (
+        os.getenv("SAFETY_ENABLE_BASIC", "true").lower() == "true"
+    )
 
     # Content Processing Limits
     max_file_evidence_length: int = int(os.getenv("MAX_FILE_EVIDENCE_LENGTH", "16000"))
