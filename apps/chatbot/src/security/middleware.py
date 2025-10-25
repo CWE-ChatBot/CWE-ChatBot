@@ -26,7 +26,9 @@ CSP_REPORT_ONLY = (
 )  # emit a strict CSP-RO alongside
 ALLOWED_ORIGINS = [PUBLIC_ORIGIN] if PUBLIC_ORIGIN else []
 HSTS_MAX_AGE = int(os.getenv("HSTS_MAX_AGE", "31536000"))  # 1 year default
-IMG_EXTRA = os.getenv("CSP_IMG_EXTRA", "https:")  # Additional img-src hosts
+IMG_EXTRA = os.getenv(
+    "CSP_IMG_EXTRA", "https://chainlit-cloud.s3.eu-west-3.amazonaws.com"
+)  # Additional img-src hosts
 
 
 def _origin_hosts():
