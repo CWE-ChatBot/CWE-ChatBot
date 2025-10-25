@@ -172,6 +172,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
 
+        # Ensure all cookies have Secure flag when running on HTTPS
+        # Addresses ZAP finding: "Cookie Without Secure Flag"
+        # This includes Chainlit's oauth_state and other session cookies
+        if "set-cookie" in response.headers:
+            cookies = response.headers.get("set-cookie")
+            # Add Secure flag if not already present
+            if "Secure" not in cookies and PUBLIC_ORIGIN.startswith("https://"):
+                response.headers["set-cookie"] = cookies.rstrip("; ") + "; Secure"
+
         return response
 
 
