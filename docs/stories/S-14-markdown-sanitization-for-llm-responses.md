@@ -297,11 +297,18 @@ def test_safe_urls_allowed():
 
 ## Dev Notes
 
-### Why Not Return Markdown?
-The ChatGPT suggestion mentions returning sanitized markdown, but this is problematic:
-- **Markdown safety depends on renderer:** Different markdown parsers handle edge cases differently
-- **Round-trip issues:** HTML → Markdown conversion loses information and introduces subtle bugs
-- **Industry standard:** Sanitize at HTML level (after markdown parsing, before display)
+### Why Return Sanitized HTML Instead of Markdown?
+
+**The Question:** Should `sanitize_markdown()` return sanitized markdown text or sanitized HTML?
+
+**The Answer:** Return sanitized HTML.
+
+**Why HTML is the correct choice:**
+- **Markdown safety depends on renderer:** Different markdown parsers handle edge cases differently - what's safe in one parser may be exploitable in another
+- **Round-trip issues:** Converting HTML → Markdown → HTML loses formatting information and introduces subtle bugs
+- **Industry standard:** Sanitization happens at HTML level (after markdown parsing, before display) in all major platforms (GitHub, GitLab, Stack Overflow, Reddit)
+- **Chainlit compatibility:** Chainlit's `cl.Message(content=...)` accepts HTML directly and renders it safely
+- **Single source of truth:** Parse markdown once, sanitize once, render once - no ambiguity
 
 **Decision:** Return sanitized HTML, not markdown. Chainlit can render HTML directly.
 
