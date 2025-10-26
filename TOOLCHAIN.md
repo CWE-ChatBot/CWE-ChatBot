@@ -391,21 +391,33 @@ jobs:
 - Purpose: Runs fast checks locally before each commit to keep the codebase clean and secure.
 - Includes:
   - Ruff lint (`ruff`) with auto-fix and `ruff-format` on staged Python files under `apps/**`.
-  - Security scanners: Bandit, Semgrep, and a pip-audit wrapper for dependency issues.
+  - Security scanners: Bandit, Semgrep, Trufflehog, and a pip-audit wrapper for dependency issues.
+  - Trufflehog: secrets scanning in filesystem mode on staged files at commit time with `--results=verified,unknown` and `--fail` to block commits on findings; uses `--exclude-paths .trufflehogignore` to skip known-safe placeholders (e.g., app_config.py example URL); skips common noisy paths.
   - Basic hygiene: trailing whitespace, EOF fixer, YAML checks, large file guard, merge conflict checks.
 - Usage:
   - Install once: `pre-commit install`
   - Run on all files: `pre-commit run --all-files`
+  - Run Trufflehog only: `pre-commit run trufflehog --all-files`
+  - Exclusions: add file path regexes to `.trufflehogignore` for path-level exclusions
 - Reference: see `.pre-commit-config.yaml` for the exact hooks and scopes.
 
 ### CI Workflows
 - File: `.github/workflows/quality.yml`
-- Purpose: Enforces quality gates in CI on every push/PR (pre-commit hooks including Ruff, tests with coverage, type analysis, and security scanners).
-- Highlights:
-  - Runs `pre-commit run --all-files` (executes Ruff and other hooks).
-  - Executes `pytest` with coverage and applies a coverage gate.
-  - Separate jobs for Pyright type checking, Semgrep, pip-audit, Bandit, Vulture, and Checkov with SARIF uploads.
-- Reference: see `.github/workflows/quality.yml` for the full job matrix and steps.
+- Purpose: Enforces comprehensive quality gates in CI on every push/PR with 9 parallel jobs for code quality, security, and testing.
+- Jobs Overview:
+  1. **lint-type-test-cover**: Main quality gate - runs Ruff linting, Pyright type checking, pytest with 85% coverage gate, and uploads coverage to Codecov
+  2. **pyright**: Dedicated type checking job with SARIF upload to GitHub Security
+  3. **semgrep**: SAST security scanning with SARIF upload for vulnerability detection
+  4. **pip-audit**: Dependency vulnerability scanning with SARIF upload (ignores accepted risks: GHSA-wj6h-64fc-37mp)
+  5. **bandit**: Python security linter detecting common security issues
+  6. **vulture**: Dead code detection to identify unused functions, imports, and variables
+  7. **checkov**: Infrastructure-as-Code (IaC) security scanning for Terraform/YAML/Dockerfiles
+  8. **trivy-container**: Multi-target container image security scanning (matrix job scanning chatbot, cwe_ingestion, pdf_worker base images)
+  9. **actionlint**: GitHub Actions workflow validation
+- SARIF Integration: Pyright, Semgrep, pip-audit, and Trivy upload SARIF results to GitHub Security tab for centralized vulnerability tracking
+- Coverage Gate: Pytest enforces 85% code coverage threshold (configured in pyproject.toml)
+- Security Posture: Comprehensive SAST, SCA (Software Composition Analysis), and container security scanning on every commit
+- Reference: see `.github/workflows/quality.yml` for the complete job matrix, steps, and configurations.
 
 ### Dependabot
 - Docs: `.github/workflows/dependabot.md`
@@ -547,6 +559,7 @@ poetry add --group dev types-requests
 - **Ruff**: https://docs.astral.sh/ruff/
 - **Mypy**: https://mypy.readthedocs.io/
 - **Pydantic**: https://docs.pydantic.dev/
+- **Trufflehog**: https://github.com/trufflesecurity/trufflehog
 
 ## Project-Specific Notes
 
@@ -562,6 +575,9 @@ poetry add --group dev types-requests
 - [ ] Document project-specific Ruff/Mypy rules
 
 ---
+
+## SonarQube
+https://docs.sonarsource.com/sonarqube-server/try-out-sonarqube
 
 ## Browser Development Tools
 
