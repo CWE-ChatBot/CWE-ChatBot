@@ -338,3 +338,14 @@ jobs:
           sarif_file: trivy.sarif
           # Unique category per image to avoid collisions when multiple SARIFs exist
           category: trivy:${{ matrix.image }}
+
+  actionlint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v1
+        with:
+          fail-on-error: true
