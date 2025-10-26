@@ -69,9 +69,9 @@ class Config:
         Construct DATABASE_URL for Chainlit data layer.
 
         For Cloud Run (Cloud SQL Unix socket):
-            postgresql://USER:PASSWORD@/DATABASE?host=/cloudsql/CONNECTION_NAME
+            postgresql://USER:P ASSWORD@/DATABASE?host=/cloudsql/CONNECTION_NAME
         For local development (TCP):
-            postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+            postgresql://USER:P ASSWORD@HOST:PORT/DATABASE
         """
         # Cloud Run uses Cloud SQL Unix socket (check for Cloud SQL connection name in env)
         cloud_sql_connection = os.getenv("CLOUD_SQL_CONNECTION_NAME")
