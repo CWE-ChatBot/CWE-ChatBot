@@ -297,20 +297,54 @@ def test_safe_urls_allowed():
 
 ## Dev Notes
 
-### Why Return Sanitized HTML Instead of Markdown?
+### Implementation Approach: Return Sanitized HTML
 
-**The Question:** Should `sanitize_markdown()` return sanitized markdown text or sanitized HTML?
+**Decision:** Follow the markdown-it-py + bleach approach, returning sanitized HTML.
 
-**The Answer:** Return sanitized HTML.
+**Why This Works:**
 
-**Why HTML is the correct choice:**
-- **Markdown safety depends on renderer:** Different markdown parsers handle edge cases differently - what's safe in one parser may be exploitable in another
-- **Round-trip issues:** Converting HTML → Markdown → HTML loses formatting information and introduces subtle bugs
-- **Industry standard:** Sanitization happens at HTML level (after markdown parsing, before display) in all major platforms (GitHub, GitLab, Stack Overflow, Reddit)
-- **Chainlit compatibility:** Chainlit's `cl.Message(content=...)` accepts HTML directly and renders it safely
-- **Single source of truth:** Parse markdown once, sanitize once, render once - no ambiguity
+Modern chat UIs (including Chainlit) typically support both markdown and HTML rendering. The safest approach is:
+1. **Parse markdown to HTML** with inline HTML disabled (markdown-it-py with `html=False`)
+2. **Sanitize the HTML** with strict allow-lists (bleach)
+3. **Return sanitized HTML** to Chainlit
 
-**Decision:** Return sanitized HTML, not markdown. Chainlit can render HTML directly.
+**Key Advantages:**
+- **Industry standard:** GitHub, GitLab, Stack Overflow, Reddit all sanitize at HTML level
+- **Defense-in-depth:** Two layers (markdown parser escapes + HTML sanitizer validates)
+- **Code block safety:** Markdown parser automatically escapes code content
+- **Single source of truth:** Parse once, sanitize once, no ambiguity
+
+**How Code Examples Stay Safe:**
+
+```python
+# LLM returns markdown with dangerous code:
+"""
+Here's a CWE-79 example:
+```javascript
+<script>alert(document.cookie)</script>
+```
+"""
+
+# Step 1: markdown-it-py converts to HTML (html=False means inline HTML is escaped)
+"""
+<p>Here's a CWE-79 example:</p>
+<pre><code class="language-javascript">
+&lt;script&gt;alert(document.cookie)&lt;/script&gt;
+</code></pre>
+"""
+
+# Step 2: bleach validates (already safe, tags are in allow-list)
+# Output: Safe HTML with escaped code
+
+# User sees: <script>alert(document.cookie)</script>
+# Browser does: Nothing (it's escaped HTML entities, not executable code)
+```
+
+**Implementation Path:**
+- Use markdown-it-py for markdown → HTML conversion
+- Use bleach for HTML allow-list sanitization
+- Return sanitized HTML string
+- Chainlit renders the HTML safely
 
 ### Why markdown-it-py Over Other Libraries?
 - **Security track record:** Port of markdown-it (JavaScript), widely used and audited
