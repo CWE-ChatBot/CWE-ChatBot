@@ -8,7 +8,7 @@ permissions:
   security-events: write
 
 jobs:
-  lint-type-test:
+  lint-type-test-cover: # Renamed and consolidated
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -34,12 +34,21 @@ jobs:
       - name: Install deps
         run: poetry install --no-interaction --no-root
 
-      - name: Pre-commit (format, lint, mypy)
-        run: |
-          python -m pip install --upgrade pip pipx
-          pipx install pre-commit
-          pre-commit run --all-files
+      # --- LINTING (Fast checks) ---
+      - name: Run Ruff (Lint)
+        run: poetry run ruff check .
 
+      - name: Run Ruff (Format Check)
+        run: poetry run ruff format --check .
+
+      # --- TYPE CHECKING ---
+      - name: Install pyright
+        run: python -m pip install --upgrade pip pipx && pipx install pyright
+
+      - name: Run pyright
+        run: poetry run pyright
+
+      # --- TESTING ---
       - name: Tests + coverage
         run: poetry run pytest --cov --cov-report=xml
 
@@ -48,7 +57,7 @@ jobs:
         with:
           coverageFile: ./coverage.xml
           failCiIfError: true
-          minCoverage: 85
+          minCoverage: 85 # Your 85% coverage gate
 
   pyright:
     runs-on: ubuntu-latest
@@ -132,30 +141,14 @@ jobs:
 
       - name: Run pip-audit (produce SARIF, capture exit code)
         id: pipaudit
-        continue-on-error: true
         run: |
           set +e
-
-          # First run with human-readable output to see what's found
-          echo "Running pip-audit to check for vulnerabilities..."
-          pip-audit -r requirements.txt --progress-spinner off --vulnerability-service osv --ignore-vuln GHSA-wj6h-64fc-37mp
-          EXIT_CODE=$?
-          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
-
-          # Then generate SARIF for Code Scanning
-          pip-audit -r requirements.txt --format sarif --output pip-audit.sarif --progress-spinner off --vulnerability-service osv --ignore-vuln GHSA-wj6h-64fc-37mp || true
-
-          # Check if SARIF file was created
-          if [ -f pip-audit.sarif ]; then
-            echo "sarif_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "sarif_exists=false" >> $GITHUB_OUTPUT
-            echo "::warning::pip-audit did not generate SARIF output"
-          fi
+          pip-audit -r requirements.txt --format sarif --output pip-audit.sarif --progress-spinner off
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          # Always succeed so we can upload SARIF
           exit 0
 
       - name: Upload pip-audit SARIF to Code Scanning
-        if: steps.pipaudit.outputs.sarif_exists == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: pip-audit.sarif
@@ -269,3 +262,79 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: checkov-results.sarif
+
+  # === Trivy (scan ALL base images from ALL Dockerfiles) ===
+  collect-base-images:
+    runs-on: ubuntu-latest
+    outputs:
+      images_json: ${{ steps.collect.outputs.images_json }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find Dockerfiles and collect FROM images
+        id: collect
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Find common Dockerfile/Containerfile names repo-wide
+          mapfile -t FILES < <(find . -type f \( -iname 'Dockerfile' -o -name '*Dockerfile' -o -name 'Containerfile' -o -name '*Containerfile' \))
+
+          # Extract image refs from FROM lines (handles multi-stage).
+          # Skip ARG-substituted bases (contain '$').
+          IMAGES=()
+          for f in "${FILES[@]}"; do
+            while IFS= read -r img; do
+              [[ -z "$img" ]] && continue
+              [[ "$img" == *'$'* ]] && continue
+              IMAGES+=("$img")
+            done < <(grep -hPo '^[[:space:]]*FROM[[:space:]]+\K(\S+)' "$f" | sed 's/[[:space:]]\+AS[[:space:]].*$//' )
+          done
+
+          # De-duplicate and emit JSON array for a matrix
+          if ((${#IMAGES[@]}==0)); then
+            echo "No base images found in Dockerfiles."
+            echo 'images_json=[]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mapfile -t UNIQUE < <(printf "%s\n" "${IMAGES[@]}" | sort -u)
+          printf 'Found %s unique base image(s):\n' "${#UNIQUE[@]}"
+          printf ' - %s\n' "${UNIQUE[@]}"
+
+          # Build JSON array
+          jq -n --argjson arr "$(printf '%s\n' "${UNIQUE[@]}" | jq -R . | jq -s .)" '$arr' > images.json
+          echo "images_json=$(cat images.json)" >> "$GITHUB_OUTPUT"
+
+  trivy-container:
+    needs: collect-base-images
+    if: ${{ fromJSON(needs.collect-base-images.outputs.images_json) != null && join(fromJSON(needs.collect-base-images.outputs.images_json)) != '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.collect-base-images.outputs.images_json) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Trivy action does DB caching and supports SARIF nicely
+      - name: Scan ${{ matrix.image }} with Trivy (SARIF)
+        id: trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}
+          format: sarif
+          output: trivy.sarif
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'  # fail this matrix leg on findings
+          cache: true
+
+      # Always upload the SARIF, even if Trivy failed the step
+      - name: Upload Trivy SARIF (${{ matrix.image }})
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          # Unique category per image to avoid collisions when multiple SARIFs exist
+          category: trivy:${{ matrix.image }}
