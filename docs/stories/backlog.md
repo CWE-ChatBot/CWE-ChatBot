@@ -1,15 +1,45 @@
 
-
-DAST full oauth
-    ZAP
-    web scanner https://cloud.google.com/security-command-center/docs/how-to-web-security-scanner-custom-scans
-
-
-sonarqube quality http://127.0.0.1:9000/projects
+TODO Items Found
+api.py:462-463 - Missing citation extraction
+retrieved_cwes=[],  # TODO: Extract from result.citations if available
+chunk_count=0,  # TODO: Extract from result.citations if available
+Need to extract CWE IDs and chunk count from result citations.
+sanitization.py:62 - Markdown sanitization
+TODO: Implement proper markdown sanitization with allowed-list approach
+Security enhancement needed for markdown content sanitization.
+pipeline.py:399 - Relationships feature
+"relationships": None,  # TODO: Implement in future task
+Placeholder for CWE relationships functionality.
+test_cwe_queries_puppeteer.py:52 - OAuth login flow
+# TODO: Implement OAuth login flow
+E2E test needs OAuth authentication implementation.
+Would you like me to prioritize these TODOs or create a tracking document for them?
 
 scan github actions
 
 press button twice
+
+
+
+
+DAST full oauth
+    ZAP
+    docker run -u zap -p 8080:8080 -p 8090:8090 -i ghcr.io/zaproxy/zaproxy:stable zap-webswing.sh
+        http://localhost:8080/zap
+        https://www.zaproxy.org/docs/docker/webswing/
+
+    https://www.zaproxy.org/blog/2023-05-23-authentication-tester/
+    https://www.youtube.com/watch?v=Jgp1f242B-k
+
+web scanner https://cloud.google.com/security-command-center/docs/how-to-web-security-scanner-custom-scans
+    IAP requires CDN disabled
+    https://console.cloud.google.com/security/iap?project=cwechatbot
+    https://www.zaproxy.org/docs/desktop/start/features/authmethods/
+
+
+garak
+https://github.com/NVIDIA/garak/issues/1125
+https://github.com/NVIDIA/garak/pull/1379
 
 
 
@@ -24,10 +54,6 @@ https://github.com/prowler-cloud/prowler
 
 
 
-garak
-https://github.com/NVIDIA/garak/issues/1125
-https://github.com/NVIDIA/garak/pull/1379
-
 
 sql db iam + enc + RLS
 
@@ -36,7 +62,7 @@ sql db iam + enc + RLS
 
 gh commit lint-type-test (3.12) - support integration testing
 
-Security review (also use llm tool)
+
 
 Branding 
 
@@ -44,8 +70,9 @@ Branding
 
 Add BMAD Ops Persona
 BMAD codex and gemini - security review
-Define and Detail BYO model 
 
+
+Define and Detail BYO model 
 
 run BMAD vuln agent - 6
 
@@ -219,3 +246,9 @@ refactor chatbot
 refactor pdf
 
 DONE SubResourceIntegrity per Zap, Nuclei - Chainlit framework limitation documented
+
+sonarqube quality http://127.0.0.1:9000/projects
+
+container scanning: trivy
+
+Security review (also use llm tool)
