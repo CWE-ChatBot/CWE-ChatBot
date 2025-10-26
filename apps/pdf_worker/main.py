@@ -22,37 +22,24 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
-from typing import Tuple
+from types import ModuleType
+from typing import Any, Dict, Optional, Tuple
 
 try:
-    import resource  # Linux rlimits
+    import resource as _resource  # Linux rlimits
+
+    resource: ModuleType | None = _resource
 except Exception:  # pragma: no cover
     resource = None
 
-# Optional imports - will fail gracefully if not available
-try:
-    import pikepdf
-
-    HAS_PIKEPDF = True
-except ImportError:
-    HAS_PIKEPDF = False
-
-try:
-    from pdfminer.high_level import extract_text_to_fp
-    from pdfminer.layout import LAParams
-
-    HAS_PDFMINER = True
-except ImportError:
-    HAS_PDFMINER = False
-
-# Optional: content sniffing with libmagic
-try:
-    import magic  # python-magic (requires libmagic in runtime image)
-
-    HAS_LIBMAGIC = True
-except ImportError:
-    HAS_LIBMAGIC = False
+# Hard requirements: pikepdf and pdfminer must be installed
+# Hard requirement: libmagic via python-magic for MIME sniffing
+import magic  # python-magic (requires libmagic shared library in runtime image)
+import pikepdf
+from pdfminer.high_level import extract_text_to_fp
+from pdfminer.layout import LAParams
 
 try:
     from google.api_core.client_options import ClientOptions
@@ -82,6 +69,30 @@ MODEL_ARMOR_TEMPLATE_ID = os.getenv("MODEL_ARMOR_TEMPLATE_ID", "llm-guardrails-d
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 ISOLATE_SANITIZER = os.getenv("ISOLATE_SANITIZER", "false").lower() == "true"
 
+# Thread-local libmagic instances for thread safety
+_magic_local = threading.local()
+
+
+def _magic_mime(buf: bytes) -> str:
+    m = getattr(_magic_local, "inst", None)
+    if m is None:
+        _magic_local.inst = m = magic.Magic(mime=True)
+    return str(m.from_buffer(buf))
+
+
+# Compatibility alias for tests/tools expecting this flag
+HAS_LIBMAGIC = True  # compat: legacy checks expect this symbol
+
+# Lazy-cached Model Armor client
+_MODEL_ARMOR_CLIENT: Any | None = None
+_ma_lock = threading.Lock()
+
+# Fail fast if Model Armor is required by config but library is missing
+if MODEL_ARMOR_ENABLED and not HAS_MODEL_ARMOR:
+    raise ImportError(
+        "MODEL_ARMOR_ENABLED=true but google-cloud-modelarmor is not installed"
+    )
+
 # Explicitly export entry points for tooling/static analyzers
 __all__ = [
     "pdf_worker",
@@ -93,11 +104,20 @@ __all__ = [
 ]
 
 
-def _jlog(level: str, **fields):
+def _jlog(level: str, **fields: object) -> None:
     """Emit a single-line JSON log without content or filenames."""
     fields.setdefault("ts", time.time())
     msg = json.dumps(fields, separators=(",", ":"), sort_keys=True)
     getattr(logger, level)(msg)
+
+
+def _err(
+    headers: Dict[str, str], code: str, http: int = 422, msg: Optional[str] = None
+) -> Tuple[str, int, Dict[str, str]]:
+    body: Dict[str, Any] = {"error": code}
+    if msg:
+        body["message"] = msg
+    return json.dumps(body), http, headers
 
 
 def sanitize_pdf(pdf_data: bytes) -> bytes:
@@ -133,84 +153,39 @@ def sanitize_pdf(pdf_data: bytes) -> bytes:
         ValueError: If PDF is encrypted
         Exception: If PDF cannot be sanitized
     """
-    if not HAS_PIKEPDF:
-        raise ImportError("pikepdf not available")
+    # pikepdf is a hard requirement; if missing, module import would fail
 
-    pdf = pikepdf.open(io.BytesIO(pdf_data))
+    with pikepdf.open(io.BytesIO(pdf_data)) as src:
+        # If the PDF is encrypted, fail early with a clear error
+        if src.is_encrypted:
+            raise ValueError("encrypted_pdf")
 
-    # If the PDF is encrypted, fail early with a clear error
-    if pdf.is_encrypted:
-        pdf.close()
-        raise ValueError("encrypted_pdf")
+        # Rebuild from scratch (CDR): new PDF, import pages only
+        out_pdf = pikepdf.Pdf.new()
+        out_pdf.docinfo = pikepdf.Dictionary()  # clear metadata
 
-    # ---- Strict metadata policy ----
-    # Clear document info dictionary
-    pdf.docinfo = pikepdf.Dictionary()
-    # Remove XMP metadata stream if present
-    if "/Metadata" in pdf.Root:
+        # Import pages
+        for page in src.pages:
+            out_pdf.pages.append(page)
+
+        # Remove risky root entries that may be imported indirectly
+        for key in ("/Names", "/AcroForm", "/RichMedia", "/Metadata"):
+            out_pdf.Root.pop(key, None)
+        for k in ("/PieceInfo", "/LastModified", "/Perms", "/OCProperties"):
+            out_pdf.Root.pop(k, None)
+
+        # Drop page-level AA/Annots in rebuilt doc as well
         try:
-            del pdf.Root["/Metadata"]
+            for page in out_pdf.pages:
+                page.pop("/AA", None)
+                page.pop("/Annots", None)
         except Exception:
             pass
 
-    # Remove auto-execute actions
-    if "/OpenAction" in pdf.Root:
-        del pdf.Root["/OpenAction"]
-
-    if "/AA" in pdf.Root:
-        del pdf.Root["/AA"]
-
-    # Remove JavaScript
-    if "/Names" in pdf.Root:
-        names = pdf.Root["/Names"]
-        if "/JavaScript" in names:
-            del names["/JavaScript"]
-        # Remove EmbeddedFiles at name tree level
-        if "/EmbeddedFiles" in names:
-            del names["/EmbeddedFiles"]
-        # Remove URI name tree if present
-        if "/URI" in names:
-            try:
-                del names["/URI"]
-            except Exception:
-                pass
-
-    # Remove XFA forms
-    if "/AcroForm" in pdf.Root:
-        acro_form = pdf.Root["/AcroForm"]
-        if "/XFA" in acro_form:
-            del acro_form["/XFA"]
-        # Also drop JS actions on forms if any
-        if "/JS" in acro_form:
-            try:
-                del acro_form["/JS"]
-            except Exception:
-                pass
-
-    # Remove RichMedia (embedded multimedia)
-    if "/RichMedia" in pdf.Root:
-        try:
-            del pdf.Root["/RichMedia"]
-        except Exception:
-            pass
-
-    # Drop all page-level annotations & AA (you stated you don't need annotations)
-    try:
-        for page in pdf.pages:
-            if "/AA" in page:
-                del page["/AA"]
-            if "/Annots" in page:
-                del page["/Annots"]
-    except Exception:
-        # If iteration fails for some malformed docs, keep going; sanitizer should still succeed.
-        pass
-
-    # Save to bytes
-    output = io.BytesIO()
-    pdf.save(output)
-    pdf.close()
-
-    return output.getvalue()
+        # Save to bytes
+        output = io.BytesIO()
+        out_pdf.save(output)
+        return output.getvalue()
 
 
 def extract_pdf_text(pdf_data: bytes, max_pages: int = MAX_PAGES) -> str:
@@ -227,8 +202,7 @@ def extract_pdf_text(pdf_data: bytes, max_pages: int = MAX_PAGES) -> str:
     Raises:
         Exception: If text extraction fails
     """
-    if not HAS_PDFMINER:
-        raise ImportError("pdfminer.six not available")
+    # pdfminer is a hard requirement; if missing, module import would fail
 
     buf = io.StringIO()
     laparams = LAParams()  # defaults are fine; adjust if needed
@@ -280,11 +254,7 @@ def sanitize_text_with_model_armor(text: str) -> Tuple[bool, str]:
         return False, "PDF text sanitization misconfigured"
 
     try:
-        # Create Model Armor client with regional endpoint
-        api_endpoint = f"modelarmor.{MODEL_ARMOR_LOCATION}.rep.googleapis.com"
-        client = modelarmor_v1.ModelArmorClient(
-            client_options=ClientOptions(api_endpoint=api_endpoint)
-        )
+        client = _get_model_armor_client()
 
         # Build template path
         template_path = f"projects/{GOOGLE_CLOUD_PROJECT}/locations/{MODEL_ARMOR_LOCATION}/templates/{MODEL_ARMOR_TEMPLATE_ID}"
@@ -334,14 +304,10 @@ def count_pdf_pages(pdf_data: bytes) -> int:
     Returns:
         Number of pages
     """
-    if not HAS_PIKEPDF:
-        return 0
-
     try:
-        pdf = pikepdf.open(io.BytesIO(pdf_data))
-        page_count = len(pdf.pages)
-        pdf.close()
-        return page_count
+        with pikepdf.open(io.BytesIO(pdf_data)) as pdf:
+            page_count = len(pdf.pages)
+            return page_count
     except Exception:
         return 0
 
@@ -349,7 +315,7 @@ def count_pdf_pages(pdf_data: bytes) -> int:
 # -------------------------------
 # Subprocess-isolated sanitization
 # -------------------------------
-def _set_subprocess_limits():
+def _set_subprocess_limits() -> None:
     """
     Linux-only rlimits to contain sanitizer.
     - Memory cap via RLIMIT_AS (address space)
@@ -405,6 +371,24 @@ def _run_worker(pdf_data: bytes, timeout_s: float = 10.0) -> Tuple[bytes, int]:
     )
     try:
         out, err = proc.communicate(input=pdf_data, timeout=timeout_s)
+        if proc.returncode != 0:
+            # Worker failed; include a trimmed, printable-only error marker (no content)
+            raw_err = err.decode(errors="ignore") if err else ""
+            err_txt = "".join(ch for ch in raw_err if 31 < ord(ch) < 127)[:200]
+            raise RuntimeError(f"sanitizer_failed:{proc.returncode}:{err_txt}")
+
+        try:
+            payload = json.loads(out.decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("bad_worker_payload")
+            b64 = payload.get("sanitized_b64")
+            pages = int(payload.get("pages", 0))
+            if not b64:
+                raise ValueError("missing_sanitized_b64")
+            sanitized = base64.b64decode(b64)
+            return sanitized, pages
+        except Exception as e:
+            raise RuntimeError(f"sanitizer_bad_output:{e}")
     except subprocess.TimeoutExpired:
         proc.kill()
         try:
@@ -412,25 +396,23 @@ def _run_worker(pdf_data: bytes, timeout_s: float = 10.0) -> Tuple[bytes, int]:
         except Exception:
             pass
         raise TimeoutError("sanitizer_timeout")
-
-    if proc.returncode != 0:
-        # Worker failed; include a short error marker but no content
-        raise RuntimeError(
-            f"sanitizer_failed:{proc.returncode}:{err.decode(errors='ignore')[:200]}"
-        )
-
-    try:
-        payload = json.loads(out.decode("utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError("bad_worker_payload")
-        b64 = payload.get("sanitized_b64")
-        pages = int(payload.get("pages", 0))
-        if not b64:
-            raise ValueError("missing_sanitized_b64")
-        sanitized = base64.b64decode(b64)
-        return sanitized, pages
-    except Exception as e:
-        raise RuntimeError(f"sanitizer_bad_output:{e}")
+    finally:
+        # Close pipes to avoid FD accumulation under churn
+        try:
+            if proc.stdin:
+                proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            if proc.stdout:
+                proc.stdout.close()
+        except Exception:
+            pass
+        try:
+            if proc.stderr:
+                proc.stderr.close()
+        except Exception:
+            pass
 
 
 def sanitize_and_count_isolated(pdf_data: bytes) -> Tuple[bytes, int]:
@@ -445,7 +427,7 @@ def sanitize_and_count_isolated(pdf_data: bytes) -> Tuple[bytes, int]:
     return _run_worker(pdf_data)
 
 
-def _worker_main():
+def _worker_main() -> None:
     """
     Worker entrypoint (invoked with --worker).
     Reads PDF bytes from stdin; writes JSON {pages, sanitized_b64} to stdout.
@@ -471,7 +453,7 @@ def _worker_main():
         sys.exit(2)
 
 
-def pdf_worker(request):
+def pdf_worker(request: Any) -> Tuple[str, int, Dict[str, str]]:
     """
     Cloud Functions v2 entry point for PDF processing.
 
@@ -497,74 +479,125 @@ def pdf_worker(request):
         # Prevent caching of extracted text
         "Cache-Control": "no-store",
     }
+    headers.update(
+        {
+            "Content-Security-Policy": "default-src 'none'",
+            "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        }
+    )
 
     # Only accept POST
     if request.method != "POST":
-        return (json.dumps({"error": "method_not_allowed"}), 405, headers)
+        headers["Allow"] = "POST"
+        return _err(headers, "method_not_allowed", 405)
 
     # Enforce content type (defense-in-depth)
     if (
         request.headers.get("Content-Type", "").split(";", 1)[0].lower()
         != "application/pdf"
     ):
-        return (json.dumps({"error": "unsupported_media_type"}), 415, headers)
+        return _err(headers, "unsupported_media_type", 415)
 
-    # Check library availability
-    if not HAS_PIKEPDF or not HAS_PDFMINER:
-        logger.error("Required libraries not available")
-        return (json.dumps({"error": "server_misconfigured"}), 500, headers)
+    # Hard dependencies (pikepdf/pdfminer) are required at import time.
 
     # Get request body
     try:
         pdf_data = request.get_data()
     except Exception as e:
         logger.error(f"Failed to get request data: {e}")
-        return (json.dumps({"error": "invalid_request"}), 400, headers)
+        return _err(headers, "invalid_request", 400)
 
-    # Structured, content-free request log (no filename)
-    pdf_sha256 = hashlib.sha256(pdf_data).hexdigest()
+    # Reject empty bodies early
+    if not pdf_data:
+        _jlog("warning", event="pdf_empty_body")
+        return _err(headers, "pdf_empty_body", 422)
+
+    # Request timing start
+    t0 = time.time()
+    # Structured, content-free request log (no content hash yet, avoid CPU on oversize)
     _jlog(
         "info",
         event="request_received",
-        sha256=pdf_sha256,
         bytes=len(pdf_data),
         content_type=request.headers.get("Content-Type", ""),
     )
 
     # Validate size
     if len(pdf_data) > MAX_BYTES:
-        _jlog("warning", event="pdf_too_large", sha256=pdf_sha256, bytes=len(pdf_data))
-        return (json.dumps({"error": "pdf_too_large"}), 413, headers)
+        _jlog("warning", event="pdf_too_large", bytes=len(pdf_data))
+        _jlog("info", event="done", duration_ms=int((time.time() - t0) * 1000))
+        return _err(headers, "pdf_too_large", 413)
 
-    # Optional content-based MIME validation (OWASP dual validation)
-    if HAS_LIBMAGIC:
-        try:
-            detected_mime = magic.Magic(mime=True).from_buffer(pdf_data[:4096])
-            # Deny generic octet-stream; require a PDF MIME
+    # Compute content hash after passing size check
+    # DevSkim DS197836 false positive: hashing PDF bytes (not time-derived)
+    pdf_sha256 = hashlib.sha256(pdf_data).hexdigest()  # devskim: ignore DS197836
+
+    # Content-based MIME validation (OWASP dual validation)
+    try:
+        detected_mime = _magic_mime(pdf_data[:4096])
+        # Accept common variants from libmagic
+        mime_ok = detected_mime in (
+            "application/pdf",
+            "application/x-pdf",
+        ) or detected_mime.startswith("application/pdf")
+        # Deny generic octet-stream; require a PDF MIME
+        if detected_mime == "application/octet-stream" or not mime_ok:
             if detected_mime == "application/octet-stream":
                 _jlog("warning", event="mime_octet_stream_blocked", sha256=pdf_sha256)
-                return (json.dumps({"error": "unsupported_media_type"}), 415, headers)
-            if detected_mime not in ("application/pdf", "application/x-pdf"):
+            else:
                 _jlog(
                     "warning",
                     event="mime_not_pdf",
                     sha256=pdf_sha256,
                     detected_mime=detected_mime,
                 )
-                return (json.dumps({"error": "unsupported_media_type"}), 415, headers)
-        except Exception as e:
             _jlog(
-                "error",
-                event="mime_sniff_failed",
+                "info",
+                event="done",
                 sha256=pdf_sha256,
-                error=str(e)[:120],
+                duration_ms=int((time.time() - t0) * 1000),
             )
-            # Proceed; we still have magic-byte and parser checks.
+            return _err(headers, "unsupported_media_type", 415)
+    except Exception as e:
+        _jlog(
+            "error",
+            event="mime_sniff_failed",
+            sha256=pdf_sha256,
+            error=str(e)[:120],
+        )
+        # Fail closed: sniffing must work when libmagic is required
+        _jlog(
+            "info",
+            event="done",
+            sha256=pdf_sha256,
+            duration_ms=int((time.time() - t0) * 1000),
+        )
+        return _err(headers, "unsupported_media_type", 415)
 
     # Validate PDF magic bytes
     if not pdf_data.startswith(b"%PDF-"):
         _jlog("warning", event="pdf_magic_missing", sha256=pdf_sha256)
-        return (json.dumps({"error": "pdf_magic_missing"}), 422, headers)
+        _jlog(
+            "info",
+            event="done",
+            sha256=pdf_sha256,
+            duration_ms=int((time.time() - t0) * 1000),
+        )
+        return _err(headers, "pdf_magic_missing", 422)
+
+    # Optional fast-path: block encrypted PDFs by scanning for /Encrypt marker
+    try:
+        if b"/Encrypt" in pdf_data[:8192]:
+            _jlog("warning", event="pdf_encrypt_marker", sha256=pdf_sha256)
+            _jlog(
+                "info",
+                event="done",
+                sha256=pdf_sha256,
+                duration_ms=int((time.time() - t0) * 1000),
+            )
+            return _err(headers, "pdf_encrypted", 422)
+    except Exception:
+        pass
 
     # Sanitize PDF (in isolated subprocess if enabled) and count pages on sanitized data
     try:
@@ -581,26 +614,57 @@ def pdf_worker(request):
         # Provide clearer signal for encrypted PDFs
         if isinstance(e, ValueError) and str(e) == "encrypted_pdf":
             _jlog("warning", event="pdf_encrypted", sha256=pdf_sha256)
-            return (json.dumps({"error": "pdf_encrypted"}), 422, headers)
+            _jlog(
+                "info",
+                event="done",
+                sha256=pdf_sha256,
+                duration_ms=int((time.time() - t0) * 1000),
+            )
+            return _err(headers, "pdf_encrypted", 422)
         msg = str(e)
         if isinstance(e, TimeoutError) or "sanitizer_timeout" in msg:
             _jlog("error", event="pdf_sanitization_timeout", sha256=pdf_sha256)
-            return (
-                json.dumps({"error": "pdf_sanitization_failed", "message": "timeout"}),
-                422,
-                headers,
+            _jlog(
+                "info",
+                event="done",
+                sha256=pdf_sha256,
+                duration_ms=int((time.time() - t0) * 1000),
             )
+            return _err(headers, "pdf_sanitization_failed", 422, msg="timeout")
         _jlog(
             "error", event="pdf_sanitization_failed", sha256=pdf_sha256, error=msg[:200]
         )
-        return (json.dumps({"error": "pdf_sanitization_failed"}), 422, headers)
+        _jlog(
+            "info",
+            event="done",
+            sha256=pdf_sha256,
+            duration_ms=int((time.time() - t0) * 1000),
+        )
+        return _err(headers, "pdf_sanitization_failed", 422)
 
     # Gate on page limits after sanitization
     if page_count > MAX_PAGES:
         _jlog(
             "warning", event="pdf_too_many_pages", sha256=pdf_sha256, pages=page_count
         )
-        return (json.dumps({"error": "pdf_too_many_pages"}), 422, headers)
+        _jlog(
+            "info",
+            event="done",
+            sha256=pdf_sha256,
+            duration_ms=int((time.time() - t0) * 1000),
+        )
+        return _err(headers, "pdf_too_many_pages", 422)
+
+    # Reject zero-page PDFs
+    if page_count <= 0:
+        _jlog("warning", event="pdf_zero_pages", sha256=pdf_sha256)
+        _jlog(
+            "info",
+            event="done",
+            sha256=pdf_sha256,
+            duration_ms=int((time.time() - t0) * 1000),
+        )
+        return _err(headers, "pdf_zero_pages", 422)
 
     # Extract text
     try:
@@ -619,7 +683,13 @@ def pdf_worker(request):
             sha256=pdf_sha256,
             error=str(e)[:200],
         )
-        return (json.dumps({"error": "pdf_processing_failed"}), 500, headers)
+        _jlog(
+            "info",
+            event="done",
+            sha256=pdf_sha256,
+            duration_ms=int((time.time() - t0) * 1000),
+        )
+        return _err(headers, "pdf_processing_failed", 500)
 
     # Sanitize extracted text with Model Armor (prevent malicious content injection)
     is_safe, sanitized_text = sanitize_text_with_model_armor(text)
@@ -649,6 +719,12 @@ def pdf_worker(request):
         },
     }
 
+    _jlog(
+        "info",
+        event="done",
+        sha256=pdf_sha256,
+        duration_ms=int((time.time() - t0) * 1000),
+    )
     return (json.dumps(response), 200, headers)
 
 
@@ -664,3 +740,15 @@ if __name__ == "__main__" and "--worker" in sys.argv:
     # Run worker entrypoint if invoked as a subprocess
     _worker_main()
     sys.exit(0)
+
+
+def _get_model_armor_client() -> Any:
+    global _MODEL_ARMOR_CLIENT
+    if _MODEL_ARMOR_CLIENT is None:
+        with _ma_lock:
+            if _MODEL_ARMOR_CLIENT is None:
+                api_endpoint = f"modelarmor.{MODEL_ARMOR_LOCATION}.rep.googleapis.com"
+                _MODEL_ARMOR_CLIENT = modelarmor_v1.ModelArmorClient(
+                    client_options=ClientOptions(api_endpoint=api_endpoint)
+                )
+    return _MODEL_ARMOR_CLIENT

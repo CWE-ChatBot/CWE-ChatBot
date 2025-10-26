@@ -1,6 +1,8 @@
 # CWE ChatBot Deployment Guide
 
-This document provides instructions for deploying the CWE ChatBot to Google Cloud Run.
+## Overview
+
+This guide ensures consistent, optimized deployments of the CWE ChatBot to staging and production environments.
 
 ## Prerequisites
 
@@ -8,99 +10,278 @@ This document provides instructions for deploying the CWE ChatBot to Google Clou
 2. **APIs Enabled**: Enable the following APIs:
    - Cloud Run API
    - Artifact Registry API
-   - Cloud Build API (if using Cloud Build)
-3. **Authentication**: Configure authentication (see below)
+   - Cloud Build API
+   - Cloud SQL Admin API
+   - Secret Manager API
+3. **Authentication**: Configure authentication with `gcloud auth login`
 
-## Setup Instructions
+## Critical Files for Deployment
 
-### 1. GCP Infrastructure Setup
+Three files control the deployment process and **must be kept synchronized**:
 
-```bash
-# Set your project ID
-export GCP_PROJECT_ID=your-project-id
+1. **`.gcloudignore`** (project root) - Controls what files are uploaded to Cloud Build
+2. **`apps/chatbot/cloudbuild.yaml`** - Defines the Docker build process
+3. **`apps/chatbot/deploy_staging.sh`** - Staging deployment script
 
-# Run the infrastructure setup script
-cd apps/chatbot/infrastructure
-./setup-gcp.sh
+## Build Optimization
+
+### Performance Metrics
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| **Size** | 713 MiB | 232 MiB | 67% reduction |
+| **Files** | 23,658 files | 5,594 files | 76% fewer |
+| **Build Time** | 10+ minutes | ~3-4 minutes | 60%+ faster |
+
+### Key Exclusions in `.gcloudignore`
+
+The following patterns in `.gcloudignore` are **critical** for build optimization:
+
+```
+# Node modules (241 MB)
+node_modules/
+
+# Embeddings cache (223 MB)
+**/cwe_embeddings_cache*
+
+# Binary executables (33 MB)
+**/cloud-sql-proxy*
+
+# Cache directories
+**/*_cache/
+**/*_cache_*/
+
+# Coverage reports (4.8 MB)
+htmlcov/
+.coverage
+coverage.xml
+
+# Security scan results (1+ MB)
+checkov.json
+bandit.json
+*.sarif
+
+# Documentation (not needed in runtime)
+docs/
+*.md
+# Exception: Chainlit needs these
+!apps/chatbot/chainlit.md
+!apps/chatbot/prompt.md
+
+# Tests (not needed in runtime)
+tests/
+*_test.py
+test_*.py
+
+# CI/CD configurations
+.github/
+.gitlab-ci.yml
+
+# Development tools
+web-bundles/
+scripts/
+bmad-agent/
+.bmad-core/
 ```
 
-### 2. Create Artifact Registry Repository
+## Deployment Process
+
+### Staging Deployment
+
+The `deploy_staging.sh` script handles the complete staging deployment:
 
 ```bash
-# Create repository for container images
-gcloud artifacts repositories create chatbot-repo \
-    --repository-format=docker \
-    --location=us-central1 \
-    --description="CWE ChatBot container images"
+# Public mode (for testing with external access)
+PROJECT=cwechatbot REGION=us-central1 EXPOSURE_MODE=public ./apps/chatbot/deploy_staging.sh
+
+# Private mode (IAM-gated, requires Cloud Run Invoker role)
+PROJECT=cwechatbot REGION=us-central1 EXPOSURE_MODE=private ./apps/chatbot/deploy_staging.sh
+
+# Private mode with tester access
+PROJECT=cwechatbot REGION=us-central1 EXPOSURE_MODE=private \
+TESTER_PRINCIPAL='user:alice@example.com' \
+./apps/chatbot/deploy_staging.sh
 ```
 
-### 3. GitHub Actions Deployment (Recommended)
+### What the Script Does
 
-#### Setup Workload Identity Federation
+The deployment script performs these steps in order:
+
+1. **Builds PDF Worker** - Secure service for PDF processing
+   ```bash
+   gcloud builds submit apps/pdf_worker --tag="gcr.io/${PROJECT}/pdf-worker:latest"
+   ```
+
+2. **Deploys PDF Worker** - With service-account-only access (no public access)
+   ```bash
+   gcloud run deploy pdf-worker-staging --no-allow-unauthenticated
+   ```
+
+3. **Builds ChatBot Image** - Using `cloudbuild.yaml` from project root
+   ```bash
+   gcloud builds submit --config=apps/chatbot/cloudbuild.yaml
+   ```
+
+4. **Deploys ChatBot Staging** - With OAuth authentication and all required secrets
+   ```bash
+   gcloud run deploy cwe-chatbot-staging --set-secrets="GEMINI_API_KEY=gemini-api-key:latest,..."
+   ```
+
+5. **Sets IAM Policies** - Grants necessary access permissions
+
+### Build Context (CRITICAL)
+
+**The Docker build MUST run from the project root:**
+
+```yaml
+# cloudbuild.yaml (CORRECT)
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    - 'build'
+    - '--tag=gcr.io/$PROJECT_ID/cwe-chatbot:latest'
+    - '-f'
+    - 'apps/chatbot/Dockerfile'
+    - '.'  # <-- Build context is project root (NOT apps/chatbot/)
+```
+
+**Why**: The Dockerfile references both `apps/chatbot/` and `apps/cwe_ingestion/` which are only available from the project root.
+
+**WRONG**: Do not build from `apps/chatbot/` directory:
+```bash
+# ❌ This will fail
+gcloud builds submit --tag gcr.io/PROJECT/cwe-chatbot apps/chatbot/
+```
+
+### Environment Variables
 
 ```bash
-# Create Workload Identity Pool
-gcloud iam workload-identity-pools create "github-pool" \
-    --location="global" \
-    --description="GitHub Actions pool"
+# Required
+PROJECT=cwechatbot
+REGION=us-central1
 
-# Create Workload Identity Provider
-gcloud iam workload-identity-pools providers create-oidc "github-provider" \
-    --location="global" \
-    --workload-identity-pool="github-pool" \
-    --issuer-uri="https://token.actions.githubusercontent.com" \
-    --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository"
-
-# Create service account for GitHub Actions
-gcloud iam service-accounts create "github-actions-sa" \
-    --description="Service account for GitHub Actions"
-
-# Grant necessary permissions
-gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
-    --member="serviceAccount:github-actions-sa@$GCP_PROJECT_ID.iam.gserviceaccount.com" \
-    --role="roles/run.admin"
-
-gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
-    --member="serviceAccount:github-actions-sa@$GCP_PROJECT_ID.iam.gserviceaccount.com" \
-    --role="roles/artifactregistry.writer"
-
-# Allow GitHub Actions to impersonate the service account
-gcloud iam service-accounts add-iam-policy-binding \
-    "github-actions-sa@$GCP_PROJECT_ID.iam.gserviceaccount.com" \
-    --role="roles/iam.workloadIdentityUser" \
-    --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/YOUR_GITHUB_USERNAME/cwe_chatbot_bmad"
+# Optional
+EXPOSURE_MODE=public|private  # Default: private
+TESTER_PRINCIPAL='user:alice@example.com'  # For private mode access
+VPC_CONNECTOR=run-us-central1  # For VPC egress
+RUN_TESTS=true  # Run integration tests after deployment
 ```
 
-#### GitHub Secrets
+## Dependency Management
 
-Add these secrets to your GitHub repository:
+### Python Dependencies in Docker
 
-- `GCP_PROJECT_ID`: Your GCP project ID
-- `WIF_PROVIDER`: `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider`
-- `WIF_SERVICE_ACCOUNT`: `github-actions-sa@$GCP_PROJECT_ID.iam.gserviceaccount.com`
+All Python dependencies must be declared in `apps/chatbot/requirements.txt` for the Docker container build.
 
-### 4. Cloud Build Deployment (Alternative)
+**Recent Critical Fix**: Added `python-jose[cryptography]==3.3.0` for JWT authentication:
+
+```txt
+# apps/chatbot/requirements.txt
+pyjwt==2.10.1 ; python_version >= "3.10" and python_version < "4.0"
+python-jose[cryptography]==3.3.0 ; python_version >= "3.10" and python_version < "4.0"
+```
+
+### Symptom of Missing Dependency
+
+If you see this error in Cloud Run logs:
+```
+Could not set conversation manager for API: No module named 'jose'
+```
+
+**Fix**:
+1. Add the missing dependency to `apps/chatbot/requirements.txt`
+2. Rebuild: `gcloud builds submit --config=apps/chatbot/cloudbuild.yaml`
+3. Redeploy: `./apps/chatbot/deploy_staging.sh`
+
+## Verification After Deployment
+
+### 1. Check Service Status
 
 ```bash
-# Submit build to Cloud Build
-gcloud builds submit --config=apps/chatbot/cloudbuild.yaml
+gcloud run services describe cwe-chatbot-staging --region=us-central1
 ```
+
+### 2. Test API Endpoint
+
+```bash
+# Get service URL
+SERVICE_URL=$(gcloud run services describe cwe-chatbot-staging --region=us-central1 --format='value(status.url)')
+
+# Test without auth (should get 401)
+curl -X POST $SERVICE_URL/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is CWE-79?"}'
+```
+
+**Expected Response**: `401 Unauthorized` with error message about missing/invalid authentication
+
+### 3. Check Logs
+
+```bash
+gcloud logging read \
+  'resource.type=cloud_run_revision AND resource.labels.service_name=cwe-chatbot-staging' \
+  --limit=50 \
+  --format=json
+```
+
+### 4. Run E2E JWT Security Tests
+
+```bash
+poetry run pytest tests/e2e/test_jwt_auth_staging.py -v
+```
+
+**Expected**: All 16 JWT security tests should pass:
+- ✅ Unauthenticated access rejected
+- ✅ Malformed tokens rejected
+- ✅ Algorithm confusion attacks blocked (CVE-2015-9235)
+- ✅ Expired tokens rejected
+- ✅ Invalid signatures rejected
+- ✅ Modified payloads rejected
+- ✅ Wrong issuer/audience rejected
+- ✅ Unverified email rejected
+- ✅ Non-allowlisted email rejected
 
 ## Security Features
 
+### OAuth Authentication (Production Parity)
+
+Staging uses **OAuth-only authentication** matching production:
+
+```bash
+# Environment variables set in deploy_staging.sh
+ENABLE_OAUTH=true
+AUTH_MODE=oauth
+```
+
+### Required Secrets
+
+Secrets must exist in GCP Secret Manager:
+
+1. `gemini-api-key` - Gemini API key for LLM
+2. `db-password-app-user` - PostgreSQL password
+3. `chainlit-auth-secret` - Session encryption key
+4. `oauth-google-client-id` - Google OAuth client ID
+5. `oauth-google-client-secret` - Google OAuth client secret
+6. `oauth-github-client-id` - GitHub OAuth client ID
+7. `oauth-github-client-secret` - GitHub OAuth client secret
+
 ### Service Account
-- **Minimal Permissions**: The service account has only the minimum required permissions:
-  - `roles/run.invoker`: Execute the Cloud Run service
-  - `roles/logging.logWriter`: Write application logs
+
+- **Name**: `cwe-chatbot-run-sa@cwechatbot.iam.gserviceaccount.com`
+- **Permissions**:
+  - `roles/run.invoker` - Execute Cloud Run services
+  - `roles/cloudsql.client` - Access Cloud SQL
+  - `roles/secretmanager.secretAccessor` - Read secrets
+  - `roles/logging.logWriter` - Write application logs
 
 ### Network Security
-- **Ingress Control**: Service is configured with `internal-and-cloud-load-balancing` ingress
-- **No Direct Public Access**: Service is not exposed directly to the internet
+- **Ingress Control**: Configurable via `EXPOSURE_MODE` (private|public)
+- **VPC Egress**: Private ranges only via VPC connector
+- **Cloud SQL**: Private IP connection only
 
 ### Container Security
-- **Minimal Base Image**: Uses `python:3.11-slim` for reduced attack surface
+- **Base Image**: `python:3.11-slim` with SHA256 pinning
 - **Non-root User**: Container runs as non-root user `appuser`
-- **Health**: Cloud Run uses a TCP startup probe on port 8080; an HTTP `/health` endpoint is optional.
+- **Minimal Attack Surface**: Only required dependencies included
 
 ## Monitoring and Logging
 
@@ -149,33 +330,123 @@ The CWE ChatBot has been successfully deployed to Cloud Run at:
 - ✅ Application logs available in Google Cloud Logging
 - ✅ Secure configuration with minimal IAM permissions
 
-## Troubleshooting
+## Common Issues and Solutions
 
-### Resolved Issues
+### Issue: Build Too Large / Takes Too Long
 
-1. **Chainlit Version Compatibility**: 
-   - Issue: Pydantic compatibility error with Chainlit 1.3.2
-   - Solution: Updated to Chainlit 2.7.1.1
-   
-2. **Ingress Configuration**:
-   - Issue: Service deployed but not accessible
-   - Solution: Use `--ingress=all` for testing, `internal-and-cloud-load-balancing` for production
+**Symptom**: Build over 500 MB, takes 10+ minutes
 
-### Additional Common Issues
+**Cause**: `.gcloudignore` missing critical exclusions
 
-1. **Permission Errors**: Ensure the service account has the correct IAM roles
-2. **Build Failures**: Check that all required APIs are enabled
-3. **Service Unreachable**: Verify ingress settings and network configuration
+**Solution**: Verify `.gcloudignore` includes all patterns from "Key Exclusions" section. Should achieve:
+- Build size: ~232 MiB (vs 713 MiB before)
+- File count: ~5,600 files (vs 23,658 before)
+- Build time: ~3-4 minutes (vs 10+ minutes before)
 
-### Debug Commands
+### Issue: API Returns 405 Method Not Allowed
+
+**Symptom**: POST requests to `/api/v1/query` return 405
+
+**Root Causes**:
+1. Missing Python dependency in `requirements.txt`
+2. API router failed to initialize (check logs)
+
+**Solution**:
+1. Check logs for import errors:
+   ```bash
+   gcloud logging read 'resource.labels.service_name="cwe-chatbot-staging" severity>=ERROR' --limit=10
+   ```
+2. Look for errors like `No module named 'jose'`
+3. Add missing dependency to `apps/chatbot/requirements.txt`
+4. Rebuild: `gcloud builds submit --config=apps/chatbot/cloudbuild.yaml`
+5. Redeploy: `./apps/chatbot/deploy_staging.sh`
+
+### Issue: Module Import Errors
+
+**Symptom**: Logs show `ModuleNotFoundError` or `ImportError`
+
+**Example**:
+```
+Could not set conversation manager for API: No module named 'jose'
+```
+
+**Cause**: Missing dependency in `requirements.txt`
+
+**Solution**:
+1. Add to `apps/chatbot/requirements.txt`:
+   ```txt
+   python-jose[cryptography]==3.3.0
+   ```
+2. Rebuild and redeploy
+
+### Issue: Wrong Build Context
+
+**Symptom**: Docker build fails with `COPY failed: file not found` errors
+
+**Cause**: Building from wrong directory
+
+**Solution**: Always build from project root:
+```bash
+# CORRECT
+gcloud builds submit --config=apps/chatbot/cloudbuild.yaml
+
+# WRONG - do not do this
+gcloud builds submit --tag gcr.io/PROJECT/cwe-chatbot apps/chatbot/
+```
+
+## Best Practices
+
+### Before Every Deployment
+
+- ✅ Verify `.gcloudignore` excludes large files
+- ✅ Check `requirements.txt` has all dependencies
+- ✅ Verify `cloudbuild.yaml` uses correct build context
+- ✅ Test locally: `poetry run chainlit run apps/chatbot/main.py`
+
+### After Every Deployment
+
+- ✅ Check service status
+- ✅ Test API endpoint (verify 401 without auth)
+- ✅ Review logs for errors
+- ✅ Run E2E tests: `poetry run pytest tests/e2e/test_jwt_auth_staging.py`
+
+## Troubleshooting Commands
 
 ```bash
-# Check service status
-gcloud run services describe cwe-chatbot --region=us-central1
+# Check current revision
+gcloud run revisions list --service=cwe-chatbot-staging --region=us-central1
 
-# View logs
-gcloud logs read --filter="resource.type=cloud_run_revision AND resource.labels.service_name=cwe-chatbot"
+# View environment variables
+gcloud run services describe cwe-chatbot-staging --region=us-central1 --format=json | jq '.spec.template.spec.containers[0].env'
 
-# Test health endpoint (HTML 200 expected)
-curl -s -o /dev/null -w "%{http_code}\n" https://YOUR_SERVICE_URL/health
+# Check IAM policy
+gcloud run services get-iam-policy cwe-chatbot-staging --region=us-central1
+
+# Tail logs in real-time
+gcloud logging tail "resource.type=cloud_run_revision AND resource.labels.service_name=cwe-chatbot-staging"
+
+# Check for errors
+gcloud logging read 'resource.labels.service_name="cwe-chatbot-staging" severity>=ERROR' --limit=20
 ```
+
+## Quick Reference
+
+### Key URLs
+
+- **Staging Service**: https://cwe-chatbot-staging-bmgj6wj65a-uc.a.run.app
+- **Staging Domain**: https://staging-cwe.crashedmind.com
+- **API Endpoint**: `/api/v1/query`
+- **Health Check**: `/api/v1/health`
+
+### Current Production Deployment
+
+**Revision**: cwe-chatbot-staging-00036-75z
+
+**Verified Functionality**:
+- ✅ Build optimized (232 MiB, 3m38s build time)
+- ✅ JWT authentication enforced (401 on unauthenticated requests)
+- ✅ All 16 E2E security tests passing
+- ✅ OAuth-only authentication (Google/GitHub)
+- ✅ PDF Worker deployed with service-account-only access
+- ✅ Cloud SQL integration working
+- ✅ All secrets properly configured
