@@ -20,27 +20,27 @@ requests = "^2.31.0"
 lxml = "^6.0.0"
 defusedxml = "^0.7.1" 
 #chromadb = "^0.4.15"
-click = "^8.1.7"
+click = "^8.3.0"
 numpy = "^1.24.3"
-tiktoken = "^0.7.0"
+tiktoken = "^0.12.0"
 
 # Story 2.1 Dependencies - Core NLU & Query Matching
-chainlit = "^2.8.0"  # For chat interface
-psycopg2-binary = "^2.9.0"  # For PostgreSQL connection
-pgvector = "^0.2.0"  # For vector database operations
+chainlit = "^2.8.3"  # For chat interface
+psycopg2-binary = "^2.9.11"  # For PostgreSQL connection
+pgvector = "^0.4.1"  # For vector database operations
 rank-bm25 = "^0.2.2"  # For sparse retrieval
-cryptography = "^46.0.0"
+cryptography = "^46.0.3"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 
 # Story 1.4 Dependencies - Gemini API Integration
 google-generativeai = "^0.8.0"  # For Gemini embedding model
-psycopg = {extras = ["binary"], version = "^3.2.10"}
+psycopg = {extras = ["binary"], version = "^3.2.11"}
 
 # Optional dependencies
 httpx = {extras = ["http2"], version = "^0.28.1"}
-google-cloud-aiplatform = "^1.119.0"
-google-cloud-modelarmor = "^0.2.8"  # For Model Armor sanitize APIs
-python-socketio = "5.14.0"
+google-cloud-aiplatform = "^1.122.0"
+google-cloud-modelarmor = "^0.3.0"  # For Model Armor sanitize APIs
+python-socketio = "5.14.2"
 asyncpg = "^0.30.0"
 sqlalchemy = "^2.0.44"
 tenacity = "^8.2.0"  # For exponential backoff retries
@@ -52,17 +52,17 @@ local-embeddings = ["sentence-transformers"]
 pytest = "^7.4.0"
 pytest-cov = "^4.1.0"
 black = "^24.3.0"
-ruff = "^0.6.0"
-mypy = "^1.5.0"
+ruff = "^0.14.1"
+mypy = "^1.18.2"
 toml = "^0.10.2"
 pre-commit = "^3.4.0"
 python-dotenv = "^1.0.0"
 
 # Story 2.6 Dependencies - UI/UX Testing with Playwright
 playwright = "^1.40.0"
-pytest-playwright = "^0.4.3"
+pytest-playwright = "^0.7.1"
 pytest-asyncio = "^0.21.1"
-pytest-mock = "^3.12.0"
+pytest-mock = "^3.15.1"
 
 [tool.black]
 line-length = 88
