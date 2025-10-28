@@ -15,7 +15,6 @@ test_cwe_queries_puppeteer.py:52 - OAuth login flow
 E2E test needs OAuth authentication implementation.
 Would you like me to prioritize these TODOs or create a tracking document for them?
 
-scan github actions
 
 press button twice
 
@@ -252,3 +251,5 @@ sonarqube quality http://127.0.0.1:9000/projects
 container scanning: trivy
 
 Security review (also use llm tool)
+
+scan github actions
