@@ -435,12 +435,16 @@ class PostgresChunkStore:
 
         def _begin_with_knn_hints(cur: Any, ef_search: int = 32) -> None:
             """Apply transaction-scoped planner hints for HNSW KNN queries."""
-            cur.execute("BEGIN;")
+            # Validate ef_search type/range
+            if not isinstance(ef_search, int):
+                raise TypeError("ef_search must be an integer")
+            if not (1 <= ef_search <= 1000):
+                raise ValueError("ef_search must be between 1 and 1000")
+            # Rely on outer transaction; set hints as transaction-scoped GUCs
             cur.execute("SET LOCAL enable_seqscan = off;")
             cur.execute("SET LOCAL jit = off;")
-            cur.execute(
-                f"SET LOCAL hnsw.ef_search = {ef_search};"
-            )  # Direct value, not parameter
+            # ✅ parameterized value instead of f-string
+            cur.execute("SET LOCAL hnsw.ef_search = %s;", (ef_search,))
             cur.execute("SET LOCAL random_page_cost = 1.1;")
 
         # --- Try halfvec fast path; fallback to main vector column ---

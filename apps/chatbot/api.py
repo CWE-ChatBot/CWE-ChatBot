@@ -217,7 +217,7 @@ async def _verify_bearer_token(token: str) -> Dict[str, Any]:
             Dict[str, Any],
             jwt.decode(
                 token,
-                jwks,  # python-jose accepts JWKS dict with 'keys' array per RFC 7517
+                jwk,  # ✅ pass the single matching JWK, not the whole JWKS
                 algorithms=["RS256"],
                 audience=audience_str,  # Single audience or None
                 issuer=settings["issuer"],

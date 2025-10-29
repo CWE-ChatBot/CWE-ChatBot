@@ -24,6 +24,9 @@ class InputSanitizer:
     - Safe character filtering
     """
 
+    # Limit how much text we scan to reduce worst-case regex work
+    SCAN_LIMIT = int(os.getenv("SANITIZER_SCAN_LIMIT", "4096"))
+
     def __init__(self) -> None:
         """Initialize the input sanitizer with security patterns."""
 
@@ -116,16 +119,28 @@ class InputSanitizer:
         text_for_scanning, _code_blocks = self._strip_fenced_code_for_scan(
             sanitized_input
         )
+        # Apply scan window and lowercase for cheap substring checks
+        scan = text_for_scanning[: self.SCAN_LIMIT].lower()
 
-        # Step 3: Check for prompt injection patterns (flag only; do not rewrite semantics)
-        prompt_hits = any(p.search(text_for_scanning) for p in self.compiled_patterns)
+        # Step 3: Check for prompt injection patterns (fast path, then regex on bounded text)
+        substr_cues = [
+            "ignore",
+            "previous instructions",
+            "developer mode",
+            "jailbreak",
+            "unrestricted mode",
+            "bypass safety",
+            "reveal the system prompt",
+            "system prompt",
+        ]
+        prompt_hits = any(cue in scan for cue in substr_cues) or any(
+            p.search(scan) for p in self.compiled_patterns
+        )
         if prompt_hits:
             security_flags.append("prompt_injection_detected")
 
         # Step 4: Check for command injection patterns (flag only; do not mutate text)
-        command_hits = any(
-            p.search(text_for_scanning) for p in self.compiled_command_patterns
-        )
+        command_hits = any(p.search(scan) for p in self.compiled_command_patterns)
         if command_hits:
             security_flags.append("command_injection_detected")
 

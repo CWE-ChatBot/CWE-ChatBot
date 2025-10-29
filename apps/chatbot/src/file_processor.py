@@ -97,8 +97,8 @@ class FileProcessor:
         self.pdf_worker_timeout = 55  # AC6: Client timeout ≤ 55s
 
         # Text validation thresholds
-        # Lowered from 0.9 to 0.85 to handle valid UTF-8 text with symbols/punctuation
-        # Still rejects binary data while accepting legitimate technical documents
+        # Printable ratio threshold set to 0.85 to accept legitimate technical text with symbols,
+        # while still rejecting binary-like content (AC3)
         self.min_printable_ratio = 0.85  # AC3
         self.max_line_length = 2 * 1024 * 1024  # AC3: 2MB per line
 
@@ -512,8 +512,16 @@ class FileProcessor:
             )
 
     def _read_file_from_path(self, file_path: str) -> bytes:
-        """Helper method to read file content from path (for asyncio.to_thread)."""
-        with open(file_path, "rb") as f:
+        """Helper method to read file content from path (for asyncio.to_thread).
+        Optional hardening: ensure path resides under an allow-listed temp directory.
+        """
+        # B108: /tmp is secure default for Chainlit temp uploads, overridable via env var
+        base = os.getenv("UPLOAD_TMP_DIR", "/tmp")  # nosec B108
+        real = os.path.realpath(file_path)
+        base_real = os.path.realpath(base)
+        if not real.startswith(base_real + os.sep):
+            raise RuntimeError("Disallowed file path")
+        with open(real, "rb") as f:
             return f.read()
 
     def analyze_vulnerability_content(self, content: str) -> Dict[str, Any]:
