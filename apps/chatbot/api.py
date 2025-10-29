@@ -39,6 +39,15 @@ from src.security.secure_logging import get_secure_logger
 
 logger = get_secure_logger(__name__)
 
+# ---- JWT hardening configuration (safe defaults; can be env-tuned) ----
+ALLOWED_JWT_ALGORITHMS: tuple[str, ...] = tuple(
+    (os.getenv("JWT_ALLOWED_ALGORITHMS") or "RS256,RS384,RS512")
+    .replace(" ", "")
+    .split(",")
+)
+# Small clock skew to avoid brittle exp/nbf/iat boundaries (seconds)
+JWT_CLOCK_SKEW: int = int(os.getenv("JWT_CLOCK_SKEW", "60"))
+
 # Global conversation manager and unified message path (initialized by main.py)
 _conversation_manager: Optional[ConversationManager] = None
 _unified: Optional[UnifiedMessagePath] = None
@@ -117,13 +126,18 @@ rate_limiter = RateLimiter(requests_per_minute=10)
 
 
 class _JWKSCache:
-    """Very small in-memory JWKS cache with TTL."""
+    """Very small in-memory JWKS cache with TTL and basic hardening."""
 
-    def __init__(self, ttl_seconds: int = 3600) -> None:
+    def __init__(self, ttl_seconds: int = 3600, max_entries: int = 8) -> None:
         self.ttl = ttl_seconds
+        self.max_entries = max_entries
         self._cached: Dict[str, Tuple[datetime, Dict[str, Any]]] = {}
 
     async def get(self, jwks_url: str) -> Dict[str, Any]:
+        # Enforce HTTPS to reduce MITM risk
+        if not jwks_url.startswith("https://"):
+            raise HTTPException(status_code=503, detail="JWKS URL must use HTTPS")
+
         now = datetime.now(timezone.utc)
         entry = self._cached.get(jwks_url)
         if entry and (now - entry[0]) < timedelta(seconds=self.ttl):
@@ -131,7 +145,14 @@ class _JWKSCache:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(jwks_url)
             resp.raise_for_status()
+            ctype = resp.headers.get("content-type", "")
+            if "application/json" not in ctype:
+                raise HTTPException(status_code=503, detail="Invalid JWKS content type")
             data = cast(Dict[str, Any], resp.json())
+        # Tiny LRU-ish cap
+        if len(self._cached) >= self.max_entries:
+            oldest = min(self._cached.items(), key=lambda kv: kv[1][0])[0]
+            self._cached.pop(oldest, None)
         self._cached[jwks_url] = (now, data)
         return data
 
@@ -177,29 +198,57 @@ async def _verify_bearer_token(token: str) -> Dict[str, Any]:
         logger.error(f"OIDC settings error: {e}")
         raise HTTPException(status_code=500, detail="Server auth configuration error")
 
-    # Unverified checks for structure and issuer
+    # ==== Header & basic pre-validation (cheap-fail) ====
     kid: Optional[str] = None
     try:
-        unverified_claims = jwt.get_unverified_claims(token)
         unverified_header = jwt.get_unverified_header(token)
-        token_iss = unverified_claims.get("iss")
-        if token_iss != settings["issuer"]:
-            raise HTTPException(status_code=401, detail="Invalid token issuer")
-        kid = cast(Optional[str], unverified_header.get("kid"))
-        if not kid:
-            raise HTTPException(status_code=401, detail="Missing token key id (kid)")
+        unverified_claims = jwt.get_unverified_claims(token)
     except JWTError:
         raise HTTPException(status_code=401, detail="Malformed token")
+
+    alg = unverified_header.get("alg")
+    if not isinstance(alg, str) or not alg:
+        raise HTTPException(status_code=401, detail="Missing algorithm in token header")
+    if alg.lower() == "none":
+        raise HTTPException(status_code=401, detail="Algorithm 'none' not allowed")
+    if alg not in ALLOWED_JWT_ALGORITHMS:
+        raise HTTPException(status_code=401, detail=f"Algorithm '{alg}' not allowed")
+
+    kid = cast(Optional[str], unverified_header.get("kid"))
+    if not isinstance(kid, str) or not kid:
+        raise HTTPException(status_code=401, detail="Missing key identifier (kid)")
+
+    # Optional: type check (some IdPs omit typ)
+    typ = unverified_header.get("typ")
+    if typ is not None and typ != "JWT":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    # Fail fast on issuer mismatch before any network I/O
+    token_iss = unverified_claims.get("iss")
+    if token_iss != settings["issuer"]:
+        raise HTTPException(status_code=401, detail="Invalid token issuer")
 
     # Fetch / reuse JWKS
     try:
         jwks = await _jwks_cache.get(settings["jwks_url"])
         keys = jwks.get("keys", [])
-        assert kid is not None
         jwk = next((k for k in keys if k.get("kid") == kid), None)
         if not jwk:
             raise HTTPException(status_code=401, detail="Signing key not found")
-        # Keep JWKS format for python-jose (it expects JWK dict, not RSA object)
+        # Basic JWK sanity checks
+        if jwk.get("kty") != "RSA":
+            raise HTTPException(status_code=401, detail="Invalid JWK type (kty)")
+        if jwk.get("use") and jwk.get("use") != "sig":
+            raise HTTPException(
+                status_code=401, detail="JWK not designated for signature"
+            )
+        if "n" not in jwk or "e" not in jwk:
+            raise HTTPException(status_code=401, detail="JWK missing RSA components")
+        jwk_alg = jwk.get("alg")
+        if jwk_alg and jwk_alg != alg:
+            raise HTTPException(
+                status_code=401, detail=f"Algorithm mismatch: JWT={alg}, JWK={jwk_alg}"
+            )
     except HTTPException:
         raise
     except Exception:
@@ -217,8 +266,8 @@ async def _verify_bearer_token(token: str) -> Dict[str, Any]:
             Dict[str, Any],
             jwt.decode(
                 token,
-                jwk,  # ✅ pass the single matching JWK, not the whole JWKS
-                algorithms=["RS256"],
+                jwk,  # pass the single matching JWK, not the whole JWKS
+                algorithms=list(ALLOWED_JWT_ALGORITHMS),
                 audience=audience_str,  # Single audience or None
                 issuer=settings["issuer"],
                 options={
@@ -228,16 +277,23 @@ async def _verify_bearer_token(token: str) -> Dict[str, Any]:
                     "verify_signature": True,
                     "verify_at_hash": False,  # We don't have access_token for validation
                     "require_exp": True,
-                    "require_iat": False,
-                    "require_nbf": False,
+                    "require_iat": True,
+                    "require_nbf": True,
                 },
+                leeway=JWT_CLOCK_SKEW,
             ),
         )
 
         # Manual audience verification if multiple audiences configured
         if audience_str is None and settings["audiences"]:
             token_aud = claims.get("aud")
-            if token_aud not in settings["audiences"]:
+            if isinstance(token_aud, str):
+                token_auds = [token_aud]
+            elif isinstance(token_aud, list):
+                token_auds = token_aud
+            else:
+                raise JWTError("Invalid audience format")
+            if not any(a in settings["audiences"] for a in token_auds):
                 raise JWTError("Invalid audience")
 
     except JWTError:
