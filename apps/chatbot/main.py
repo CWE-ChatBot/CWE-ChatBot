@@ -186,7 +186,11 @@ def is_user_authenticated() -> bool:
 
 
 def initialize_components() -> bool:
-    """Initialize all Story 2.1 chatbot components with error handling."""
+    """
+    Initialize all Story 2.1 chatbot components with error handling.
+
+    Uses Bootstrapper pattern to reduce cyclomatic complexity.
+    """
     global \
         conversation_manager, \
         input_sanitizer, \
@@ -208,184 +212,29 @@ def initialize_components() -> bool:
     try:
         logger.debug("Starting component initialization")
 
-        # Validate config once; if it fails, we will surface a UI error and disable handlers
-        try:
-            logger.debug("Validating configuration")
-            app_config.validate_config()
-            logger.debug("Configuration validation passed")
-        except Exception as cfg_err:
-            logger.error(f"Configuration validation FAILED: {cfg_err}")
-            logger.log_exception(
-                "Configuration validation failed",
-                cfg_err,
-                extra_context={
-                    "component": "startup",
-                },
-            )
+        # Use Bootstrapper to handle complex initialization logic
+        from apps.chatbot.bootstrap import Bootstrapper
+
+        bootstrapper = Bootstrapper(db_factory=None, cm_factory=ConversationManager)
+        components = bootstrapper.initialize()
+
+        if not components.ok:
+            logger.error("Bootstrapper initialization failed")
             _init_ok = False
-            # Still attempt partial initialization to provide a helpful UI message
+            return False
 
-        # Optional: Validate OAuth configuration if enabled
-        try:
-            app_config.validate_oauth()
-        except Exception as oauth_err:
-            logger.log_exception(
-                "OAuth configuration error",
-                oauth_err,
-                extra_context={"component": "startup"},
-            )
-            # Warning only - don't fail startup, will run in open mode
-
-        # Check for database configuration
-        # Option 1: Private IP with password auth (new production setup)
-        # Option 2: Cloud SQL Connector with IAM (legacy)
-        # Option 3: Traditional database URL (local dev)
-        use_private_ip = (
-            os.getenv("DB_HOST") and os.getenv("DB_USER") and os.getenv("DB_PASSWORD")
-        )
-        cloud_sql_instance = os.getenv("INSTANCE_CONN_NAME")
-        database_url = os.getenv("DATABASE_URL") or os.getenv("LOCAL_DATABASE_URL")
-        gemini_api_key = os.getenv("GEMINI_API_KEY") or app_config.gemini_api_key
-        offline_ai = (
-            os.getenv("DISABLE_AI") == "1" or os.getenv("GEMINI_OFFLINE") == "1"
-        )
-
-        logger.debug(
-            f"Environment: DB_HOST={os.getenv('DB_HOST')}, DB_USER={os.getenv('DB_USER')}, "
-            f"INSTANCE_CONN_NAME={cloud_sql_instance}, GEMINI_API_KEY={'present' if gemini_api_key else 'missing'}, "
-            f"offline_ai={offline_ai}"
-        )
-
-        # Initialize database connection
-        db_engine = None
-        if use_private_ip:
-            # Use Private IP direct connection (new production setup)
-            logger.info(f"Using Private IP connection to {os.getenv('DB_HOST')}")
-            try:
-                logger.debug("Importing src.db module")
-                from src.db import engine
-
-                logger.debug("Calling engine() to create SQLAlchemy engine")
-                db_engine = engine()
-                database_url = (
-                    "private-ip-connection"  # Placeholder since engine is used
-                )
-                logger.info("Private IP database engine initialized successfully")
-            except Exception as e:
-                logger.error(
-                    f"Private IP connection initialization FAILED: {type(e).__name__}: {e}"
-                )
-                if os.getenv("LOG_LEVEL") == "DEBUG":
-                    import traceback
-
-                    traceback.print_exc()
-                logger.log_exception("Failed to initialize Private IP connection", e)
-                raise ValueError(f"Private IP connection initialization failed: {e}")
-        elif cloud_sql_instance:
-            # Use Cloud SQL Connector for production (legacy)
-            logger.info(f"Using Cloud SQL Connector for instance: {cloud_sql_instance}")
-            try:
-                logger.debug("Importing src.db module")
-                from src.db import engine
-
-                logger.debug("Calling engine() to create SQLAlchemy engine")
-                db_engine = engine()
-                database_url = "cloud-sql-connector"  # Placeholder since engine is used
-                logger.info("Cloud SQL Connector engine initialized successfully")
-            except Exception as e:
-                logger.error(
-                    f"Cloud SQL Connector initialization FAILED: {type(e).__name__}: {e}"
-                )
-                if os.getenv("LOG_LEVEL") == "DEBUG":
-                    import traceback
-
-                    traceback.print_exc()
-                logger.log_exception("Failed to initialize Cloud SQL Connector", e)
-                raise ValueError(f"Cloud SQL Connector initialization failed: {e}")
-        else:
-            logger.debug(
-                "No Private IP or Cloud SQL instance, using traditional database URL"
-            )
-            # Use traditional database URL for local development
-            if not database_url:
-                # Derive URL from POSTGRES_* if available
-                if app_config.pg_user and app_config.pg_password:
-                    # Use postgresql+psycopg:// to use psycopg3 driver (not psycopg2)
-                    database_url = f"postgresql+psycopg://{app_config.pg_user}:{app_config.pg_password}@{app_config.pg_host}:{app_config.pg_port}/{app_config.pg_database}"
-            if not database_url:
-                logger.error("No database configuration found!")
-                raise ValueError(
-                    "Missing required configuration: database URL, Private IP config, or Cloud SQL instance"
-                )
-
-        if not gemini_api_key and not offline_ai:
-            logger.error("GEMINI_API_KEY is missing!")
-            raise ValueError(
-                "Missing required configuration: GEMINI_API_KEY (set DISABLE_AI=1 for offline mode)"
-            )
-
-        logger.info(f"Initializing with database: {database_url[:50]}...")
-
-        # Initialize security components
-        logger.debug("Initializing security components")
-        input_sanitizer = InputSanitizer()
-        security_validator = SecurityValidator()
-        file_processor = FileProcessor()
-        logger.debug("Security components initialized")
-
-        # Initialize conversation manager with all Story 2.1 components
-        logger.debug("Initializing ConversationManager")
-        conversation_manager = ConversationManager(
-            database_url=database_url, gemini_api_key=gemini_api_key, engine=db_engine
-        )
-        logger.debug("ConversationManager created")
-
-        # Test database connection
-        logger.debug("Testing database connection")
-        health = conversation_manager.get_system_health()
-        logger.debug(f"Health check result: {health}")
-        if not health.get("database", False):
-            logger.error("Database health check FAILED!")
-            raise RuntimeError("Database health check failed")
-
-        logger.info("Database health check passed")
-        logger.info("Story 2.1 components initialized successfully")
-        logger.info(f"Database health: {health}")
-
-        # Story CWE-82: Set conversation manager for REST API
-        try:
-            from api import set_conversation_manager
-
-            set_conversation_manager(conversation_manager)
-            logger.info("Conversation manager set for REST API")
-        except Exception as api_err:
-            logger.warning(f"Could not set conversation manager for API: {api_err}")
-
-        # Log OAuth configuration status
-        if not app_config.enable_oauth:
-            logger.info("OAuth mode: disabled (open access)")
-        else:
-            has_google_oauth = app_config.google_oauth_configured
-            has_github_oauth = app_config.github_oauth_configured
-            if has_google_oauth or has_github_oauth:
-                providers = []
-                if has_google_oauth:
-                    providers.append("Google")
-                if has_github_oauth:
-                    providers.append("GitHub")
-                logger.info(
-                    f"OAuth mode: enabled with {', '.join(providers)} provider(s)"
-                )
-            else:
-                logger.info(
-                    "OAuth mode: enabled but no provider credentials found (running in open access mode)"
-                )
+        # Assign components to globals
+        conversation_manager = components.conversation_manager
+        input_sanitizer = components.input_sanitizer
+        security_validator = components.security_validator
+        file_processor = components.file_processor
 
         _init_ok = True
         logger.info("Component initialization completed successfully")
-        # NEW: create the high-level message handler now that globals exist
+        # Create the high-level message handler now that globals exist
         _create_message_handler()
         return _init_ok
+
     except Exception as e:
         logger.error(f"Initialization FAILED: {type(e).__name__}: {e}")
         import traceback

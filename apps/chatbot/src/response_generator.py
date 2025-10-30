@@ -12,6 +12,12 @@ from typing import Any, Dict, List, Optional
 
 from src.app_config import config
 
+from .fallback_strategies import (
+    DominantCWEStrategy,
+    ExplicitCWEStrategy,
+    FallbackStrategy,
+    MultiCWEBriefStrategy,
+)
 from .llm_provider import get_llm_provider
 from .model_armor_guard import create_model_armor_guard_from_env
 
@@ -83,6 +89,13 @@ class ResponseGenerator:
                     "Model Armor guard disabled (MODEL_ARMOR_ENABLED=false or not set)"
                 )
 
+            # Initialize fallback strategy chain (for offline/LLM-unavailable scenarios)
+            self._fallback_chain: list[FallbackStrategy] = [
+                ExplicitCWEStrategy(),
+                DominantCWEStrategy(),
+                MultiCWEBriefStrategy(),
+            ]
+
         except Exception as e:
             logger.error(f"Failed to initialize ResponseGenerator: {e}")
             raise
@@ -98,8 +111,8 @@ class ResponseGenerator:
                 try:
                     mapping[name] = p.read_text(encoding="utf-8")
                     return
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to load prompt file {p}: {e}")
             mapping[name] = fallback
 
         # Fallback minimal templates (concise) to keep file small
@@ -499,142 +512,20 @@ Response:""",
     ) -> str:
         """
         Build a concise, deterministic answer from retrieved chunks when the LLM is unavailable.
-        If a single CWE is dominant (or explicitly requested), provide a short explanation
-        tailored to the persona; otherwise provide a brief multi-CWE summary.
+
+        Uses Strategy pattern to reduce complexity - delegates to specialized strategies based
+        on query characteristics and result composition.
         """
         if not retrieved_chunks:
             return self._generate_fallback_response(query, user_persona)
 
-        # Group by CWE and pick the best chunk per CWE by hybrid score
-        by_cwe: Dict[str, Dict[str, Any]] = {}
-        for ch in retrieved_chunks:
-            md = ch.get("metadata") or {}
-            cid = md.get("cwe_id", "CWE-UNKNOWN")
-            cur = by_cwe.get(cid)
-            if not cur:
-                by_cwe[cid] = ch
-            else:
-                prev_score = float((cur.get("scores") or {}).get("hybrid", 0.0))
-                score = float((ch.get("scores") or {}).get("hybrid", 0.0))
-                if score > prev_score:
-                    by_cwe[cid] = ch
+        # Try each strategy in order until one supports the query/results
+        for strategy in self._fallback_chain:
+            if strategy.supports(query, retrieved_chunks):
+                return strategy.respond(query, user_persona, retrieved_chunks, max_cwes)
 
-        # Order CWEs by the chosen best chunk score
-        ranked = sorted(
-            by_cwe.items(),
-            key=lambda kv: float((kv[1].get("scores") or {}).get("hybrid", 0.0)),
-            reverse=True,
-        )[:max_cwes]
-
-        # Detect explicit CWE mention in the query
-        mention = None
-        try:
-            m = re.search(r"\bCWE[-\s]?(\d{1,5})\b", query, flags=re.IGNORECASE)
-            if m:
-                mention = f"CWE-{m.group(1)}"
-        except Exception:
-            pass
-
-        dominant_id, dominant_chunk = ranked[0]
-        if mention and any(cid == mention for cid, _ in ranked):
-            # Prioritize explicitly requested CWE if present in results
-            for cid, ch in ranked:
-                if cid == mention:
-                    dominant_id, dominant_chunk = cid, ch
-                    break
-
-        # If a single CWE stands out or was requested, produce a brief explanation
-        try:
-            # Gather top sections for the dominant CWE from available chunks
-            group_chunks = [
-                ch
-                for ch in retrieved_chunks
-                if (ch.get("metadata") or {}).get("cwe_id") == dominant_id
-            ]
-            # Prefer key sections (ordering handled by explicit picks below)
-            section_map: Dict[str, str] = {}
-            for ch in group_chunks:
-                md = ch.get("metadata") or {}
-                sec = md.get("section", "Content")
-                doc = (ch.get("document") or "").strip()
-                if not doc:
-                    continue
-                # Keep the best (longest) snippet per section
-                prev = section_map.get(sec, "")
-                candidate = doc if len(doc) > len(prev) else prev
-                section_map[sec] = candidate
-
-            md = dominant_chunk.get("metadata") or {}
-            name = md.get("name", "")
-
-            lines: List[str] = []
-            header = f"{dominant_id}: {name} — {('Developer' if user_persona == 'Developer' else user_persona)} perspective"
-            lines.append(header)
-            lines.append("")
-
-            # Compose short explanation (~2-4 lines) + mitigations if available
-            def pick(sec_names: List[str]) -> Optional[str]:
-                for s in sec_names:
-                    if s in section_map:
-                        return section_map[s]
-                return None
-
-            expl = pick(["Abstract", "Extended Description", "Description"])
-            if expl:
-                expl_snippet = expl[:500].replace("\n", " ") + (
-                    "..." if len(expl) > 500 else ""
-                )
-                lines.append(expl_snippet)
-                lines.append("")
-
-            if user_persona in ("Developer", "PSIRT Member", "Product Manager"):
-                mit = pick(["Mitigations", "Details"])
-                if mit:
-                    mit_snippet = mit[:400].replace("\n", " ") + (
-                        "..." if len(mit) > 400 else ""
-                    )
-                    lines.append("Key Mitigations:")
-                    lines.append(mit_snippet)
-
-            # Add a small tail for guidance
-            tail = {
-                "Developer": "Emphasize input validation, output encoding, and safe framework APIs.",
-                "PSIRT Member": "Use this to inform severity, impact, and advisory guidance.",
-                "Product Manager": "Prioritize fixes based on exposure and business impact.",
-            }.get(
-                user_persona, "Consult official CWE documentation for further details."
-            )
-            lines.append("")
-            lines.append(tail)
-            return "\n".join(lines)
-        except Exception:
-            pass
-
-        # Otherwise, provide a concise multi-CWE summary
-        out_lines: List[str] = []
-        out_lines.append("Here are the most relevant CWE findings based on your query:")
-        for cid, ch in ranked:
-            md = ch.get("metadata") or {}
-            name = md.get("name", "")
-            section = md.get("section", "Content")
-            doc = (ch.get("document") or "").strip()
-            snippet = doc[:280].replace("\n", " ") + ("..." if len(doc) > 280 else "")
-            out_lines.append(f"- {cid}: {name}")
-            if section:
-                out_lines.append(f"  Section: {section}")
-            if snippet:
-                out_lines.append(f"  Snippet: {snippet}")
-
-        persona_tail = {
-            "Developer": "Focus on input validation, output encoding, and safe APIs.",
-            "PSIRT Member": "Use this to inform impact assessment and advisories.",
-            "Academic Researcher": "Consider taxonomy relationships across the listed CWEs.",
-            "Bug Bounty Hunter": "Adapt tests to the attack surface suggested by these CWEs.",
-            "Product Manager": "Prioritize mitigations according to risk and exposure.",
-        }.get(user_persona, "Consult the referenced CWEs for details and mitigations.")
-        out_lines.append("")
-        out_lines.append(persona_tail)
-        return "\n".join(out_lines)
+        # Fallback to generic response (should not reach here with MultiCWEBriefStrategy at end)
+        return self._generate_fallback_response(query, user_persona)
 
     def _record_llm_fallback_marker(self) -> None:
         """Create a marker file indicating an LLM fallback occurred (for e2e diagnostics)."""
@@ -649,8 +540,8 @@ Response:""",
                 from time import time as _now
 
                 f.write(f"fallback:{int(_now())}\n")
-        except Exception:
+        except Exception as e:
             # Do not let diagnostics interfere with normal operation
-            pass
+            logger.debug(f"Failed to write fallback marker: {e}")
 
     # Removed persona-specific formatting; rely on persona templates only
