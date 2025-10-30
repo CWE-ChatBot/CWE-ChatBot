@@ -98,6 +98,8 @@ ignore = ["E501"]
 "apps/chatbot/src/file_processor.py" = ["C901", "S108"]  # S108: /tmp is secure default for framework
 "apps/chatbot/src/input_security.py" = ["C901"]
 "apps/cwe_ingestion/cwe_ingestion/pg_chunk_store.py" = ["C901", "S101", "S110", "S608"]
+# R18 Phase 2 targets (temporary ignores while Phase 1 main() refactor is committed)
+"apps/chatbot/main.py" = ["C901"]  # initialize_components (22), oauth_callback (12), start (18) - Phase 2
 
 
 

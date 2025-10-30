@@ -5,7 +5,6 @@ Chainlit application with NLU, security sanitization, and RAG response generatio
 Integrates with Story 1.5 production infrastructure.
 """
 
-import asyncio
 import logging
 import os
 import sys
@@ -70,7 +69,7 @@ from src.security import (  # noqa: E402
 from src.security.secure_logging import get_secure_logger  # noqa: E402
 
 # Import the new UI modules
-from src.ui import UIMessaging, UISettings, create_chat_profiles  # noqa: E402
+from src.ui import UISettings, create_chat_profiles  # noqa: E402
 from src.user_context import UserPersona  # noqa: E402
 from src.utils.session import get_user_context  # noqa: E402
 
@@ -166,6 +165,9 @@ input_sanitizer: Optional[InputSanitizer] = None
 security_validator: Optional[SecurityValidator] = None
 file_processor: Optional[FileProcessor] = None
 _init_ok: bool = False
+
+# NEW: we'll lazily create a message handler instance once init succeeds
+_message_handler = None
 
 
 def requires_authentication() -> bool:
@@ -381,6 +383,8 @@ def initialize_components() -> bool:
 
         _init_ok = True
         logger.info("Component initialization completed successfully")
+        # NEW: create the high-level message handler now that globals exist
+        _create_message_handler()
         return _init_ok
     except Exception as e:
         logger.error(f"Initialization FAILED: {type(e).__name__}: {e}")
@@ -393,6 +397,30 @@ def initialize_components() -> bool:
         )
         _init_ok = False
         return _init_ok
+
+
+# NEW helper: build MessageHandler once we have the components
+def _create_message_handler() -> None:
+    """
+    Instantiate the MessageHandler that powers @cl.on_message.
+    Safe to call multiple times; it will no-op after first success.
+    """
+    global _message_handler
+    if _message_handler is not None:
+        return
+    if not (conversation_manager and file_processor):
+        # can't wire yet
+        return
+
+    from apps.chatbot.handlers import MessageHandler  # local import to avoid cycles
+
+    _message_handler = MessageHandler(
+        conversation_manager=conversation_manager,
+        file_processor=file_processor,
+        app_config=app_config,
+        requires_authentication_fn=requires_authentication,
+        is_user_authenticated_fn=is_user_authenticated,
+    )
 
 
 @cl.set_chat_profiles
@@ -902,354 +930,37 @@ To prevent these attacks, users are recommended to upgrade to version 5.1.1 abov
 
 @cl.on_message
 async def main(message: cl.Message):
-    """Handle incoming messages with Story 2.1 NLU and RAG pipeline."""
+    """
+    Slim wrapper that delegates to MessageHandler.
+    Keeps this function below Ruff C901 threshold.
+    """
+    global _message_handler
 
-    # Debug logging: Log user message content if enabled
-    if app_config.debug_log_messages:
-        user_email = "anonymous"
-        if requires_authentication():
-            user = cl.user_session.get("user")
-            if user and hasattr(user, "metadata") and user.metadata:
-                user_email = user.metadata.get("email", "unknown")
-        logger.info(
-            f"[DEBUG_MSG] User: {user_email} | Message: {message.content[:200]}{'...' if len(message.content) > 200 else ''}"
-        )
-
-    # Authentication enforcement - require OAuth authentication if enabled
-    if requires_authentication() and not is_user_authenticated():
+    # If startup failed, surface the same message you already show elsewhere
+    if not conversation_manager or not _init_ok:
         await cl.Message(
-            content="🔒 Authentication required. Please authenticate using Google or GitHub to send messages.",
+            content=(
+                "Startup error: configuration missing or database unavailable. "
+                "Please check environment (GEMINI_API_KEY/DB)."
+            )
+        ).send()
+        return
+
+    # Ensure handler exists (defensive for hot-reload / partial init)
+    if _message_handler is None:
+        _create_message_handler()
+    if _message_handler is None:
+        # still not available -> graceful fallback
+        await cl.Message(
+            content=(
+                "Initialization error: message handler not available. "
+                "Please retry later."
+            ),
             author="System",
         ).send()
         return
 
-    # Session validation and activity tracking
-    try:
-        user_context = get_user_context()
-        if user_context and user_context.is_authenticated:
-            user_context.update_activity()
-    except Exception as e:
-        logger.log_exception("Failed to update user activity", e)
-
-    # Check if components are initialized
-    if not conversation_manager or not _init_ok:
-        await cl.Message(
-            content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB)."
-        ).send()
-        return
-
-    # Get current settings and ensure session exists
-    session_id = cl.context.session.id
-    ui_settings = cl.user_session.get("ui_settings")
-
-    if not ui_settings:
-        # Initialize with defaults if missing
-        default_settings = UISettings()
-        ui_settings = default_settings.dict()
-        cl.user_session.set("ui_settings", ui_settings)
-
-    # Ensure persona follows the top-bar ChatProfile (not settings)
-    context = conversation_manager.get_session_context(session_id)
-    selected_profile = cl.user_session.get("chat_profile")
-    if (
-        isinstance(selected_profile, str)
-        and selected_profile in UserPersona.get_all_personas()
-    ):
-        if not context or context.persona != selected_profile:
-            await conversation_manager.update_user_persona(session_id, selected_profile)
-
-    try:
-        # Prevent accidental double-send with a 1s debounce
-        now = time.monotonic()
-        last_ts = cl.user_session.get("_last_msg_ts") or 0.0
-        if now - float(last_ts) < 1.0:
-            logger.info("Debounced duplicate message within 1s window")
-            return
-        cl.user_session.set("_last_msg_ts", now)
-
-        user_query = message.content.strip()
-
-        # Manual feedback command as fallback when thumbs UI is unavailable
-        if user_query.lower().startswith("/feedback"):
-            await cl.Message(content="Opening feedback prompt...").send()
-            await collect_detailed_feedback()
-            return
-
-        # If user uploaded files via the Attach Files action earlier, merge their content
-        pending_upload = cl.user_session.get("uploaded_file_content")
-        if pending_upload:
-            # Do not append raw file text into the prompt; store as separate context
-            cl.user_session.set("uploaded_file_context", pending_upload)
-            cl.user_session.set("uploaded_file_content", None)
-
-        # Process file attachments if present
-        if hasattr(message, "elements") and message.elements and file_processor:
-            async with cl.Step(
-                name="Process file attachments", type="tool"
-            ) as file_step:
-                current_ctx = conversation_manager.get_session_context(session_id)
-                current_persona = (
-                    current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value
-                )
-                file_step.input = (
-                    f"Processing {len(message.elements)} file(s) for {current_persona}"
-                )
-                logger.info(
-                    f"Processing {len(message.elements)} file attachments for {current_persona}"
-                )
-
-                # Create a keepalive message to prevent WebSocket timeout during PDF processing
-                status_msg = await cl.Message(content="Processing files...").send()
-
-                # Keepalive heartbeat to prevent idle disconnects
-                heartbeat_running = True
-
-                async def heartbeat():
-                    """Send periodic updates to keep WebSocket alive during PDF processing."""
-                    count = 0
-                    while heartbeat_running:
-                        await asyncio.sleep(3)  # Update every 3 seconds
-                        if heartbeat_running:  # Check again after sleep
-                            count += 1
-                            await status_msg.stream_token(".")
-
-                # Start keepalive task
-                hb_task = asyncio.create_task(heartbeat())
-
-                try:
-                    file_content = await file_processor.process_attachments(message)
-                finally:
-                    # Stop keepalive
-                    heartbeat_running = False
-                    try:
-                        hb_task.cancel()
-                        await hb_task
-                    except asyncio.CancelledError:
-                        pass
-                    # Remove the status message
-                    await status_msg.remove()
-
-                if file_content:
-                    # SECURITY: do not merge evidence into the prompt; store for isolated use
-                    cl.user_session.set("uploaded_file_context", file_content)
-                    file_step.output = f"Extracted {len(file_content)} characters from file(s) (stored as isolated evidence)"
-                    logger.info(
-                        f"File content extracted: {len(file_content)} characters"
-                    )
-                else:
-                    file_step.output = "No content extracted from file(s)"
-                    logger.warning("File attachments found but no content extracted")
-
-        # If user uploaded files but didn't provide a query, use a default prompt
-        file_ctx = cl.user_session.get("uploaded_file_context")
-        if file_ctx and (not user_query or user_query == "..."):
-            user_query = (
-                "Analyze this document for security vulnerabilities and CWE mappings."
-            )
-            logger.info("Using default query for file upload without user text")
-
-        current_ctx = conversation_manager.get_session_context(session_id)
-        current_persona = (
-            current_ctx.persona if current_ctx else UserPersona.DEVELOPER.value
-        )
-        logger.info(
-            f"Processing user query: '{user_query[:100]}...' for persona: {current_persona}"
-        )
-
-        # Two-phase processing to restore cl.Step without blocking feedback buttons
-        # Phase 1: Retrieval work inside Step (shows progress UI)
-        async with cl.Step(name="Analyze security query", type="tool") as analysis_step:
-            analysis_step.input = f"Query: '{user_query[:100]}...'"
-
-            # Get the pipeline result WITHOUT sending message
-            processing_result = await conversation_manager.process_user_message_no_send(
-                session_id=session_id, message_content=user_query, message_id=message.id
-            )
-
-            # Show retrieval stats in Step output
-            if not processing_result.get("is_direct_response"):
-                pipeline_result = processing_result.get("pipeline_result")
-                if pipeline_result:
-                    chunk_count = getattr(pipeline_result, "chunk_count", 0)
-                    analysis_step.output = (
-                        f"Retrieved {chunk_count} relevant CWE chunks"
-                    )
-                else:
-                    analysis_step.output = "Processing completed"
-            else:
-                analysis_step.output = "Direct response (no retrieval needed)"
-
-        # Phase 2: Send the actual message OUTSIDE Step context (enables feedback buttons)
-        result = await conversation_manager.send_message_from_result(processing_result)
-
-        # Debug logging: Log response content if enabled
-        if app_config.debug_log_messages and result.get("message"):
-            response_text = (
-                result["message"].content
-                if hasattr(result["message"], "content")
-                else str(result["message"])
-            )
-            user_email = "anonymous"
-            if requires_authentication():
-                user = cl.user_session.get("user")
-                if user and hasattr(user, "metadata") and user.metadata:
-                    user_email = user.metadata.get("email", "unknown")
-            logger.info(
-                f"[DEBUG_RESP] User: {user_email} | Response length: {len(response_text)} chars | First 200: {response_text[:200]}{'...' if len(response_text) > 200 else ''}"
-            )
-
-        # Create source cards as Chainlit Elements if we have retrieved chunks
-        elements = []
-        if result.get("retrieved_cwes") and result.get("chunk_count", 0) > 0:
-            async with cl.Step(
-                name="Prepare source references", type="tool"
-            ) as sources_step:
-                # Get the retrieved chunks to create source elements
-                retrieved_chunks = result.get("retrieved_chunks", [])
-                retrieved_cwes = result.get("retrieved_cwes", [])
-                elements = UIMessaging.create_source_elements(retrieved_chunks)
-
-                # Format CWE list for output
-                cwe_list = ", ".join(retrieved_cwes[:5])  # Show first 5 CWEs
-                if len(retrieved_cwes) > 5:
-                    cwe_list += f" and {len(retrieved_cwes) - 5} more"
-
-                sources_step.output = (
-                    f"Created {len(elements)} source references from CWEs: {cwe_list}"
-                )
-
-        # Add uploaded file evidence as a side element (if present)
-        file_ctx = cl.user_session.get("uploaded_file_context")
-        if file_ctx:
-            evidence = UIMessaging.create_file_evidence_element(file_ctx)
-            elements.append(evidence)
-
-        # Add metadata for debugging if needed
-        if not result.get("is_safe", True):
-            logger.warning(
-                f"Security flags detected: {result.get('security_flags', [])}"
-            )
-
-        # Apply progressive disclosure based on UI settings and update message with elements
-        if result.get("message"):
-            # Apply progressive disclosure if configured
-            elements = UIMessaging.apply_progressive_disclosure(
-                result["message"], ui_settings, elements
-            )
-            # Update message with all elements
-            await UIMessaging.update_message_with_elements(result["message"], elements)
-
-        # Clear file context after use to avoid unbounded growth (ConversationManager clears its own context copy)
-        if file_ctx:
-            cl.user_session.set("uploaded_file_context", None)
-
-        # Add Action buttons for CWE Analyzer persona (after response is complete)
-        current_ctx = conversation_manager.get_session_context(session_id)
-        if current_ctx:
-            logger.info(
-                f"Debug: persona={current_ctx.persona}, analyzer_mode={getattr(current_ctx, 'analyzer_mode', 'MISSING')}"
-            )
-
-            analyzer_mode = getattr(current_ctx, "analyzer_mode", None)
-            if current_ctx.persona == "CWE Analyzer":
-                if not analyzer_mode:
-                    # Initial analysis complete - show "Ask Question" button
-                    logger.info("Creating Action buttons for CWE Analyzer (initial)")
-                    try:
-                        # Story S-12: Include CSRF token in action payload
-                        csrf_token = CSRFManager.get_session_token()
-                        actions = [
-                            cl.Action(
-                                name="ask_question",
-                                label="❓ Ask a Question",
-                                payload={"action": "ask", "csrf_token": csrf_token},
-                            )
-                        ]
-                        logger.info(
-                            f"Actions created successfully: {[a.name for a in actions]}"
-                        )
-
-                        message = cl.Message(
-                            content="**Next steps for this analysis:**",
-                            actions=actions,
-                            author="System",
-                        )
-                        logger.info("Message with actions created successfully")
-
-                        await message.send()
-                        logger.info("Action buttons sent successfully")
-                    except Exception as action_error:
-                        logger.error(f"Action button error type: {type(action_error)}")
-                        logger.error(
-                            f"Action button error message: {str(action_error)}"
-                        )
-                        logger.error(
-                            f"Action button error details: {repr(action_error)}"
-                        )
-                        if hasattr(action_error, "errors"):
-                            logger.error(f"Validation errors: {action_error.errors()}")  # type: ignore[attr-defined]
-                        logger.log_exception(
-                            "Failed to create/send Action buttons", action_error
-                        )
-                        # Send message without actions as fallback
-                        await cl.Message(
-                            content="**Next steps:** Type '/ask' to ask a question about the analysis, or '/compare' to compare CWE IDs.",
-                            author="System",
-                        ).send()
-                elif analyzer_mode == "question":
-                    # Question mode active - show "Exit Question Mode" button
-                    logger.info("Creating Exit button for CWE Analyzer (question mode)")
-                    try:
-                        # Story S-12: Include CSRF token in action payload
-                        csrf_token = CSRFManager.get_session_token()
-                        actions = [
-                            cl.Action(
-                                name="exit_question_mode",
-                                label="🚪 Exit Question Mode",
-                                payload={"action": "exit", "csrf_token": csrf_token},
-                            )
-                        ]
-                        logger.info(
-                            f"Exit action created successfully: {[a.name for a in actions]}"
-                        )
-                        message = cl.Message(
-                            content="**Question mode active.**",
-                            actions=actions,
-                            author="System",
-                        )
-                        await message.send()
-                        logger.info("Exit button sent successfully")
-                    except Exception as action_error:
-                        logger.log_exception(
-                            "Failed to create Exit button", action_error
-                        )
-                        # Fallback to text hint
-                        await cl.Message(
-                            content="**Question mode active.** Type '/exit' to leave question mode.",
-                            author="System",
-                        ).send()
-                else:
-                    logger.info(f"No action buttons for analyzer_mode: {analyzer_mode}")
-            else:
-                logger.info(
-                    f"Not showing Action buttons - persona: {current_ctx.persona}, analyzer_mode: {analyzer_mode}"
-                )
-        else:
-            logger.warning("No current context found - cannot show Action buttons")
-
-        # Log successful interaction
-        current_persona = current_ctx.persona if current_ctx else "unknown"
-        logger.info(
-            f"Successfully processed query for {current_persona}, retrieved {result.get('chunk_count', 0)} chunks"
-        )
-
-    except Exception as e:
-        # Secure error handling - never expose internal details
-        logger.log_exception(
-            "Error processing message", e, extra_context={"handler": "on_message"}
-        )
-        error_response = "I apologize, but I'm experiencing technical difficulties. Please try your question again in a moment."
-        await cl.Message(content=error_response).send()
+    await _message_handler.handle(message)
 
 
 @cl.action_callback("ask_question")
