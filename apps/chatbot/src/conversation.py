@@ -4,7 +4,7 @@ Conversation Management - Story 2.1
 Manages conversation flow, session state, and message handling for Chainlit integration.
 """
 
-from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, TypedDict
 
 if TYPE_CHECKING:
     from src.processing.pipeline import PipelineResult
@@ -328,7 +328,9 @@ class ConversationManager:
                 "error": str(e),
             }
 
-    async def send_message_from_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    async def send_message_from_result(
+        self, result: Dict[str, Any], elements: Optional[List[Any]] = None
+    ) -> Dict[str, Any]:
         """
         Two-phase processing: Send message from previously computed result.
 
@@ -336,6 +338,7 @@ class ConversationManager:
 
         Args:
             result: Dict returned from process_user_message_no_send()
+            elements: Optional pre-prepared UI elements to attach to message
 
         Returns:
             Standard response dict with message object
@@ -379,7 +382,10 @@ class ConversationManager:
                 )
 
             # Send the message (OUTSIDE Step context, so feedback buttons work)
+            # Attach elements BEFORE send to avoid blocking feedback buttons
             msg = cl.Message(content=pipeline_result.final_response_text)
+            if elements:
+                msg.elements = elements
             await msg.send()
 
             # Update context

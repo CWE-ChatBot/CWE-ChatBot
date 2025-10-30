@@ -82,15 +82,21 @@ class MessageHandler:
                 message_id=message.id,
             )
 
+            # CRITICAL: Prepare UI elements BEFORE sending message
+            # Any cl.Step() after message.send() will block feedback buttons!
+            # See: https://github.com/Chainlit/chainlit/issues/1202
+            elements = await self._prepare_source_elements(
+                processing_result=processing_result,
+                ui_settings=ui_settings,
+            )
+
             # Ask CM to generate/send the final answer message in chat
-            result = await self.cm.send_message_from_result(processing_result)
+            # Pass pre-prepared elements to avoid Step after send
+            result = await self.cm.send_message_from_result(
+                processing_result, elements=elements
+            )
 
             self._debug_log_response(result)
-
-            # Build UI elements (sources, evidence, progressive disclosure)
-            await self._render_sources_and_evidence(
-                result=result, ui_settings=ui_settings
-            )
 
             # CWE Analyzer persona follow-up actions ("Ask Question", etc.)
             await self._maybe_render_persona_actions(session_id)
@@ -276,49 +282,56 @@ class MessageHandler:
 
         return processing_result
 
-    async def _render_sources_and_evidence(
-        self, *, result: Dict[str, Any], ui_settings: Dict[str, Any]
-    ) -> None:
+    async def _prepare_source_elements(
+        self, *, processing_result: Dict[str, Any], ui_settings: Dict[str, Any]
+    ) -> List[cl.Element]:
         """
-        Build Chainlit elements for:
+        Prepare Chainlit elements for:
         - retrieved CWE chunks
         - uploaded file evidence
         - progressive disclosure
-        Then attach them to the already-sent main message.
+
+        CRITICAL: This runs BEFORE message.send() to avoid blocking feedback buttons.
+        Any cl.Step() after message.send() will block feedback buttons!
+        See: https://github.com/Chainlit/chainlit/issues/1202
+
+        Returns:
+            List of Chainlit elements ready to attach to message
         """
         elements: List[cl.Element] = []
 
-        if result.get("retrieved_cwes") and result.get("chunk_count", 0) > 0:
-            async with cl.Step(
-                name="Prepare source references", type="tool"
-            ) as sources_step:
-                retrieved_chunks = result.get("retrieved_chunks", [])
-                retrieved_cwes = result.get("retrieved_cwes", [])
-                elements = UIMessaging.create_source_elements(retrieved_chunks)
-
-                cwe_list = ", ".join(retrieved_cwes[:5])
-                if len(retrieved_cwes) > 5:
-                    cwe_list += f" and {len(retrieved_cwes) - 5} more"
-
-                sources_step.output = (
-                    f"Created {len(elements)} source references from CWEs: {cwe_list}"
+        # Check if we have retrieval results
+        if not processing_result.get("is_direct_response"):
+            pipeline_result = processing_result.get("pipeline_result")
+            if pipeline_result and pipeline_result.retrieved_chunks:
+                # Create source elements WITHOUT Step context
+                # (Step would block feedback buttons if run after send)
+                elements = UIMessaging.create_source_elements(
+                    pipeline_result.retrieved_chunks
+                )
+                logger.info(
+                    f"Prepared {len(elements)} source elements from {len(pipeline_result.retrieved_cwes)} CWEs"
                 )
 
+        # Add uploaded file evidence if present
         file_ctx = cl.user_session.get("uploaded_file_context")
         if file_ctx:
             evidence = UIMessaging.create_file_evidence_element(file_ctx)
             elements.append(evidence)
+            logger.info("Added file evidence element")
 
-        if result.get("message"):
-            elements = UIMessaging.apply_progressive_disclosure(
-                result["message"], ui_settings, elements
-            )
-            await UIMessaging.update_message_with_elements(result["message"], elements)
+        # Apply progressive disclosure settings
+        # Note: We don't have the message object yet, so UIMessaging will need to handle this
+        # Progressive disclosure is applied by limiting elements based on ui_settings
+        if ui_settings.get("progressive_disclosure_enabled", False):
+            max_sources = ui_settings.get("progressive_disclosure_max_sources", 3)
+            if len(elements) > max_sources:
+                logger.info(
+                    f"Progressive disclosure: limiting {len(elements)} elements to {max_sources}"
+                )
+                elements = elements[:max_sources]
 
-        if not result.get("is_safe", True):
-            logger.warning(
-                f"Security flags detected: {result.get('security_flags', [])}"
-            )
+        return elements
 
     async def _maybe_render_persona_actions(self, session_id: str) -> None:
         """
