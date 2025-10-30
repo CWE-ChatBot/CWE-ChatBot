@@ -71,7 +71,11 @@ from src.ui import UISettings, create_chat_profiles  # noqa: E402
 from src.utils.session import get_user_context  # noqa: E402
 
 # NEW: session bootstrap orchestrator extracted from start()
-from apps.chatbot.session_init import SessionInitializer  # noqa: E402
+try:
+    from apps.chatbot.session_init import SessionInitializer  # noqa: E402
+except ModuleNotFoundError:
+    # In Docker container, files are in /app/ (not apps/chatbot/)
+    from session_init import SessionInitializer  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -213,7 +217,10 @@ def initialize_components() -> bool:
         logger.debug("Starting component initialization")
 
         # Use Bootstrapper to handle complex initialization logic
-        from apps.chatbot.bootstrap import Bootstrapper
+        try:
+            from apps.chatbot.bootstrap import Bootstrapper
+        except ModuleNotFoundError:
+            from bootstrap import Bootstrapper
 
         bootstrapper = Bootstrapper(db_factory=None, cm_factory=ConversationManager)
         components = bootstrapper.initialize()
@@ -261,7 +268,10 @@ def _create_message_handler() -> None:
         # can't wire yet
         return
 
-    from apps.chatbot.handlers import MessageHandler  # local import to avoid cycles
+    try:
+        from apps.chatbot.handlers import MessageHandler  # local import to avoid cycles
+    except ModuleNotFoundError:
+        from handlers import MessageHandler
 
     _message_handler = MessageHandler(
         conversation_manager=conversation_manager,

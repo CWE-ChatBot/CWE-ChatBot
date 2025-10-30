@@ -53,6 +53,9 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 # Copy application files with secure permissions
 COPY --chown=appuser:appuser apps/chatbot/main.py ./main.py
 COPY --chown=appuser:appuser apps/chatbot/api.py ./api.py
+COPY --chown=appuser:appuser apps/chatbot/handlers.py ./handlers.py
+COPY --chown=appuser:appuser apps/chatbot/bootstrap.py ./bootstrap.py
+COPY --chown=appuser:appuser apps/chatbot/session_init.py ./session_init.py
 COPY --chown=appuser:appuser apps/chatbot/chainlit.md ./chainlit.md
 # Copy src directory first (includes .chainlit/config.toml if present)
 COPY --chown=appuser:appuser apps/chatbot/src/ ./src/
