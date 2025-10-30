@@ -1,3 +1,12 @@
+pre commit pyright
+
+cyclomatic complexity
+https://pypi.org/project/module-coupling-metrics/
+remove toml file ignores
+
+expire  jwts
+
+
 
 TODO Items Found
 api.py:462-463 - Missing citation extraction

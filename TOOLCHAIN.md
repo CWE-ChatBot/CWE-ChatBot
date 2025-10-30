@@ -579,6 +579,11 @@ poetry add --group dev types-requests
 ## SonarQube
 https://docs.sonarsource.com/sonarqube-server/try-out-sonarqube
 
+```bash
+pysonar   --sonar-host-url=http://localhost:9000   --sonar-token=<TOKEN>   --sonar-project-key=cwe_chatbot_bmad --sonar-coverage-exclusions "^apps/tests/.*" --sonar-coverage-exclusions "^apps/.*/tests/.*" --sonar-coverage-exclusions "^apps/.*/build/.*" --sonar-coverage-exclusions "^apps
+/.*/scripts/.*"
+```
+
 ## Browser Development Tools
 
 ### Chrome DevTools
