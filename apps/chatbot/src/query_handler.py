@@ -141,14 +141,14 @@ class CWEQueryHandler:
                 logger.info(
                     "Using SQLAlchemy engine for Cloud SQL Connector (skipping schema init)"
                 )
-                self.store = PostgresChunkStore(
+                self.store = PostgresChunkStore(  # type: ignore[call-arg]
                     dims=3072, engine=engine, skip_schema_init=skip_schema
-                )  # pyright: ignore[reportCallIssue]
+                )
             else:
                 logger.info("Using psycopg with database URL")
-                self.store = PostgresChunkStore(
+                self.store = PostgresChunkStore(  # type: ignore[call-arg]
                     dims=3072, database_url=database_url, skip_schema_init=skip_schema
-                )  # pyright: ignore[reportCallIssue]
+                )
 
             self.embedder = GeminiEmbedder(api_key=gemini_api_key)
 

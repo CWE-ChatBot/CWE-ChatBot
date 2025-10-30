@@ -1,8 +1,5 @@
 pre commit pyright
 
-cyclomatic complexity
-https://pypi.org/project/module-coupling-metrics/
-remove toml file ignores
 
 expire  jwts
 
@@ -26,7 +23,6 @@ Would you like me to prioritize these TODOs or create a tracking document for th
 
 
 press button twice
-
 
 
 
@@ -262,3 +258,8 @@ container scanning: trivy
 Security review (also use llm tool)
 
 scan github actions
+
+
+cyclomatic complexity
+https://pypi.org/project/module-coupling-metrics/
+remove toml file ignores

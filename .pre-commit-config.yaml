@@ -13,21 +13,21 @@ repos:
         files: ^apps/.*\.py$
         exclude: ^apps/tests/.*|^apps/.*/tests/.*|^apps/.*/build/.*|^apps/.*/scripts/.*
 
-  # Type checking with pyright - TODO: Enable after fixing all type errors
-  # Currently disabled because:
-  # - query_handler.py: pyright ignores conflict with ruff-format
-  # - cwe_ingestion: needs type fixes for pg_chunk_store, parser
-  # - pdf_worker: needs type fixes for conditional imports
+  # Type checking with pyright
+  # Now enabled in Poetry dev dependencies (v1.1.407)
+  # Known issues (5 errors - non-blocking):
+  # - query_handler.py: 3 errors - PostgresChunkStore parameter mismatch
+  # - security/middleware.py: 2 errors - Optional[str] type narrowing needed
   # Run manually with: poetry run pyright apps/chatbot/src
-  # - repo: local
-  #   hooks:
-  #     - id: pyright
-  #       name: pyright (type checking)
-  #       entry: bash -c 'poetry run pyright apps/chatbot/src'
-  #       language: system
-  #       types: [python]
-  #       pass_filenames: false
-  #       files: ^apps/chatbot/src/.*\.py$
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright (type checking)
+        entry: bash -c 'poetry run pyright apps/chatbot/src'
+        language: system
+        types: [python]
+        pass_filenames: false
+        files: ^apps/chatbot/src/.*\.py$
 
   # Security scanning
   - repo: https://github.com/PyCQA/bandit

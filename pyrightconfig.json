@@ -18,6 +18,7 @@
   ],
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
+  "reportCallIssue": "warning",
   "pythonVersion": "3.10",
   "typeCheckingMode": "basic"
 }

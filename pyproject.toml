@@ -62,13 +62,14 @@ playwright = "^1.40.0"
 pytest-playwright = "^0.4.3"
 pytest-asyncio = "^0.21.1"
 pytest-mock = "^3.12.0"
+pyright = "^1.1.407"
 
 [tool.poetry.group.pdf_worker]
 optional = true
 
 [tool.poetry.group.pdf_worker.dependencies]
 pikepdf = "^9.4.0"
-pdfminer.six = "^20240706"
+"pdfminer.six" = "^20240706"
 python-magic = "^0.4.27"
 google-cloud-modelarmor = ">=0.2.8,<1.0.0"
 
@@ -97,6 +98,7 @@ ignore = ["E501"]
 
 # Security patterns - intentional exceptions
 "apps/chatbot/api.py" = ["C901", "S101", "S110"]  # _verify_bearer_token (23) JWT validation, S101/S110: test patterns
+"apps/chatbot/src/query_handler.py" = ["S110"]  # S110: pass in exception handlers for retry logic
 "apps/cwe_ingestion/cwe_ingestion/pg_chunk_store.py" = ["C901", "S101", "S110", "S608"]  # _get_connection(14), query_hybrid(13)
 "apps/pdf_worker/main.py" = ["C901"]  # _run_worker(13), pdf_worker(19) - Story 4.3 PDF processing
 

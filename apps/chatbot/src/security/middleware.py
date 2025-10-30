@@ -178,7 +178,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if "set-cookie" in response.headers:
             cookies = response.headers.get("set-cookie")
             # Add Secure flag if not already present
-            if "Secure" not in cookies and PUBLIC_ORIGIN.startswith("https://"):
+            if (
+                cookies
+                and "Secure" not in cookies
+                and PUBLIC_ORIGIN.startswith("https://")
+            ):
                 response.headers["set-cookie"] = cookies.rstrip("; ") + "; Secure"
 
         return response
