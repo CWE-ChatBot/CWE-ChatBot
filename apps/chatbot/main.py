@@ -9,11 +9,10 @@ import logging
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, Optional
 
 import chainlit as cl
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
-from chainlit.input_widget import InputWidget, Select, Switch
 
 # Use the extended config which loads from environment files automatically
 from src.app_config import config as app_config
@@ -62,7 +61,6 @@ from src.input_security import InputSanitizer, SecurityValidator  # noqa: E402
 
 # Story S-12: Import security middleware and CSRF protection
 from src.security import (  # noqa: E402
-    CSRFManager,
     SecurityHeadersMiddleware,
     require_csrf,
 )
@@ -70,8 +68,10 @@ from src.security.secure_logging import get_secure_logger  # noqa: E402
 
 # Import the new UI modules
 from src.ui import UISettings, create_chat_profiles  # noqa: E402
-from src.user_context import UserPersona  # noqa: E402
 from src.utils.session import get_user_context  # noqa: E402
+
+# NEW: session bootstrap orchestrator extracted from start()
+from apps.chatbot.session_init import SessionInitializer  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -358,423 +358,30 @@ async def oauth_callback(
 
 @cl.on_chat_start
 async def start():
-    """Initialize the chat session with settings-based persona configuration."""
-    global conversation_manager
+    """
+    Initialize the chat session (Chainlit on_chat_start hook).
+
+    This function is now intentionally very small to keep cyclomatic complexity
+    under Ruff C901 thresholds. All of the real work has moved to
+    SessionInitializer in session_init.py.
+    """
+    global conversation_manager, _init_ok
 
     logger.debug("@cl.on_chat_start triggered - User connected to chat")
     logger.debug(
-        f"conversation_manager={'present' if conversation_manager else 'None'}, _init_ok={_init_ok}"
+        "conversation_manager=%s, _init_ok=%s",
+        "present" if conversation_manager else "None",
+        _init_ok,
     )
 
-    if not conversation_manager or not _init_ok:
-        logger.error(
-            f"Initialization check FAILED - conversation_manager: {conversation_manager}, _init_ok: {_init_ok}"
-        )
-        await cl.Message(
-            content="Startup error: configuration missing or database unavailable. Please check environment (GEMINI_API_KEY/DB)."
-        ).send()
-        return
-
-    # Authentication enforcement - require OAuth authentication if enabled
-    if requires_authentication() and not is_user_authenticated():
-        await cl.Message(
-            content="🔒 Authentication required. Please authenticate using Google or GitHub to access the CWE ChatBot.",
-            author="System",
-        ).send()
-        return
-
-    # Story S-12: Generate CSRF token for this session
-    try:
-        csrf_manager = CSRFManager()
-        csrf_token = csrf_manager.generate_token()
-        csrf_manager.set_session_token(csrf_token)
-        logger.debug("CSRF token generated for session")
-    except Exception as e:
-        logger.warning(f"Failed to generate CSRF token: {e}")
-
-    # Initialize default settings and expose a Settings panel
-    default_settings = UISettings()
-    cl.user_session.set("ui_settings", default_settings.dict())
-    selected_profile = cl.user_session.get("chat_profile")
-    persona = (
-        selected_profile
-        if isinstance(selected_profile, str)
-        and selected_profile in UserPersona.get_all_personas()
-        else UserPersona.DEVELOPER.value
+    initializer = SessionInitializer(
+        app_config=app_config,
+        conversation_manager=conversation_manager if _init_ok else None,
+        requires_authentication_fn=requires_authentication,
+        is_user_authenticated_fn=is_user_authenticated,
     )
 
-    # Build and display the Chainlit settings panel
-    try:
-        items = {
-            "basic": "basic",
-            "standard": "standard",
-            "detailed": "detailed",
-        }
-        widgets: List[InputWidget] = cast(
-            List[InputWidget],
-            [
-                Select(
-                    id="detail_level",
-                    label="Detail Level",
-                    items=items,
-                    initial=default_settings.detail_level,
-                    description="How much detail to include",
-                ),
-                Switch(
-                    id="include_examples",
-                    label="Include Code Examples",
-                    initial=default_settings.include_examples,
-                ),
-                Switch(
-                    id="include_mitigations",
-                    label="Include Mitigations",
-                    initial=default_settings.include_mitigations,
-                ),
-            ],
-        )
-        settings_panel = cl.ChatSettings(widgets)
-        await settings_panel.send()
-    except Exception as e:
-        # Non-fatal if UI widgets API changes; continue without settings panel
-        logger.log_exception("Failed to render settings panel", e)
-
-    # One-time UI hint for this session (points to header selector & gear)
-    try:
-        if not cl.user_session.get("ui_hint_shown"):
-            tip = (
-                "Use the Persona selector in the top bar to switch roles, "
-                "and the gear next to the input to adjust detail level, examples, and mitigations."
-            )
-            await cl.Message(content=f"💡 {tip}", author="System").send()
-            cl.user_session.set("ui_hint_shown", True)
-    except Exception as e:
-        logger.log_exception("Failed to send UI hint", e)
-
-    # Initialize per-user context in Chainlit with centralized helper
-    _ = cl.context.session.id
-
-    # Import and use centralized helper
-    from src.utils.session import get_user_context
-
-    user_context = get_user_context()
-
-    # Set the persona from the selected chat profile (only if changed)
-    if user_context.persona != persona:
-        user_context.persona = persona
-
-    # Integrate OAuth authentication with user context (if OAuth is enabled)
-    if requires_authentication():
-        user = cl.user_session.get("user")
-        if user and hasattr(user, "metadata") and user.metadata:
-            try:
-                # User is authenticated via OAuth - integrate with UserContext
-                if user_context:
-                    user_context.set_oauth_data(
-                        provider=user.metadata.get("provider"),
-                        email=user.metadata.get("email"),
-                        name=user.metadata.get("name"),
-                        avatar_url=user.metadata.get("avatar_url"),
-                    )
-                    # Update activity timestamp for session management
-                    user_context.update_activity()
-                    logger.info(
-                        f"OAuth integration completed for user: {user.metadata.get('email')}"
-                    )
-
-                    # Integrate persona selection with authenticated user context
-                    user_context.persona = persona
-                    logger.info(
-                        f"Persona '{persona}' assigned to authenticated user: {user.metadata.get('email')}"
-                    )
-
-                # Store session validation data
-                cl.user_session.set("auth_timestamp", time.time())
-                cl.user_session.set("auth_provider", user.metadata.get("provider"))
-                cl.user_session.set("auth_email", user.metadata.get("email"))
-
-            except Exception as e:
-                logger.log_exception("OAuth integration error during chat start", e)
-                await cl.Message(
-                    content="⚠️ Authentication integration error. Some features may not work properly. Please try refreshing the page.",
-                    author="System",
-                ).send()
-    else:
-        # OAuth is disabled - just set persona without authentication integration
-        if user_context:
-            user_context.persona = persona
-            logger.info(f"Persona '{persona}' assigned (OAuth disabled mode)")
-
-    # Check if welcome message already sent (prevent duplicates on reconnections)
-    # Story D2: Fix duplicate welcome messages on WebSocket reconnection (every 150s)
-    if cl.user_session.get("welcome_sent"):
-        logger.debug(
-            "Skipping welcome message - already sent for this session (reconnection)"
-        )
-        return
-
-    # Enhanced onboarding welcome message with progressive introduction
-    # Personalize welcome if user is authenticated (OAuth mode only)
-    user_greeting = "Welcome to the CWE ChatBot! 🛡️"
-    if requires_authentication():
-        user = cl.user_session.get("user")
-        if user and user.metadata:
-            user_name = (
-                user.metadata.get("name")
-                or user.metadata.get("email", "").split("@")[0]
-            )
-            provider = user.metadata.get("provider", "OAuth").title()
-            user_greeting = f"Welcome back, {user_name}! 🛡️\n\n*Authenticated via {provider}*\n\n🔐 *Your session is secure and your persona preferences will be saved.*"
-    else:
-        user_greeting = "Welcome to the CWE ChatBot! 🛡️\n\n*Running in open access mode (OAuth disabled)*"
-
-    welcome_message = f"""{user_greeting}
-
-I'm here to help you with Common Weakness Enumeration (CWE) information. Let me guide you through getting started:
-
-**🎯 Step 1: Choose Your Role**
-Use the Persona selector in the top bar to select your cybersecurity role for tailored responses.
-
-**⚙️ Step 2: Customize Settings**
-Click the gear icon next to the input to adjust:
-• **Detail Level**: Basic (summaries), Standard (balanced), or Detailed (comprehensive)
-• **Examples**: Toggle code examples and demonstrations
-• **Mitigations**: Include/exclude prevention guidance"""
-
-    await cl.Message(content=welcome_message).send()
-
-    # Send persona information as a separate expandable message
-    persona_info = """**Available Personas:**
-
-• **PSIRT Member** 🛡️ - Impact assessment and security advisory creation
-• **Developer** 💻 - Remediation steps and secure coding examples
-• **Academic Researcher** 🎓 - Comprehensive analysis and CWE relationships
-• **Bug Bounty Hunter** 🔍 - Exploitation patterns and testing techniques
-• **Product Manager** 📊 - Business impact and prevention strategies
-• **CWE Analyzer** 🔬 - CVE-to-CWE mapping analysis with confidence scoring
-• **CVE Creator** 📝 - Structured CVE vulnerability descriptions
-
-Each persona provides responses tailored to your specific needs and expertise level."""
-
-    # Create expandable element for persona details
-    persona_element = cl.Text(
-        name="Persona Guide", content=persona_info, display="inline"
-    )
-
-    # Send example queries as a third guided step with action buttons
-    examples_message = """**🚀 Step 3: Try Example Queries**
-
-Click any button below to ask a common security question, or type your own question in the chat:"""
-
-    # Create action buttons for example queries (no CSRF needed for read-only queries)
-    # Persona-specific examples: CWE Analyzer and CVE Creator get vulnerability analysis buttons
-    if persona == "CWE Analyzer":
-        example_actions = [
-            cl.Action(
-                name="example_nvidia_cve",
-                label="🔬 Analyze NVIDIA vulnerability",
-                payload={
-                    "query": "NVIDIA Base Command Manager contains a missing authentication vulnerability in the CMDaemon component. A successful exploit of this vulnerability might lead to code execution, denial of service, escalation of privileges, information disclosure, and data tampering."
-                },
-            ),
-            cl.Action(
-                name="example_phpgurukul_cve",
-                label="🔬 Analyze PHPGurukul SQL injection",
-                payload={
-                    "query": "A vulnerability has been found in PHPGurukul Boat Booking System 1.0 and classified as critical. Affected by this vulnerability is an unknown functionality of the file book-boat.php?bid=1 of the component Book a Boat Page. The manipulation of the argument nopeople leads to sql injection. The attack can be launched remotely. The exploit has been disclosed to the public and may be used."
-                },
-            ),
-            cl.Action(
-                name="example_wordpress_xss",
-                label="🔬 Analyze WordPress XSS vulnerability",
-                payload={
-                    "query": "The Advanced Schedule Posts WordPress plugin through 2.1.8 does not sanitise and escape a parameter before outputting it back in the page, leading to a Reflected Cross-Site Scripting which could be used against high privilege users such as admins."
-                },
-            ),
-        ]
-    elif persona == "CVE Creator":
-        example_actions = [
-            cl.Action(
-                name="example_tomcat_cve",
-                label="📝 Apache Tomcat DoS (CVE-2023-24998 fix incomplete)",
-                payload={
-                    "query": """Fix for CVE-2023-24998 was incomplete
-Severity: Moderate
-Vendor: The Apache Software Foundation
-Versions Affected:
-Apache Tomcat 11.0.0-M2 to 11.0.0-M4
-Apache Tomcat 10.1.5 to 10.1.7
-Apache Tomcat 9.0.71 to 9.0.73
-Apache Tomcat 8.5.85 to 8.5.87
-Description:
-The fix for CVE-2023-24998 was incomplete. If non-default HTTP connector
-settings were used such that the maxParameterCount could be reached
-using query string parameters and a request was submitted that supplied
-exactly maxParameterCount parameters in the query string, the limit for
-uploaded request parts could be bypassed with the potential for a denial
-of service to occur.
-Mitigation:
-Users of the affected versions should apply one of the following
-mitigations:
-Upgrade to Apache Tomcat 11.0.0-M5 or later
-Upgrade to Apache Tomcat 10.1.8 or later
-Upgrade to Apache Tomcat 9.0.74 or later
-Upgrade to Apache Tomcat 8.5.88 or later"""
-                },
-            ),
-            cl.Action(
-                name="example_rocketmq_rce",
-                label="📝 Apache RocketMQ RCE (missing auth)",
-                payload={
-                    "query": """Affected versions:
-
-- Apache RocketMQ through 5.1.0
-
-Description:
-
-For RocketMQ versions 5.1.0 and below, under certain conditions, there is a risk of remote command execution.
-
-Several components of RocketMQ, including NameServer, Broker, and Controller, are leaked on the extranet and lack permission verification, an attacker can exploit this vulnerability by using the update configuration function to execute commands as the system users that RocketMQ is running as. Additionally, an attacker can achieve the same effect by forging the RocketMQ protocol content.
-
-To prevent these attacks, users are recommended to upgrade to version 5.1.1 above for using RocketMQ 5.x or 4.9.6 above for using RocketMQ 4.x ."""
-                },
-            ),
-            cl.Action(
-                name="example_netfilter_overflow",
-                label="📝 Linux netfilter stack overflow (nft_payload)",
-                payload={
-                    "query": """> The vulnerability consists of a stack buffer overflow due to an integer
-> underflow vulnerability inside the nft_payload_copy_vlan function, which is
-> invoked with nft_payload expressions as long as a VLAN tag is present in
-> the current skb.
-> (net/netfilter/nft_payload.c)
->
-> ```c
-> /* add vlan header into the user buffer for if tag was removed by offloads
-> */
-> static bool nft_payload_copy_vlan(u32 *d, const struct sk_buff *skb, u8
-> offset, u8 len)
-> {
->     int mac_off = skb_mac_header(skb) - skb->data;
->     u8 *vlanh, *dst_u8 = (u8 *) d;
->     struct vlan_ethhdr veth;
->     u8 vlan_hlen = 0;
->
->     if ((skb->protocol == htons(ETH_P_8021AD) ||       <===== (0)
->          skb->protocol == htons(ETH_P_8021Q)) &&
->         offset >= VLAN_ETH_HLEN && offset < VLAN_ETH_HLEN + VLAN_HLEN)
->         vlan_hlen += VLAN_HLEN;
->
->     vlanh = (u8 *) &veth;
->
->     if (offset < VLAN_ETH_HLEN + vlan_hlen) {
->         u8 ethlen = len;
->
->         if (vlan_hlen &&
->             skb_copy_bits(skb, mac_off, &veth, VLAN_ETH_HLEN) < 0)
->             return false;
->         else if (!nft_payload_rebuild_vlan_hdr(skb, mac_off, &veth))
->             return false;
->
->         if (offset + len > VLAN_ETH_HLEN + vlan_hlen) <===== (1)
->             ethlen -= offset + len - VLAN_ETH_HLEN + vlan_hlen;   <===== (2)
->
->         memcpy(dst_u8, vlanh + offset - vlan_hlen, ethlen);     <===== (3)
->
->         len -= ethlen;
->         if (len == 0)
->             return true;
->
->         dst_u8 += ethlen;
->         offset = ETH_HLEN + vlan_hlen;
->     } else {
->         offset -= VLAN_HLEN + vlan_hlen;
->     }
->
->     return skb_copy_bits(skb, offset + mac_off, dst_u8, len) == 0;
-> }
-> ```
->
-> The checks at (0) look for a second VLAN tag from the EtherType field and,
-> if the offset falls between the first VLAN_ETH_HLEN bytes and VLAN_ETH_HLEN
-> plus the size of another VLAN header, then nftables should also try and
-> process the second VLAN.
-> At (1) the if statement correctly checks the boundary of the header using
-> the offset and len variables (8-bit unsigned ints), evaluating to true
-> whenever offset + len exceeds the double-tagged VLAN header.
-> The use of inline statements successfully prevents wrappings because u8
-> types are automatically promoted before the comparison.
->
-> However, on the next line, the subtraction at (2) does not grant type
-> promotion, and ethlen (u8) may wrap to UINT8_MAX under certain conditions.
-> Some examples of vulnerable offset and len pairs are:
->
-> offset: 19 & len: 4 & ethlen = 251
-> offset: 16 & len: 19 & ethlen = 254
-> offset: 20 & len: 32 & ethlen = 250
-> ...
-> Other pairs can be listed with the following algorithm:
-> ```c
-> uint8_t vlan_hlen = VLAN_HLEN, ethlen;
-> for (uint8_t len = 0; len < UINT8_MAX; len++) {
->     for (uint8_t offset = 0; offset < UINT8_MAX; offset++) {
->         if (offset < VLAN_ETH_HLEN + vlan_hlen) {
->             uint8_t ethlen = len;
->             if (offset + len > VLAN_ETH_HLEN + vlan_hlen) {
->                 ethlen -= offset + len - VLAN_ETH_HLEN + vlan_hlen;
->                 printf("offset: %hhu & len: %hhu & ethlen = %hhu\\n",
-> offset, len, ethlen);
->             }
->         }
->     }
-> }
-> ```
->
-> Finally, at (3) an up to 255-byte buffer gets copied to the destination
-> register located on the stack, overwriting the adjacent memory.
-> Since we can control the destination register, we can pick NFT_REG32_15 to
-> trigger a 251-byte OOB write on the stack (since NFT_REG32_15 occupies 4
-> bytes).
-> The vulnerable code path can be reached if the function
-> skb_vlan_tag_present(skb) evaluates to true, that is if the skb->vlan_tci
-> field is set. This is known to happen when the host is placed inside a
-> VLAN, although a modified skb could also be forged manually. (perhaps by
-> forging the packet itself or with some other nft_expr that can edit
-> packets?)"""
-                },
-            ),
-        ]
-    else:
-        example_actions = [
-            cl.Action(
-                name="example_cwe79",
-                label="🛡️ What is CWE-79 and how do I prevent it?",
-                payload={"query": "What is CWE-79 and how do I prevent it?"},
-            ),
-            cl.Action(
-                name="example_sql_injection",
-                label="💉 Show me SQL injection prevention techniques",
-                payload={"query": "Show me SQL injection prevention techniques"},
-            ),
-            cl.Action(
-                name="example_xss_types",
-                label="🔍 Explain the types of XSS",
-                payload={"query": "Explain the types of XSS"},
-            ),
-        ]
-
-    await cl.Message(
-        content=examples_message, actions=example_actions, elements=[persona_element]
-    ).send()
-
-    # Mark welcome message as sent to prevent duplicates on reconnection
-    # Story D2: Prevent duplicate welcome messages on WebSocket reconnection
-    cl.user_session.set("welcome_sent", True)
-    logger.debug("Welcome message sequence completed and flagged")
-
-    # Optional: Debug action rendering if DEBUG_ACTIONS=1 (disabled due to environment ValidationError)
-    # To test actions, use the CWE Analyzer flow or thumbs-down feedback instead.
-
-    # Users can upload files via Chainlit's spontaneous file upload feature (config.toml)
+    await initializer.run()
 
 
 @cl.on_message

@@ -97,10 +97,11 @@ ignore = ["E501"]
 "apps/chatbot/api.py" = ["C901", "S101", "S110"]
 "apps/chatbot/src/file_processor.py" = ["C901", "S108"]  # S108: /tmp is secure default for framework
 "apps/chatbot/src/input_security.py" = ["C901"]
-"apps/chatbot/main.py" = ["C901"]  # oauth_callback (12), start (18) - deferred per R18.md
+"apps/chatbot/main.py" = ["C901"]  # oauth_callback (12) - deferred per R18.md
 "apps/cwe_ingestion/cwe_ingestion/pg_chunk_store.py" = ["C901", "S101", "S110", "S608"]
-# R18 Phase 1 & 2 COMPLETE - main.py handler refactored (all critical functions <10 complexity)
-# Deferred: oauth_callback (12), start (18) - documented in R18.md as DEFER
+# R18 Phase 1, 2 & 3 COMPLETE - main.py fully refactored (all critical functions <10 complexity)
+# Phase 3: start() extracted to SessionInitializer (18 → ~3)
+# Deferred: oauth_callback (12) - documented in R18.md as DEFER
 # Remaining: text_post.py:harmonize_cwe_names_in_table (11) - LOW priority utility function
 
 
