@@ -1,15 +1,10 @@
-pre commit pyright
-
 
 expire  jwts
 
 
 
 TODO Items Found
-api.py:462-463 - Missing citation extraction
-retrieved_cwes=[],  # TODO: Extract from result.citations if available
-chunk_count=0,  # TODO: Extract from result.citations if available
-Need to extract CWE IDs and chunk count from result citations.
+.
 sanitization.py:62 - Markdown sanitization
 TODO: Implement proper markdown sanitization with allowed-list approach
 Security enhancement needed for markdown content sanitization.
@@ -54,23 +49,14 @@ https://github.com/prowler-cloud/prowler
 
 
 
-
-
-
-
-
 sql db iam + enc + RLS
 
 ### 3.2 LOW - Markdown Sanitization Not Implemented (VUL-LOW-001)
 
 
-gh commit lint-type-test (3.12) - support integration testing
-
 
 
 Branding 
-
-
 
 Add BMAD Ops Persona
 BMAD codex and gemini - security review
@@ -78,7 +64,7 @@ BMAD codex and gemini - security review
 
 Define and Detail BYO model 
 
-run BMAD vuln agent - 6
+
 
 
 ====DONE======================================================
@@ -263,3 +249,17 @@ scan github actions
 cyclomatic complexity
 https://pypi.org/project/module-coupling-metrics/
 remove toml file ignores
+
+
+pre commit pyright
+
+
+
+gh commit lint-type-test (3.12) - support integration testing
+
+run BMAD vuln agent - 6
+
+api.py:462-463 - Missing citation extraction
+retrieved_cwes=[],  # TODO: Extract from result.citations if available
+chunk_count=0,  # TODO: Extract from result.citations if available
+Need to extract CWE IDs and chunk count from result citations
