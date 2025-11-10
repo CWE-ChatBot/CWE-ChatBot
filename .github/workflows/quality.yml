@@ -318,7 +318,7 @@ jobs:
       # Trivy action does DB caching and supports SARIF nicely
       - name: Scan ${{ matrix.image }} with Trivy (SARIF)
         id: trivy
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           scan-type: image
           image-ref: ${{ matrix.image }}
