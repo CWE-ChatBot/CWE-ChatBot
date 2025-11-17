@@ -69,7 +69,7 @@ optional = true
 
 [tool.poetry.group.pdf_worker.dependencies]
 pikepdf = "^9.4.0"
-"pdfminer.six" = "^20240706"
+"pdfminer.six" = "^20251107"
 python-magic = "^0.4.27"
 google-cloud-modelarmor = ">=0.2.8,<1.0.0"
 
