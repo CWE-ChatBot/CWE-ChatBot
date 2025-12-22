@@ -180,7 +180,7 @@ jobs:
 
       - name: Upload Bandit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bandit_report_no_tests.json
           path: bandit_report_no_tests.json
@@ -221,7 +221,7 @@ jobs:
           vulture --sort-by-size --min-confidence 70 ./ > vulture.txt
           exit 0
       - name: Upload Vulture output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: vulture.txt
           path: vulture.txt
