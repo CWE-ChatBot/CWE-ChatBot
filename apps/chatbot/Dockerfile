@@ -1,5 +1,5 @@
 # Multi-stage build for enhanced security
-FROM python:3.11-slim@sha256:1738c75ae61595d2a9a5301d60a9a2f61abe7017005b3ccb660103d2476c6946 AS builder
+FROM python:3.11-slim@sha256:8eb5fc663972b871c528fef04be4eaa9ab8ab4539a5316c4b8c133771214a617 AS builder
 
 # Install build dependencies with cleanup
 RUN apt-get update && \
@@ -18,7 +18,7 @@ COPY apps/cwe_ingestion/ /tmp/cwe_ingestion/
 RUN pip install --no-cache-dir --user /tmp/cwe_ingestion/
 
 # Production stage
-FROM python:3.11-slim@sha256:1738c75ae61595d2a9a5301d60a9a2f61abe7017005b3ccb660103d2476c6946
+FROM python:3.11-slim@sha256:8eb5fc663972b871c528fef04be4eaa9ab8ab4539a5316c4b8c133771214a617
 
 # Security-hardened environment variables
 ENV PYTHONUNBUFFERED=1 \
