@@ -54,7 +54,7 @@ pytest-cov = "^4.1.0"
 ruff = "^0.14.3"
 mypy = "^1.18.2"
 toml = "^0.10.2"
-pre-commit = "^3.4.0"
+pre-commit = "^4.3.0"
 python-dotenv = "^1.2.1"
 
 # Story 2.6 Dependencies - UI/UX Testing with Playwright
