@@ -68,7 +68,7 @@ pyright = "^1.1.407"
 optional = true
 
 [tool.poetry.group.pdf_worker.dependencies]
-pikepdf = "^9.4.0"
+pikepdf = "^10.0.2"
 "pdfminer.six" = "^20240706"
 python-magic = "^0.4.27"
 google-cloud-modelarmor = ">=0.2.8,<1.0.0"
