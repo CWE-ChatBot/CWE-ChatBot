@@ -544,14 +544,14 @@ files = [
 
 [[package]]
 name = "chainlit"
-version = "2.8.4"
+version = "2.8.5"
 description = "Build Conversational AI."
 optional = false
 python-versions = "<4.0.0,>=3.10"
 groups = ["main"]
 files = [
-    {file = "chainlit-2.8.4-py3-none-any.whl", hash = "sha256:930e271d73200540088e6da59398730f97b8f80a34c76dcb58259d34b139ce78"},
-    {file = "chainlit-2.8.4.tar.gz", hash = "sha256:e40474f3470a63b6b3ef6b03cf1976754c07cb055232d0f539ed27fdbd5548c1"},
+    {file = "chainlit-2.8.5-py3-none-any.whl", hash = "sha256:1d6ef81a14f4b9a526229b0e6839f364c8ef1a3335e648889d43c0c8f8444a8e"},
+    {file = "chainlit-2.8.5.tar.gz", hash = "sha256:ebe73b3ad9d7e545454432eb280618ef92d69d6470eb66488149c9bb7f6c526d"},
 ]
 
 [package.dependencies]
@@ -560,7 +560,7 @@ asyncer = ">=0.0.8,<0.1.0"
 audioop-lts = {version = ">=0.2.1,<0.3.0", markers = "python_version >= \"3.13\""}
 click = ">=8.1.3,<9.0.0"
 dataclasses-json = ">=0.6.7,<0.7.0"
-fastapi = ">=0.116.1,<0.117"
+fastapi = ">=0.116.1"
 filetype = ">=1.2.0,<2.0.0"
 httpx = ">=0.23.0"
 lazify = ">=0.4.0,<0.5.0"
@@ -6354,4 +6354,4 @@ local-embeddings = []
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "843ed214f63aa421f3203c00ebbbdca7771093417413c9ed6aec6571d66f3d47"
+content-hash = "e9f0f07d8e7d168d3d8bb1f6d7234dd7bdffdfc4f5d1163be883b4f49c4e5161"
