@@ -29,7 +29,7 @@ chainlit = "^2.9.4"  # For chat interface
 psycopg2-binary = "^2.9.11"  # For PostgreSQL connection
 pgvector = "^0.4.1"  # For vector database operations
 rank-bm25 = "^0.2.2"  # For sparse retrieval
-cryptography = "^46.0.3"
+cryptography = "^46.0.5"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 
 # Story 1.4 Dependencies - Gemini API Integration
