@@ -16,7 +16,7 @@ packages = [
 [tool.poetry.dependencies]
 python = "^3.10"
 # Core dependencies for CWE data ingestion pipeline
-requests = "^2.31.0"
+requests = "^2.33.0"
 lxml = "^6.0.0"
 defusedxml = "^0.7.1" 
 #chromadb = "^0.4.15"
