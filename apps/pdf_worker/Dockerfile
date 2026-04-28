@@ -3,7 +3,7 @@
 # Security: SHA256-pinned base image, non-root user
 # checkov:skip=CKV_DOCKER_2: Cloud Functions Gen2 uses its own health checks, Docker HEALTHCHECK is not used
 
-FROM python:3.11-slim@sha256:1738c75ae61595d2a9a5301d60a9a2f61abe7017005b3ccb660103d2476c6946
+FROM python:3.11-slim@sha256:e4676722fba839e2e5cdb844a52262b43e90e56dbd55b7ad953ee3615ad7534f
 
 # Install system dependencies
 # libmagic1: Required for python-magic MIME type detection
